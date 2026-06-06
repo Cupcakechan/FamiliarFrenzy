@@ -1,23 +1,23 @@
 /* =========================================================================
-   game.js — the heart of Phase 1: a simple STATE MACHINE.
+   game.js — the state machine + owner of all the game objects.
 
-   States (only the Phase 1 ones are wired up):
+   States (Phase 1 + Phase 2):
         title  --ENTER-->  playing
         playing  --(debug K)-->  gameOver
         gameOver  --R-->  playing (fresh game)
 
-   Future states (levelUp, victory) will slot into the same switch later.
+   Phase 2 adds: the cat Familiar, and TEMPORARY practice dummies so the cat
+   has something to shoot at (there are no real enemies until Phase 3).
 
-   Unity analogy: this class is like a GameManager. update() is your Update(),
-   render() is roughly your render pass. We pass in dt so movement is smooth
-   regardless of frame rate.
+   Unity analogy: this class is like a GameManager. update() ≈ Update(),
+   render() ≈ your draw pass. dt = seconds since last frame.
    ========================================================================= */
 
 import { Input } from "./input.js";
 import { Player } from "./player.js";
+import { Familiar } from "./familiar.js";
 import { drawTitle, drawHUD, drawGameOver } from "./ui.js";
 
-// Use plain string constants for states — easy to read in the switch below.
 const STATE = {
   TITLE: "title",
   PLAYING: "playing",
@@ -34,11 +34,25 @@ export class Game {
 
     this.state = STATE.TITLE;
 
-    // Player starts in the center of the arena.
     this.player = new Player(width / 2, height / 2);
+    this.familiar = new Familiar(width / 2 - 22, height / 2 - 22);
+
+    // --- TEMPORARY PHASE 2 SCAFFOLDING ---------------------------------
+    // Stationary "practice dummies" so we can watch the cat target + fire.
+    // These are NOT enemies. REMOVE this whole concept in Phase 3 and pass
+    // the real enemy list to familiar.update() instead.
+    this.dummies = [];
 
     this.score = 0;
     this.wave = 1; // placeholder; real wave logic is Phase 6
+  }
+
+  // Build a fresh set of practice dummies. (Temporary — Phase 2 only.)
+  spawnDummies() {
+    this.dummies = [
+      { x: 720, y: 170, radius: 16, dead: false, hitFlash: 0 },
+      { x: 260, y: 380, radius: 16, dead: false, hitFlash: 0 },
+    ];
   }
 
   // Start (or restart) a fresh playthrough.
@@ -46,10 +60,12 @@ export class Game {
     this.score = 0;
     this.wave = 1;
     this.player.reset(this.width / 2, this.height / 2);
+    this.familiar.reset(this.width / 2 - 22, this.height / 2 - 22);
+    this.spawnDummies(); // TEMP Phase 2
     this.state = STATE.PLAYING;
   }
 
-  // --- UPDATE: runs every frame. dt = seconds since last frame. ----------
+  // --- UPDATE ------------------------------------------------------------
   update(dt) {
     switch (this.state) {
       case STATE.TITLE:
@@ -61,14 +77,22 @@ export class Game {
       case STATE.PLAYING:
         this.player.update(dt, Input, this.bounds);
 
+        // Cat follows the witch and fires at the nearest dummy in range.
+        // (Phase 3: pass real enemies here instead of this.dummies.)
+        this.familiar.update(dt, this.player, this.dummies);
+
+        // Tick down each dummy's hit-flash timer. (TEMP Phase 2)
+        for (const d of this.dummies) {
+          if (d.hitFlash > 0) d.hitFlash -= dt;
+        }
+
         // --- TEMPORARY PHASE 1 DEBUG ---
-        // There are no enemies yet, so press K to simulate death and test
-        // the Game Over flow. REMOVE this line once Phase 3 adds real damage.
+        // No enemies deal damage yet, so press K to simulate death and test
+        // the Game Over flow. REMOVE once Phase 3 adds real damage.
         if (Input.wasPressed("KeyK")) {
           this.player.health = 0;
         }
 
-        // Death check (will be driven by enemy damage in Phase 3).
         if (this.player.health <= 0) {
           this.state = STATE.GAME_OVER;
         }
@@ -82,9 +106,8 @@ export class Game {
     }
   }
 
-  // --- RENDER: draw the current state. -----------------------------------
+  // --- RENDER ------------------------------------------------------------
   render(ctx) {
-    // Clear the whole canvas each frame.
     ctx.clearRect(0, 0, this.width, this.height);
 
     switch (this.state) {
@@ -94,20 +117,47 @@ export class Game {
 
       case STATE.PLAYING:
         this.drawArena(ctx);
+        this.drawDummies(ctx);     // TEMP Phase 2 (draw under characters)
+        this.familiar.draw(ctx);   // bolts + cat
         this.player.draw(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
         break;
 
       case STATE.GAME_OVER:
-        // Draw the frozen arena underneath, then the overlay on top.
         this.drawArena(ctx);
+        this.drawDummies(ctx);
+        this.familiar.draw(ctx);
         this.player.draw(ctx);
         drawGameOver(ctx, this.width, this.height, this.hudState());
         break;
     }
   }
 
-  // A simple top-down arena floor with a subtle grid so movement is readable.
+  // --- TEMPORARY PHASE 2: draw the practice dummies. Delete in Phase 3. --
+  drawDummies(ctx) {
+    for (const d of this.dummies) {
+      if (d.dead) continue;
+      ctx.save();
+
+      // Flash brighter briefly when a bolt connects.
+      const hit = d.hitFlash > 0;
+      ctx.fillStyle = hit ? "#ffd27a" : "#6b6480";
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Thin ring so it clearly reads as a "target dummy".
+      ctx.strokeStyle = "rgba(244,213,141,0.6)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(d.x, d.y, d.radius + 4, 0, Math.PI * 2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+  }
+
+  // A subtle top-down arena floor with a grid so movement is readable.
   drawArena(ctx) {
     ctx.fillStyle = "#161430";
     ctx.fillRect(0, 0, this.width, this.height);
@@ -129,7 +179,6 @@ export class Game {
     }
   }
 
-  // Small bundle of values the HUD/screens need to display.
   hudState() {
     return {
       health: this.player.health,
