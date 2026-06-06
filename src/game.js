@@ -1,21 +1,25 @@
 /* =========================================================================
    game.js — the state machine + owner of all the game objects.
 
-   States (Phase 1 + Phase 2):
+   States (Phase 1–3):
         title  --ENTER-->  playing
-        playing  --(debug K)-->  gameOver
+        playing  --(health hits 0)-->  gameOver
         gameOver  --R-->  playing (fresh game)
 
-   Phase 2 adds: the cat Familiar, and TEMPORARY practice dummies so the cat
-   has something to shoot at (there are no real enemies until Phase 3).
+   Phase 3 adds: real enemies (Cursed Wisps) via a trickle Spawner, contact
+   damage to the witch, the cat's bolts killing enemies, score per kill, and
+   a real Game Over driven by the HP bar. The Phase 2 practice dummies and the
+   Phase 1 debug "K" key are now GONE.
 
    Unity analogy: this class is like a GameManager. update() ≈ Update(),
-   render() ≈ your draw pass. dt = seconds since last frame.
+   render() ≈ draw pass. dt = seconds since last frame.
    ========================================================================= */
 
 import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
+import { Enemy, Spawner } from "./enemies.js";
+import { circlesOverlap } from "./utils.js";
 import { drawTitle, drawHUD, drawGameOver } from "./ui.js";
 
 const STATE = {
@@ -25,6 +29,10 @@ const STATE = {
   // LEVEL_UP: "levelUp",   // Phase 5
   // VICTORY: "victory",    // Phase 6
 };
+
+// TEMPORARY Phase 3 feedback: points per kill. Phase 4 ties score/XP to the
+// currency pickups enemies drop, so this will move there.
+const SCORE_PER_KILL = 10;
 
 export class Game {
   constructor(width, height) {
@@ -37,22 +45,11 @@ export class Game {
     this.player = new Player(width / 2, height / 2);
     this.familiar = new Familiar(width / 2 - 22, height / 2 - 22);
 
-    // --- TEMPORARY PHASE 2 SCAFFOLDING ---------------------------------
-    // Stationary "practice dummies" so we can watch the cat target + fire.
-    // These are NOT enemies. REMOVE this whole concept in Phase 3 and pass
-    // the real enemy list to familiar.update() instead.
-    this.dummies = [];
+    this.enemies = [];
+    this.spawner = new Spawner(1.5, 8); // every 1.5s, up to 8 alive
 
     this.score = 0;
     this.wave = 1; // placeholder; real wave logic is Phase 6
-  }
-
-  // Build a fresh set of practice dummies. (Temporary — Phase 2 only.)
-  spawnDummies() {
-    this.dummies = [
-      { x: 720, y: 170, radius: 16, dead: false, hitFlash: 0 },
-      { x: 260, y: 380, radius: 16, dead: false, hitFlash: 0 },
-    ];
   }
 
   // Start (or restart) a fresh playthrough.
@@ -61,7 +58,8 @@ export class Game {
     this.wave = 1;
     this.player.reset(this.width / 2, this.height / 2);
     this.familiar.reset(this.width / 2 - 22, this.height / 2 - 22);
-    this.spawnDummies(); // TEMP Phase 2
+    this.enemies = [];
+    this.spawner.reset();
     this.state = STATE.PLAYING;
   }
 
@@ -77,22 +75,27 @@ export class Game {
       case STATE.PLAYING:
         this.player.update(dt, Input, this.bounds);
 
-        // Cat follows the witch and fires at the nearest dummy in range.
-        // (Phase 3: pass real enemies here instead of this.dummies.)
-        this.familiar.update(dt, this.player, this.dummies);
+        // Spawn new wisps over time (trickle, capped).
+        this.spawner.update(dt, this.enemies, this.bounds);
 
-        // Tick down each dummy's hit-flash timer. (TEMP Phase 2)
-        for (const d of this.dummies) {
-          if (d.hitFlash > 0) d.hitFlash -= dt;
+        // Move enemies toward the witch + contact damage.
+        for (const enemy of this.enemies) {
+          enemy.update(dt, this.player);
+          if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
+            this.player.takeDamage(enemy.damage); // ignored if i-frames active
+          }
         }
 
-        // --- TEMPORARY PHASE 1 DEBUG ---
-        // No enemies deal damage yet, so press K to simulate death and test
-        // the Game Over flow. REMOVE once Phase 3 adds real damage.
-        if (Input.wasPressed("KeyK")) {
-          this.player.health = 0;
-        }
+        // Cat follows the witch and fires at the nearest enemy (bolts deal damage).
+        this.familiar.update(dt, this.player, this.enemies);
 
+        // Award score for any enemy that died this frame, then clear the dead.
+        for (const enemy of this.enemies) {
+          if (enemy.dead) this.score += SCORE_PER_KILL;
+        }
+        this.enemies = this.enemies.filter((e) => !e.dead);
+
+        // Real Game Over.
         if (this.player.health <= 0) {
           this.state = STATE.GAME_OVER;
         }
@@ -117,43 +120,19 @@ export class Game {
 
       case STATE.PLAYING:
         this.drawArena(ctx);
-        this.drawDummies(ctx);     // TEMP Phase 2 (draw under characters)
-        this.familiar.draw(ctx);   // bolts + cat
+        for (const enemy of this.enemies) enemy.draw(ctx);
+        this.familiar.draw(ctx); // bolts + cat
         this.player.draw(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
         break;
 
       case STATE.GAME_OVER:
         this.drawArena(ctx);
-        this.drawDummies(ctx);
+        for (const enemy of this.enemies) enemy.draw(ctx);
         this.familiar.draw(ctx);
         this.player.draw(ctx);
         drawGameOver(ctx, this.width, this.height, this.hudState());
         break;
-    }
-  }
-
-  // --- TEMPORARY PHASE 2: draw the practice dummies. Delete in Phase 3. --
-  drawDummies(ctx) {
-    for (const d of this.dummies) {
-      if (d.dead) continue;
-      ctx.save();
-
-      // Flash brighter briefly when a bolt connects.
-      const hit = d.hitFlash > 0;
-      ctx.fillStyle = hit ? "#ffd27a" : "#6b6480";
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Thin ring so it clearly reads as a "target dummy".
-      ctx.strokeStyle = "rgba(244,213,141,0.6)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(d.x, d.y, d.radius + 4, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.restore();
     }
   }
 

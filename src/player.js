@@ -1,14 +1,11 @@
 /* =========================================================================
-   player.js — the witch (placeholder shape for now: a purple circle).
+   player.js — the witch (placeholder shape: a purple circle with a hat notch).
 
-   Phase 1 responsibilities:
-     - Move with WASD / Arrow Keys
-     - Stay inside the arena
-     - Hold a health value (no damage yet — enemies come in Phase 3)
+   Phase 1: move + stay in bounds + hold health.
+   Phase 3: takeDamage() with invulnerability frames (i-frames) so a single
+            touch doesn't drain you instantly, plus a flicker while invulnerable.
 
-   Later phases will add: taking damage, invulnerability flash, sprite, etc.
-   The hooks (health, invulnTimer, radius) are already here so we don't have
-   to rewrite this file later.
+   Later: sprite, etc. (the draw() is the only thing that changes for art.)
    ========================================================================= */
 
 import { clamp } from "./utils.js";
@@ -19,14 +16,17 @@ export class Player {
     this.x = x;
     this.y = y;
 
-    this.radius = 16;          // used for drawing now, collisions later
+    this.radius = 16;          // used for drawing + collisions
     this.speed = 220;          // pixels per SECOND (frame-rate independent)
     this.color = "#9b6cff";    // placeholder purple
 
-    // Health system (display only in Phase 1).
+    // Health system.
     this.maxHealth = 100;
     this.health = 100;
-    this.invulnTimer = 0;      // seconds of i-frames remaining (used in Phase 3)
+
+    // Invulnerability after taking a hit.
+    this.invulnDuration = 1.0; // seconds of i-frames per hit
+    this.invulnTimer = 0;      // seconds remaining (0 = can be hit)
   }
 
   // dt = delta time in seconds. bounds = { width, height } of the arena.
@@ -40,16 +40,36 @@ export class Player {
     this.x = clamp(this.x, this.radius, bounds.width - this.radius);
     this.y = clamp(this.y, this.radius, bounds.height - this.radius);
 
-    // Count down i-frames (no effect yet, ready for Phase 3).
+    // Count down i-frames.
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
   }
 
+  // Apply damage, but only if not currently invulnerable.
+  // Returns true if the hit landed (useful for sfx/feedback later).
+  takeDamage(amount) {
+    if (this.invulnTimer > 0) return false; // ignore during i-frames
+    this.health -= amount;
+    if (this.health < 0) this.health = 0;
+    this.invulnTimer = this.invulnDuration; // start i-frames
+    return true;
+  }
+
+  // Convenience: am I currently invulnerable?
+  get isInvulnerable() {
+    return this.invulnTimer > 0;
+  }
+
   draw(ctx) {
-    // Placeholder body: a glowing purple circle with a small "hat" notch on top
-    // so it reads as a character and you can tell which way is "up".
     ctx.save();
 
-    // Soft glow.
+    // Flicker while invulnerable so the player can SEE the i-frames.
+    // Toggles roughly every 0.1s between visible and faint.
+    if (this.invulnTimer > 0) {
+      const blinkOn = Math.floor(this.invulnTimer * 10) % 2 === 0;
+      ctx.globalAlpha = blinkOn ? 0.35 : 1;
+    }
+
+    // Soft glow body.
     ctx.shadowColor = this.color;
     ctx.shadowBlur = 14;
 
@@ -58,7 +78,7 @@ export class Player {
     ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
     ctx.fill();
 
-    // Little hat triangle (purely cosmetic placeholder).
+    // Little hat triangle (cosmetic placeholder).
     ctx.shadowBlur = 0;
     ctx.fillStyle = "#5b3aa6";
     ctx.beginPath();

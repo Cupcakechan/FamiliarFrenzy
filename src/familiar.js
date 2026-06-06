@@ -104,10 +104,9 @@ export class Familiar {
         if (target.dead) continue;
         if (distance(bolt.x, bolt.y, target.x, target.y) < bolt.radius + target.radius) {
           bolt.dead = true;
-          target.hitFlash = 0.12; // brief flash so a hit is visible (Phase 2 feedback)
-          // PHASE 3 HOOK: this is where damage will be applied, e.g.
-          //   target.health -= this.damage;
-          //   if (target.health <= 0) target.dead = true;
+          // Phase 3: bolts now deal real damage. Enemy.takeDamage handles the
+          // hit-flash and marks the enemy dead when its health runs out.
+          target.takeDamage(this.damage);
           break; // one bolt hits one target
         }
       }
