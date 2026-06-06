@@ -1,26 +1,26 @@
 /* =========================================================================
    game.js — the state machine + owner of all the game objects.
 
-   States (Phase 1–3):
+   States (Phase 1–4):
         title  --ENTER-->  playing
         playing  --(health hits 0)-->  gameOver
         gameOver  --R-->  playing (fresh game)
 
-   Phase 3 adds: real enemies (Cursed Wisps) via a trickle Spawner, contact
-   damage to the witch, the cat's bolts killing enemies, score per kill, and
-   a real Game Over driven by the HP bar. The Phase 2 practice dummies and the
-   Phase 1 debug "K" key are now GONE.
+   Phase 4 adds: enemies drop currency MOTES on death, the witch collects them
+   by walking over them, collecting grants XP + score, and filling the XP bar
+   LEVELS YOU UP (with a "LEVEL UP!" flash). The actual upgrade CHOICE screen
+   is Phase 5 — for now leveling just bumps the level and flashes.
 
-   Unity analogy: this class is like a GameManager. update() ≈ Update(),
-   render() ≈ draw pass. dt = seconds since last frame.
+   dt = seconds since last frame.
    ========================================================================= */
 
 import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, Spawner } from "./enemies.js";
+import { Pickup } from "./pickups.js";
 import { circlesOverlap } from "./utils.js";
-import { drawTitle, drawHUD, drawGameOver } from "./ui.js";
+import { drawTitle, drawHUD, drawGameOver, drawLevelUpFlash } from "./ui.js";
 
 const STATE = {
   TITLE: "title",
@@ -30,9 +30,8 @@ const STATE = {
   // VICTORY: "victory",    // Phase 6
 };
 
-// TEMPORARY Phase 3 feedback: points per kill. Phase 4 ties score/XP to the
-// currency pickups enemies drop, so this will move there.
-const SCORE_PER_KILL = 10;
+const SCORE_PER_PICKUP = 10;       // score gained per mote collected
+const LEVEL_UP_FLASH_DURATION = 1.2; // seconds the "LEVEL UP!" text shows
 
 export class Game {
   constructor(width, height) {
@@ -46,13 +45,19 @@ export class Game {
     this.familiar = new Familiar(width / 2 - 22, height / 2 - 22);
 
     this.enemies = [];
-    this.spawner = new Spawner(1.5, 8); // every 1.5s, up to 8 alive
+    this.spawner = new Spawner(1.5, 8);
+    this.pickups = [];
 
     this.score = 0;
     this.wave = 1; // placeholder; real wave logic is Phase 6
+
+    // XP / leveling.
+    this.xp = 0;
+    this.level = 1;
+    this.xpToNext = 5;        // level 1 threshold (then +3 per level)
+    this.levelUpFlash = 0;    // countdown timer for the flash text
   }
 
-  // Start (or restart) a fresh playthrough.
   startGame() {
     this.score = 0;
     this.wave = 1;
@@ -60,6 +65,13 @@ export class Game {
     this.familiar.reset(this.width / 2 - 22, this.height / 2 - 22);
     this.enemies = [];
     this.spawner.reset();
+    this.pickups = [];
+
+    this.xp = 0;
+    this.level = 1;
+    this.xpToNext = 5;
+    this.levelUpFlash = 0;
+
     this.state = STATE.PLAYING;
   }
 
@@ -75,27 +87,38 @@ export class Game {
       case STATE.PLAYING:
         this.player.update(dt, Input, this.bounds);
 
-        // Spawn new wisps over time (trickle, capped).
         this.spawner.update(dt, this.enemies, this.bounds);
 
-        // Move enemies toward the witch + contact damage.
+        // Enemies chase + contact damage.
         for (const enemy of this.enemies) {
           enemy.update(dt, this.player);
           if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
-            this.player.takeDamage(enemy.damage); // ignored if i-frames active
+            this.player.takeDamage(enemy.damage);
           }
         }
 
-        // Cat follows the witch and fires at the nearest enemy (bolts deal damage).
+        // Cat fires; bolts damage enemies.
         this.familiar.update(dt, this.player, this.enemies);
 
-        // Award score for any enemy that died this frame, then clear the dead.
+        // Dead enemies DROP a mote, then are removed.
         for (const enemy of this.enemies) {
-          if (enemy.dead) this.score += SCORE_PER_KILL;
+          if (enemy.dead) this.pickups.push(new Pickup(enemy.x, enemy.y));
         }
         this.enemies = this.enemies.filter((e) => !e.dead);
 
-        // Real Game Over.
+        // Update + collect pickups.
+        for (const pickup of this.pickups) {
+          pickup.update(dt);
+          // A little collection grace (+6) so walking near grabs it.
+          if (circlesOverlap(pickup.x, pickup.y, pickup.radius + 6, this.player.x, this.player.y, this.player.radius)) {
+            pickup.dead = true;
+            this.collectPickup(pickup);
+          }
+        }
+        this.pickups = this.pickups.filter((p) => !p.dead);
+
+        if (this.levelUpFlash > 0) this.levelUpFlash -= dt;
+
         if (this.player.health <= 0) {
           this.state = STATE.GAME_OVER;
         }
@@ -106,6 +129,23 @@ export class Game {
           this.startGame();
         }
         break;
+    }
+  }
+
+  // Grant XP + score, and handle leveling up.
+  collectPickup(pickup) {
+    this.xp += pickup.value;
+    this.score += SCORE_PER_PICKUP;
+
+    // `while` in case a single collect crosses a threshold (and for future
+    // bigger pickups). Excess XP carries into the next level.
+    while (this.xp >= this.xpToNext) {
+      this.xp -= this.xpToNext;
+      this.level += 1;
+      this.xpToNext += 3;
+      this.levelUpFlash = LEVEL_UP_FLASH_DURATION;
+      // PHASE 5 HOOK: instead of just flashing, this is where we'll switch to
+      // a LEVEL_UP state, pause the game, and show the upgrade card.
     }
   }
 
@@ -120,14 +160,19 @@ export class Game {
 
       case STATE.PLAYING:
         this.drawArena(ctx);
+        for (const pickup of this.pickups) pickup.draw(ctx);
         for (const enemy of this.enemies) enemy.draw(ctx);
-        this.familiar.draw(ctx); // bolts + cat
+        this.familiar.draw(ctx);
         this.player.draw(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
+        if (this.levelUpFlash > 0) {
+          drawLevelUpFlash(ctx, this.width, this.height, this.levelUpFlash, LEVEL_UP_FLASH_DURATION);
+        }
         break;
 
       case STATE.GAME_OVER:
         this.drawArena(ctx);
+        for (const pickup of this.pickups) pickup.draw(ctx);
         for (const enemy of this.enemies) enemy.draw(ctx);
         this.familiar.draw(ctx);
         this.player.draw(ctx);
@@ -136,7 +181,6 @@ export class Game {
     }
   }
 
-  // A subtle top-down arena floor with a grid so movement is readable.
   drawArena(ctx) {
     ctx.fillStyle = "#161430";
     ctx.fillRect(0, 0, this.width, this.height);
@@ -164,6 +208,9 @@ export class Game {
       maxHealth: this.player.maxHealth,
       score: this.score,
       wave: this.wave,
+      xp: this.xp,
+      xpToNext: this.xpToNext,
+      level: this.level,
     };
   }
 }

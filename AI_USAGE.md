@@ -35,3 +35,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-06  | Phase 1 | Project setup + playable skeleton | Claude |
 | 2026-06-06 | Phase 2 | Cat familiar: follows witch + auto-fires bolts | Claude |
 | 2026-06-06 | Phase 3 | Cursed Wisp enemies, spawner, player damage/i-frames, bolt kills | Claude |
+| 2026-06-06 | Phase 4 | Currency mote drops, collection, XP bar + level-up trigger | Claude |
