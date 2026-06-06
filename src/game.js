@@ -1,17 +1,17 @@
 /* =========================================================================
    game.js — the state machine + owner of all the game objects.
 
-   States (Phase 1–5):
+   States (Phase 1–6 = full MVP):
         title    --ENTER-->            playing
-        playing  --(XP bar fills)-->   levelUp   (game PAUSES)
-        levelUp  --(pick upgrade)-->   playing   (resumes; upgrade applied)
+        playing  --(XP bar fills)-->   levelUp   (PAUSES)
+        levelUp  --(pick upgrade)-->   playing
         playing  --(health hits 0)-->  gameOver
-        gameOver --R-->                playing   (fresh game)
+        playing  --(clear wave 10)-->  victory
+        gameOver --R-->                playing
+        victory  --R-->                playing
 
-   Phase 5 adds: the levelUp state. When the XP bar fills, everything freezes
-   and an upgrade card appears. Confirming applies the upgrade (e.g. Sharper
-   Claws → familiar damage +1) and resumes. Level-ups are QUEUED, so crossing
-   two thresholds shows two cards in a row, never a skip.
+   Phase 6 adds: the WaveManager (escalating waves with a between-wave
+   intermission banner) and the VICTORY state when all 10 waves are cleared.
 
    dt = seconds since last frame.
    ========================================================================= */
@@ -19,22 +19,23 @@
 import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
-import { Enemy, Spawner } from "./enemies.js";
+import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup } from "./pickups.js";
 import { getOffers } from "./upgrades.js";
 import { circlesOverlap } from "./utils.js";
-import { drawTitle, drawHUD, drawUpgradeScreen, drawGameOver } from "./ui.js";
+import { drawTitle, drawHUD, drawUpgradeScreen, drawWaveBanner, drawVictory, drawGameOver } from "./ui.js";
 
 const STATE = {
   TITLE: "title",
   PLAYING: "playing",
   LEVEL_UP: "levelUp",
   GAME_OVER: "gameOver",
-  // VICTORY: "victory",  // Phase 6
+  VICTORY: "victory",
 };
 
 const SCORE_PER_PICKUP = 10;
-const OFFER_COUNT = 1; // how many upgrade cards to show (1 for now; raise later)
+const OFFER_COUNT = 1;
+const MAX_WAVES = 10;
 
 export class Game {
   constructor(width, height) {
@@ -48,29 +49,25 @@ export class Game {
     this.familiar = new Familiar(width / 2 - 22, height / 2 - 22);
 
     this.enemies = [];
-    this.spawner = new Spawner(1.5, 8);
+    this.waveManager = new WaveManager(MAX_WAVES);
     this.pickups = [];
 
     this.score = 0;
-    this.wave = 1; // placeholder; Phase 6
 
-    // XP / leveling.
     this.xp = 0;
     this.level = 1;
     this.xpToNext = 5;
 
-    // Level-up queue + the cards currently being offered.
     this.pendingLevelUps = 0;
     this.offers = [];
   }
 
   startGame() {
     this.score = 0;
-    this.wave = 1;
     this.player.reset(this.width / 2, this.height / 2);
     this.familiar.reset(this.width / 2 - 22, this.height / 2 - 22);
     this.enemies = [];
-    this.spawner.reset();
+    this.waveManager.reset();
     this.pickups = [];
 
     this.xp = 0;
@@ -100,6 +97,7 @@ export class Game {
         break;
 
       case STATE.GAME_OVER:
+      case STATE.VICTORY:
         if (Input.wasPressed("KeyR")) {
           this.startGame();
         }
@@ -110,9 +108,9 @@ export class Game {
   updatePlaying(dt) {
     this.player.update(dt, Input, this.bounds);
 
-    this.spawner.update(dt, this.enemies, this.bounds);
+    // Waves: spawn this wave's enemies, run intermissions, flag victory.
+    this.waveManager.update(dt, this.enemies, this.bounds);
 
-    // Enemies chase + contact damage.
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player);
       if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
@@ -120,16 +118,13 @@ export class Game {
       }
     }
 
-    // Cat fires; bolts damage enemies.
     this.familiar.update(dt, this.player, this.enemies);
 
-    // Dead enemies drop a mote, then are removed.
     for (const enemy of this.enemies) {
       if (enemy.dead) this.pickups.push(new Pickup(enemy.x, enemy.y));
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
 
-    // Collect pickups (XP + score + queue level-ups).
     for (const pickup of this.pickups) {
       pickup.update(dt);
       if (circlesOverlap(pickup.x, pickup.y, pickup.radius + 6, this.player.x, this.player.y, this.player.radius)) {
@@ -139,20 +134,21 @@ export class Game {
     }
     this.pickups = this.pickups.filter((p) => !p.dead);
 
-    // Game over takes priority over a level-up that happened the same frame.
+    // Priority: death, then victory, then a level-up.
     if (this.player.health <= 0) {
       this.state = STATE.GAME_OVER;
       return;
     }
-
-    // If we leveled up, pause and open the upgrade screen.
+    if (this.waveManager.victory) {
+      this.state = STATE.VICTORY;
+      return;
+    }
     if (this.pendingLevelUps > 0) {
       this.offers = getOffers(OFFER_COUNT);
       this.state = STATE.LEVEL_UP;
     }
   }
 
-  // Paused state: wait for the player to pick an upgrade.
   updateLevelUp() {
     let chosen = -1;
     if (Input.wasPressed("Enter") || Input.wasPressed("NumpadEnter")) chosen = 0;
@@ -170,14 +166,13 @@ export class Game {
     this.pendingLevelUps -= 1;
 
     if (this.pendingLevelUps > 0) {
-      this.offers = getOffers(OFFER_COUNT); // queue up the next card
+      this.offers = getOffers(OFFER_COUNT);
     } else {
       this.offers = [];
-      this.state = STATE.PLAYING; // resume right where we froze
+      this.state = STATE.PLAYING;
     }
   }
 
-  // Grant XP + score; queue a level-up each time the threshold is crossed.
   collectPickup(pickup) {
     this.xp += pickup.value;
     this.score += SCORE_PER_PICKUP;
@@ -202,13 +197,21 @@ export class Game {
       case STATE.PLAYING:
         this.drawWorld(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
+        // Between-wave banner (player can still move during the breather).
+        if (this.waveManager.phase === "intermission") {
+          drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer);
+        }
         break;
 
       case STATE.LEVEL_UP:
-        // Draw the frozen world + HUD, then the upgrade overlay on top.
         this.drawWorld(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
         drawUpgradeScreen(ctx, this.width, this.height, this.offers);
+        break;
+
+      case STATE.VICTORY:
+        this.drawWorld(ctx);
+        drawVictory(ctx, this.width, this.height, this.hudState());
         break;
 
       case STATE.GAME_OVER:
@@ -218,7 +221,6 @@ export class Game {
     }
   }
 
-  // Draw the whole arena + entities (shared by playing / levelUp / gameOver).
   drawWorld(ctx) {
     this.drawArena(ctx);
     for (const pickup of this.pickups) pickup.draw(ctx);
@@ -253,7 +255,8 @@ export class Game {
       health: this.player.health,
       maxHealth: this.player.maxHealth,
       score: this.score,
-      wave: this.wave,
+      wave: this.waveManager.displayWave,
+      maxWaves: this.waveManager.maxWaves,
       xp: this.xp,
       xpToNext: this.xpToNext,
       level: this.level,

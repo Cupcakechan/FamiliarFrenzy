@@ -149,6 +149,40 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
   ctx.globalAlpha = 1;
 }
 
+// --- WAVE BANNER (during the between-wave intermission) -------------------
+export function drawWaveBanner(ctx, w, h, wave, timer) {
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+  ctx.save();
+  ctx.globalAlpha = pulse;
+  text(ctx, `WAVE ${wave}`, w / 2, h / 2 - 20, { size: 52, color: GOLD });
+  ctx.globalAlpha = 1;
+  text(ctx, "Get ready...", w / 2, h / 2 + 30, { size: 22, color: DIM, weight: "500" });
+  ctx.restore();
+}
+
+// --- VICTORY --------------------------------------------------------------
+export function drawVictory(ctx, w, h, state) {
+  ctx.fillStyle = "rgba(8, 7, 18, 0.85)";
+  ctx.fillRect(0, 0, w, h);
+
+  // A warm glow behind the message.
+  ctx.save();
+  ctx.fillStyle = "rgba(244, 213, 141, 0.10)";
+  ctx.beginPath();
+  ctx.arc(w / 2, h / 2 - 20, 170, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  text(ctx, "YOU SURVIVED!", w / 2, h / 2 - 50, { size: 54, color: GOLD });
+  text(ctx, `All ${state.maxWaves} waves cleared`, w / 2, h / 2 + 6, { size: 22, color: DIM, weight: "500" });
+  text(ctx, `Final Score: ${state.score}`, w / 2, h / 2 + 44, { size: 24, color: GOLD });
+
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+  ctx.globalAlpha = pulse;
+  text(ctx, "Press R to play again", w / 2, h / 2 + 96, { size: 22, color: PURPLE });
+  ctx.globalAlpha = 1;
+}
+
 // --- GAME OVER ------------------------------------------------------------
 export function drawGameOver(ctx, w, h, state) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.82)";
@@ -156,9 +190,10 @@ export function drawGameOver(ctx, w, h, state) {
 
   text(ctx, "GAME OVER", w / 2, h / 2 - 50, { size: 56, color: RED });
   text(ctx, `Final Score: ${state.score}`, w / 2, h / 2 + 10, { size: 24, color: GOLD });
+  text(ctx, `Reached Wave ${state.wave}`, w / 2, h / 2 + 44, { size: 20, color: DIM, weight: "500" });
 
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, "Press R to try again", w / 2, h / 2 + 70, { size: 24, color: PURPLE });
+  text(ctx, "Press R to try again", w / 2, h / 2 + 90, { size: 24, color: PURPLE });
   ctx.globalAlpha = 1;
 }
