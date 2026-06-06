@@ -25,12 +25,12 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 - _(Add more design decisions as the project grows.)_
 
 ## Major AI-assisted features
-- _(Log significant systems Claude helped build as phases complete.)_
-
+- _Phase 2 cat familiar — follow behavior and automatic bolt attacks (Claude)_
 ---
 
 ### Log
 
 | Date | Phase | What was done | AI tool |
 | --- | --- | --- | --- |
-| _TBD_ | Phase 1 | Project setup + playable skeleton | Claude |
+| 2026-06-06  | Phase 1 | Project setup + playable skeleton | Claude |
+| 2026-06-06 | Phase 2 | Cat familiar: follows witch + auto-fires bolts | Claude |
