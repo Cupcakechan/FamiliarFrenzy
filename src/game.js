@@ -1,15 +1,17 @@
 /* =========================================================================
    game.js — the state machine + owner of all the game objects.
 
-   States (Phase 1–4):
-        title  --ENTER-->  playing
+   States (Phase 1–5):
+        title    --ENTER-->            playing
+        playing  --(XP bar fills)-->   levelUp   (game PAUSES)
+        levelUp  --(pick upgrade)-->   playing   (resumes; upgrade applied)
         playing  --(health hits 0)-->  gameOver
-        gameOver  --R-->  playing (fresh game)
+        gameOver --R-->                playing   (fresh game)
 
-   Phase 4 adds: enemies drop currency MOTES on death, the witch collects them
-   by walking over them, collecting grants XP + score, and filling the XP bar
-   LEVELS YOU UP (with a "LEVEL UP!" flash). The actual upgrade CHOICE screen
-   is Phase 5 — for now leveling just bumps the level and flashes.
+   Phase 5 adds: the levelUp state. When the XP bar fills, everything freezes
+   and an upgrade card appears. Confirming applies the upgrade (e.g. Sharper
+   Claws → familiar damage +1) and resumes. Level-ups are QUEUED, so crossing
+   two thresholds shows two cards in a row, never a skip.
 
    dt = seconds since last frame.
    ========================================================================= */
@@ -19,19 +21,20 @@ import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, Spawner } from "./enemies.js";
 import { Pickup } from "./pickups.js";
+import { getOffers } from "./upgrades.js";
 import { circlesOverlap } from "./utils.js";
-import { drawTitle, drawHUD, drawGameOver, drawLevelUpFlash } from "./ui.js";
+import { drawTitle, drawHUD, drawUpgradeScreen, drawGameOver } from "./ui.js";
 
 const STATE = {
   TITLE: "title",
   PLAYING: "playing",
+  LEVEL_UP: "levelUp",
   GAME_OVER: "gameOver",
-  // LEVEL_UP: "levelUp",   // Phase 5
-  // VICTORY: "victory",    // Phase 6
+  // VICTORY: "victory",  // Phase 6
 };
 
-const SCORE_PER_PICKUP = 10;       // score gained per mote collected
-const LEVEL_UP_FLASH_DURATION = 1.2; // seconds the "LEVEL UP!" text shows
+const SCORE_PER_PICKUP = 10;
+const OFFER_COUNT = 1; // how many upgrade cards to show (1 for now; raise later)
 
 export class Game {
   constructor(width, height) {
@@ -49,13 +52,16 @@ export class Game {
     this.pickups = [];
 
     this.score = 0;
-    this.wave = 1; // placeholder; real wave logic is Phase 6
+    this.wave = 1; // placeholder; Phase 6
 
     // XP / leveling.
     this.xp = 0;
     this.level = 1;
-    this.xpToNext = 5;        // level 1 threshold (then +3 per level)
-    this.levelUpFlash = 0;    // countdown timer for the flash text
+    this.xpToNext = 5;
+
+    // Level-up queue + the cards currently being offered.
+    this.pendingLevelUps = 0;
+    this.offers = [];
   }
 
   startGame() {
@@ -70,7 +76,8 @@ export class Game {
     this.xp = 0;
     this.level = 1;
     this.xpToNext = 5;
-    this.levelUpFlash = 0;
+    this.pendingLevelUps = 0;
+    this.offers = [];
 
     this.state = STATE.PLAYING;
   }
@@ -85,43 +92,11 @@ export class Game {
         break;
 
       case STATE.PLAYING:
-        this.player.update(dt, Input, this.bounds);
+        this.updatePlaying(dt);
+        break;
 
-        this.spawner.update(dt, this.enemies, this.bounds);
-
-        // Enemies chase + contact damage.
-        for (const enemy of this.enemies) {
-          enemy.update(dt, this.player);
-          if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
-            this.player.takeDamage(enemy.damage);
-          }
-        }
-
-        // Cat fires; bolts damage enemies.
-        this.familiar.update(dt, this.player, this.enemies);
-
-        // Dead enemies DROP a mote, then are removed.
-        for (const enemy of this.enemies) {
-          if (enemy.dead) this.pickups.push(new Pickup(enemy.x, enemy.y));
-        }
-        this.enemies = this.enemies.filter((e) => !e.dead);
-
-        // Update + collect pickups.
-        for (const pickup of this.pickups) {
-          pickup.update(dt);
-          // A little collection grace (+6) so walking near grabs it.
-          if (circlesOverlap(pickup.x, pickup.y, pickup.radius + 6, this.player.x, this.player.y, this.player.radius)) {
-            pickup.dead = true;
-            this.collectPickup(pickup);
-          }
-        }
-        this.pickups = this.pickups.filter((p) => !p.dead);
-
-        if (this.levelUpFlash > 0) this.levelUpFlash -= dt;
-
-        if (this.player.health <= 0) {
-          this.state = STATE.GAME_OVER;
-        }
+      case STATE.LEVEL_UP:
+        this.updateLevelUp();
         break;
 
       case STATE.GAME_OVER:
@@ -132,20 +107,86 @@ export class Game {
     }
   }
 
-  // Grant XP + score, and handle leveling up.
+  updatePlaying(dt) {
+    this.player.update(dt, Input, this.bounds);
+
+    this.spawner.update(dt, this.enemies, this.bounds);
+
+    // Enemies chase + contact damage.
+    for (const enemy of this.enemies) {
+      enemy.update(dt, this.player);
+      if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
+        this.player.takeDamage(enemy.damage);
+      }
+    }
+
+    // Cat fires; bolts damage enemies.
+    this.familiar.update(dt, this.player, this.enemies);
+
+    // Dead enemies drop a mote, then are removed.
+    for (const enemy of this.enemies) {
+      if (enemy.dead) this.pickups.push(new Pickup(enemy.x, enemy.y));
+    }
+    this.enemies = this.enemies.filter((e) => !e.dead);
+
+    // Collect pickups (XP + score + queue level-ups).
+    for (const pickup of this.pickups) {
+      pickup.update(dt);
+      if (circlesOverlap(pickup.x, pickup.y, pickup.radius + 6, this.player.x, this.player.y, this.player.radius)) {
+        pickup.dead = true;
+        this.collectPickup(pickup);
+      }
+    }
+    this.pickups = this.pickups.filter((p) => !p.dead);
+
+    // Game over takes priority over a level-up that happened the same frame.
+    if (this.player.health <= 0) {
+      this.state = STATE.GAME_OVER;
+      return;
+    }
+
+    // If we leveled up, pause and open the upgrade screen.
+    if (this.pendingLevelUps > 0) {
+      this.offers = getOffers(OFFER_COUNT);
+      this.state = STATE.LEVEL_UP;
+    }
+  }
+
+  // Paused state: wait for the player to pick an upgrade.
+  updateLevelUp() {
+    let chosen = -1;
+    if (Input.wasPressed("Enter") || Input.wasPressed("NumpadEnter")) chosen = 0;
+    else if (Input.wasPressed("Digit1") || Input.wasPressed("Numpad1")) chosen = 0;
+    else if (Input.wasPressed("Digit2") || Input.wasPressed("Numpad2")) chosen = 1;
+    else if (Input.wasPressed("Digit3") || Input.wasPressed("Numpad3")) chosen = 2;
+
+    if (chosen >= 0 && chosen < this.offers.length) {
+      this.applyUpgrade(chosen);
+    }
+  }
+
+  applyUpgrade(index) {
+    this.offers[index].apply(this);
+    this.pendingLevelUps -= 1;
+
+    if (this.pendingLevelUps > 0) {
+      this.offers = getOffers(OFFER_COUNT); // queue up the next card
+    } else {
+      this.offers = [];
+      this.state = STATE.PLAYING; // resume right where we froze
+    }
+  }
+
+  // Grant XP + score; queue a level-up each time the threshold is crossed.
   collectPickup(pickup) {
     this.xp += pickup.value;
     this.score += SCORE_PER_PICKUP;
 
-    // `while` in case a single collect crosses a threshold (and for future
-    // bigger pickups). Excess XP carries into the next level.
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level += 1;
       this.xpToNext += 3;
-      this.levelUpFlash = LEVEL_UP_FLASH_DURATION;
-      // PHASE 5 HOOK: instead of just flashing, this is where we'll switch to
-      // a LEVEL_UP state, pause the game, and show the upgrade card.
+      this.pendingLevelUps += 1;
     }
   }
 
@@ -159,26 +200,31 @@ export class Game {
         break;
 
       case STATE.PLAYING:
-        this.drawArena(ctx);
-        for (const pickup of this.pickups) pickup.draw(ctx);
-        for (const enemy of this.enemies) enemy.draw(ctx);
-        this.familiar.draw(ctx);
-        this.player.draw(ctx);
+        this.drawWorld(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
-        if (this.levelUpFlash > 0) {
-          drawLevelUpFlash(ctx, this.width, this.height, this.levelUpFlash, LEVEL_UP_FLASH_DURATION);
-        }
+        break;
+
+      case STATE.LEVEL_UP:
+        // Draw the frozen world + HUD, then the upgrade overlay on top.
+        this.drawWorld(ctx);
+        drawHUD(ctx, this.width, this.height, this.hudState());
+        drawUpgradeScreen(ctx, this.width, this.height, this.offers);
         break;
 
       case STATE.GAME_OVER:
-        this.drawArena(ctx);
-        for (const pickup of this.pickups) pickup.draw(ctx);
-        for (const enemy of this.enemies) enemy.draw(ctx);
-        this.familiar.draw(ctx);
-        this.player.draw(ctx);
+        this.drawWorld(ctx);
         drawGameOver(ctx, this.width, this.height, this.hudState());
         break;
     }
+  }
+
+  // Draw the whole arena + entities (shared by playing / levelUp / gameOver).
+  drawWorld(ctx) {
+    this.drawArena(ctx);
+    for (const pickup of this.pickups) pickup.draw(ctx);
+    for (const enemy of this.enemies) enemy.draw(ctx);
+    this.familiar.draw(ctx);
+    this.player.draw(ctx);
   }
 
   drawArena(ctx) {
