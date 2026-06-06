@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Familiar Frenzy</title>
+
+  <!-- A distinctive display font for the title screen (loaded from Google Fonts).
+       If offline, the browser falls back to a generic serif — the game still runs. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- The wrapper just centers the canvas on the page. -->
+  <div id="game-wrapper">
+    <!-- The canvas IS the game. Everything is drawn here.
+         Fixed internal resolution = 960x540. CSS may scale how big it LOOKS,
+         but the drawing coordinates always stay 960x540. -->
+    <canvas id="game-canvas" width="960" height="540"></canvas>
+  </div>
+
+  <!--
+    We use ES modules (type="module"). main.js imports every other src file.
+    IMPORTANT: modules only work when the page is SERVED over http://, not when
+    you double-click the file (file://). See README.md for the one-line command
+    to start a local server.
+  -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

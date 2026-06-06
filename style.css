@@ -1,0 +1,73 @@
+/* =========================================================================
+   Familiar Frenzy — style.css
+   The page itself is intentionally minimal: the canvas does all the work.
+   Theme: cozy-arcane — deep indigo night, moonlit gold accents.
+   ========================================================================= */
+
+:root {
+  --bg-deep:   #0b0a18; /* page background, darkest */
+  --bg-frame:  #14122a; /* area just around the canvas */
+  --edge:      #2a2350; /* canvas border */
+  --gold:      #f4d58d; /* accent / glow */
+  --glow:      rgba(244, 213, 141, 0.25);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  /* Center the game both horizontally and vertically. */
+  display: grid;
+  place-items: center;
+
+  /* Subtle radial vignette so the canvas feels like it floats in a dark room. */
+  background:
+    radial-gradient(circle at 50% 35%, var(--bg-frame) 0%, var(--bg-deep) 70%);
+
+  /* No accidental text selection / drag highlighting while playing. */
+  user-select: none;
+  -webkit-user-select: none;
+
+  font-family: "Cinzel", Georgia, serif;
+  color: var(--gold);
+  overflow: hidden;
+}
+
+#game-wrapper {
+  /* Soft glow + crisp border frames the play area. */
+  padding: 10px;
+  border-radius: 6px;
+  background: var(--bg-frame);
+  border: 1px solid var(--edge);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.6),
+    0 24px 60px rgba(0, 0, 0, 0.7),
+    0 0 80px var(--glow);
+}
+
+#game-canvas {
+  display: block;
+  width: 960px;
+  height: 540px;
+  background: #000;
+  border-radius: 2px;
+
+  /* CRISP PIXEL ART:
+     Tells the browser NOT to blur the canvas when it is scaled.
+     (We also turn off smoothing in JS via ctx.imageSmoothingEnabled = false.) */
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* On small screens, let the canvas shrink to fit while keeping its shape. */
+@media (max-width: 1000px), (max-height: 620px) {
+  #game-canvas {
+    width: min(96vw, 170vh);   /* 960/540 ≈ 1.778 aspect ratio kept */
+    height: auto;
+    aspect-ratio: 16 / 9;
+  }
+}

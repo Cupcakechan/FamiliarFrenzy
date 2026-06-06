@@ -1,0 +1,22 @@
+# Familiar Frenzy — plain HTML/CSS/JS project (no build tools)
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor / IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# Logs
+*.log
+
+# Node is NOT used in this project, but ignore it just in case it sneaks in
+node_modules/
+
+# Local build/zip artifacts (the itch.io upload zip, etc.)
+*.zip
+dist/
+build/
