@@ -1,35 +1,32 @@
 /* =========================================================================
-   assets.js — a tiny image loader + cache with GRACEFUL FALLBACK.
+   assets.js — a tiny image loader with GRACEFUL FALLBACK.
 
-   The golden rule (from the design doc): the game must still run if a sprite
-   is missing. So loading never throws — if a file is absent or still loading,
-   isLoaded(key) stays false and the draw code falls back to placeholder shapes.
+   Why fallback matters: the game must keep running even if a sprite file is
+   missing or still loading. So getImage() returns the image ONLY once it has
+   fully loaded; until then (or if the file 404s) it returns null, and the
+   drawing code falls back to its placeholder shape.
 
    Usage:
-     Assets.loadImage("player_walk_s", "assets/sprites/player/walk_s.png");
-     const rec = Assets.getImage("player_walk_s");
-     if (rec && rec.loaded) ctx.drawImage(rec.img, ...);
+     loadImage("witch_walk_s", "assets/sprites/player/witch_walk_s.png");
+     const img = getImage("witch_walk_s");  // null until loaded, then the <img>
+
+   Single-row strips: slice at draw time with frameWidth = img.width / frames,
+   frameHeight = img.height. No pixel sizes need to be hard-coded.
    ========================================================================= */
 
-const cache = {}; // key -> { img: HTMLImageElement, loaded: boolean }
+const images = {};       // key -> HTMLImageElement
+const loadedFlags = {};  // key -> boolean (true only after onload fires)
 
 export function loadImage(key, src) {
-  if (cache[key]) return cache[key]; // already requested — don't reload
-
-  const record = { img: new Image(), loaded: false };
-  record.img.onload = () => { record.loaded = true; };
-  record.img.onerror = () => { record.loaded = false; }; // missing → fallback
-  record.img.src = src;
-
-  cache[key] = record;
-  return record;
+  const img = new Image();
+  img.onload = () => { loadedFlags[key] = true; };
+  img.onerror = () => { loadedFlags[key] = false; }; // missing file → stay on fallback
+  img.src = src;
+  images[key] = img;
+  if (!(key in loadedFlags)) loadedFlags[key] = false;
 }
 
+// Returns the loaded image, or null if it isn't ready / failed (→ use fallback).
 export function getImage(key) {
-  return cache[key] || null;
-}
-
-export function isLoaded(key) {
-  const r = cache[key];
-  return !!(r && r.loaded);
+  return loadedFlags[key] ? images[key] : null;
 }

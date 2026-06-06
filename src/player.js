@@ -1,48 +1,49 @@
 /* =========================================================================
    player.js — the witch.
 
-   Phase 7 (this step): animated sprite with 8-direction WALK + IDLE.
-     - Facing is read from movement (8 ways: s, n, e, w, se, ne, nw, sw).
-     - Walking plays the "walk" strip; standing still plays "idle".
-     - If a sprite isn't loaded yet (or is missing), falls back to the old
-       purple-circle placeholder, so the game always runs.
+   Phase 7 (this step): 4-direction sprite animation.
+     - Facing (N/S/E/W) is derived from movement; when you stop, the witch
+       keeps facing the last way and plays the IDLE animation.
+     - WALK animation plays while moving.
+     - Frames are sliced from single-row strips; frame size is read from the
+       image itself, so any art size just works.
+     - If a sprite isn't loaded yet (or is missing), we fall back to the old
+       purple placeholder circle — the game never breaks.
 
-   Frame size is auto-detected per sheet: each PNG is a single ROW of frames,
-   so frameWidth = image.width / frameCount and frameHeight = image.height.
+   Hurt + Die animations come in the next steps; their frame counts are listed
+   below already so adding them is a one-line change.
 
-   Hurt + Die animations are next — their config is stubbed below (commented).
+   Sprite files expected (single-row strips), in assets/sprites/player/:
+     witch_idle_n.png  witch_idle_s.png  witch_idle_e.png  witch_idle_w.png   (4 frames)
+     witch_walk_n.png  witch_walk_s.png  witch_walk_e.png  witch_walk_w.png   (6 frames)
    ========================================================================= */
 
 import { clamp } from "./utils.js";
-import * as Assets from "./assets.js";
+import { loadImage, getImage } from "./assets.js";
 
-const SPRITE_DIRS = ["s", "n", "e", "w", "se", "ne", "nw", "sw"];
+const DIRS = ["n", "s", "e", "w"];
 
-// Animation table: frame count + playback speed (fps) + whether it loops.
+// Animation name -> number of frames in its strip.
+// (hurt/die are listed for later; we only animate idle + walk for now.)
 const PLAYER_ANIMS = {
-  idle: { frames: 4, fps: 6,  loop: true },
-  walk: { frames: 6, fps: 12, loop: true },
-  // hurt: { frames: 7, fps: 14, loop: false }, // next step
-  // die:  { frames: 9, fps: 10, loop: false }, // later
+  idle: 4,
+  walk: 6,
+  // hurt: 7,  // next step
+  // die: 9,   // next step
 };
 
-// On-screen scale for the sprite. 1 = draw at the art's native pixel size.
-// Bump to 1.5 / 2 if the witch looks too small (tell me how it looks).
-const PLAYER_SPRITE_SCALE = 1;
+// Frames-per-second for each animation.
+const ANIM_FPS = {
+  idle: 5,
+  walk: 10,
+};
 
-// Convert a movement vector into one of the 8 compass directions.
-function dirFromVector(x, y) {
-  const sx = Math.sign(x); // -1, 0, or 1
-  const sy = Math.sign(y); // note: +y is DOWN on screen = south
-  if (sx === 0 && sy > 0) return "s";
-  if (sx > 0 && sy > 0) return "se";
-  if (sx > 0 && sy === 0) return "e";
-  if (sx > 0 && sy < 0) return "ne";
-  if (sx === 0 && sy < 0) return "n";
-  if (sx < 0 && sy < 0) return "nw";
-  if (sx < 0 && sy === 0) return "w";
-  if (sx < 0 && sy > 0) return "sw";
-  return "s";
+// Register the sprites we use now. (Add hurt/die here when we implement them.)
+for (const anim of ["idle", "walk"]) {
+  for (const d of DIRS) {
+    const key = `witch_${anim}_${d}`;
+    loadImage(key, `assets/sprites/player/${key}.png`);
+  }
 }
 
 export class Player {
@@ -50,26 +51,21 @@ export class Player {
     this.x = x;
     this.y = y;
 
-    this.radius = 16;        // hitbox (sprite can be drawn larger/smaller)
-    this.speed = 220;        // px per second
-    this.color = "#9b6cff";  // placeholder purple
+    this.radius = 16;          // hitbox (collisions) — kept separate from sprite size
+    this.speed = 220;          // pixels per second
+    this.color = "#9b6cff";    // placeholder color (fallback only)
 
     this.maxHealth = 100;
     this.health = 100;
     this.invulnDuration = 1.0;
     this.invulnTimer = 0;
 
-    // Animation.
-    this.facing = "s";
-    this.animState = "idle";
-    this.animTime = 0;
-
-    // Kick off loading every configured strip (idle + walk × 8 dirs).
-    for (const state of Object.keys(PLAYER_ANIMS)) {
-      for (const dir of SPRITE_DIRS) {
-        Assets.loadImage(`player_${state}_${dir}`, `assets/sprites/player/${state}_${dir}.png`);
-      }
-    }
+    // --- Animation state ---
+    this.facing = "s";         // start facing the camera
+    this.animState = "idle";   // "idle" | "walk"
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.spriteScale = 1;      // bump this (e.g. 1.5) if you want the witch bigger
   }
 
   update(dt, input, bounds) {
@@ -82,16 +78,37 @@ export class Player {
 
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
 
-    // Animation state + facing.
+    this.updateAnimation(dt, move);
+  }
+
+  updateAnimation(dt, move) {
     const moving = move.x !== 0 || move.y !== 0;
-    if (moving) this.facing = dirFromVector(move.x, move.y);
+
+    // Pick facing from movement (horizontal wins ties); keep last when idle.
+    if (moving) {
+      if (Math.abs(move.x) > Math.abs(move.y)) {
+        this.facing = move.x > 0 ? "e" : "w";
+      } else {
+        this.facing = move.y > 0 ? "s" : "n"; // canvas y+ is downward
+      }
+    }
 
     const newState = moving ? "walk" : "idle";
     if (newState !== this.animState) {
       this.animState = newState;
-      this.animTime = 0; // restart the cycle on a state change
+      this.animFrame = 0;
+      this.animTimer = 0;
     }
-    this.animTime += dt;
+
+    // Advance the frame on a timer.
+    const fps = ANIM_FPS[this.animState];
+    const frameCount = PLAYER_ANIMS[this.animState];
+    const frameDur = 1 / fps;
+    this.animTimer += dt;
+    while (this.animTimer >= frameDur) {
+      this.animTimer -= frameDur;
+      this.animFrame = (this.animFrame + 1) % frameCount;
+    }
   }
 
   takeDamage(amount) {
@@ -109,50 +126,44 @@ export class Player {
   draw(ctx) {
     ctx.save();
 
-    // Flicker while invulnerable (keeps the i-frame feedback).
+    // Flicker while invulnerable so i-frames are visible (sprite or fallback).
     if (this.invulnTimer > 0) {
       const blinkOn = Math.floor(this.invulnTimer * 10) % 2 === 0;
-      ctx.globalAlpha = blinkOn ? 0.4 : 1;
+      ctx.globalAlpha = blinkOn ? 0.35 : 1;
     }
 
-    const anim = PLAYER_ANIMS[this.animState];
-    const rec = Assets.getImage(`player_${this.animState}_${this.facing}`);
+    const key = `witch_${this.animState}_${this.facing}`;
+    const img = getImage(key);
 
-    if (anim && rec && rec.loaded && rec.img.width > 0) {
+    if (img && img.width > 0) {
       // Slice the current frame out of the single-row strip.
-      const fw = rec.img.width / anim.frames;
-      const fh = rec.img.height;
-
-      let frame = Math.floor(this.animTime * anim.fps);
-      frame = anim.loop ? frame % anim.frames : Math.min(frame, anim.frames - 1);
-
-      const dw = fw * PLAYER_SPRITE_SCALE;
-      const dh = fh * PLAYER_SPRITE_SCALE;
-      ctx.drawImage(rec.img, frame * fw, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+      const frames = PLAYER_ANIMS[this.animState];
+      const fw = img.width / frames;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = Math.floor(this.animFrame) * fw;
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
     } else {
-      this.drawPlaceholder(ctx);
+      // --- Fallback placeholder (until sprites are in place) ---
+      ctx.shadowColor = this.color;
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = this.color;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#5b3aa6";
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y - this.radius - 12);
+      ctx.lineTo(this.x - 10, this.y - this.radius + 2);
+      ctx.lineTo(this.x + 10, this.y - this.radius + 2);
+      ctx.closePath();
+      ctx.fill();
     }
 
     ctx.restore();
-  }
-
-  // Old purple-circle witch — shown until/unless the sprite is available.
-  drawPlaceholder(ctx) {
-    ctx.shadowColor = this.color;
-    ctx.shadowBlur = 14;
-    ctx.fillStyle = this.color;
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "#5b3aa6";
-    ctx.beginPath();
-    ctx.moveTo(this.x, this.y - this.radius - 12);
-    ctx.lineTo(this.x - 10, this.y - this.radius + 2);
-    ctx.lineTo(this.x + 10, this.y - this.radius + 2);
-    ctx.closePath();
-    ctx.fill();
   }
 
   reset(x, y) {
@@ -162,6 +173,7 @@ export class Player {
     this.invulnTimer = 0;
     this.facing = "s";
     this.animState = "idle";
-    this.animTime = 0;
+    this.animFrame = 0;
+    this.animTimer = 0;
   }
 }
