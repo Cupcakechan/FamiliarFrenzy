@@ -40,3 +40,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-06 | Phase 6 | Wave system, difficulty scaling, victory at wave 10 (MVP complete) | Claude |
 | 2026-06-06 | Phase 7 | Witch sprite integration: 8-dir walk + idle, asset loader with fallback | Claude |
 | 2026-06-06 | Phase 7 | Player sprite system: 4-dir walk/idle animation + asset loader with fallback | Claude |
+| 2026-06-06 | Phase 7 | Player death animation + dying state (one-shot anim before Game Over) | Claude |

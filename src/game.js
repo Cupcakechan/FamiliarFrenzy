@@ -29,6 +29,7 @@ const STATE = {
   TITLE: "title",
   PLAYING: "playing",
   LEVEL_UP: "levelUp",
+  DYING: "dying",      // brief: play the witch's death animation, then Game Over
   GAME_OVER: "gameOver",
   VICTORY: "victory",
 };
@@ -96,6 +97,11 @@ export class Game {
         this.updateLevelUp();
         break;
 
+      case STATE.DYING:
+        this.player.updateDying(dt);
+        if (this.player.deathDone) this.state = STATE.GAME_OVER;
+        break;
+
       case STATE.GAME_OVER:
       case STATE.VICTORY:
         if (Input.wasPressed("KeyR")) {
@@ -136,7 +142,8 @@ export class Game {
 
     // Priority: death, then victory, then a level-up.
     if (this.player.health <= 0) {
-      this.state = STATE.GAME_OVER;
+      this.player.startDying();
+      this.state = STATE.DYING;
       return;
     }
     if (this.waveManager.victory) {
@@ -212,6 +219,12 @@ export class Game {
       case STATE.VICTORY:
         this.drawWorld(ctx);
         drawVictory(ctx, this.width, this.height, this.hudState());
+        break;
+
+      case STATE.DYING:
+        // Frozen world + HUD while the death animation plays (no overlay yet).
+        this.drawWorld(ctx);
+        drawHUD(ctx, this.width, this.height, this.hudState());
         break;
 
       case STATE.GAME_OVER:

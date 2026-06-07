@@ -1,21 +1,17 @@
 /* =========================================================================
    player.js — the witch.
 
-   Phase 7 (this step): 4-direction sprite animation.
-     - Facing (N/S/E/W) is derived from movement; when you stop, the witch
-       keeps facing the last way and plays the IDLE animation.
-     - WALK animation plays while moving.
-     - Frames are sliced from single-row strips; frame size is read from the
-       image itself, so any art size just works.
-     - If a sprite isn't loaded yet (or is missing), we fall back to the old
-       purple placeholder circle — the game never breaks.
+   Phase 7 sprite animation:
+     - 4-direction facing (N/S/E/W) from movement; idle when stopped.
+     - WALK (loops) while moving, IDLE (loops) when still.
+     - DIE (plays ONCE) when health hits 0 — driven by the game's "dying" state.
+     - "Hurt" is just the invulnerability flicker (no hurt sprite).
+     - Missing/loading sprite → fall back to the purple placeholder circle.
 
-   Hurt + Die animations come in the next steps; their frame counts are listed
-   below already so adding them is a one-line change.
-
-   Sprite files expected (single-row strips), in assets/sprites/player/:
-     witch_idle_n.png  witch_idle_s.png  witch_idle_e.png  witch_idle_w.png   (4 frames)
-     witch_walk_n.png  witch_walk_s.png  witch_walk_e.png  witch_walk_w.png   (6 frames)
+   Sprite files (single-row strips) in assets/sprites/player/:
+     witch_idle_{n,s,e,w}.png   (4 frames)
+     witch_walk_{n,s,e,w}.png   (6 frames)
+     witch_die_{n,s,e,w}.png    (8 frames)
    ========================================================================= */
 
 import { clamp } from "./utils.js";
@@ -23,23 +19,25 @@ import { loadImage, getImage } from "./assets.js";
 
 const DIRS = ["n", "s", "e", "w"];
 
-// Animation name -> number of frames in its strip.
-// (hurt/die are listed for later; we only animate idle + walk for now.)
+// Animation name -> frames in its strip.
 const PLAYER_ANIMS = {
   idle: 4,
   walk: 6,
-  // hurt: 7,  // next step
-  // die: 9,   // next step
+  die: 8,
 };
 
-// Frames-per-second for each animation.
+// Frames per second per animation.
 const ANIM_FPS = {
   idle: 5,
   walk: 10,
+  die: 10, // 8 frames @ 10fps ≈ 0.8s death
 };
 
-// Register the sprites we use now. (Add hurt/die here when we implement them.)
-for (const anim of ["idle", "walk"]) {
+// Which animations loop. (die plays once and holds on its last frame.)
+const LOOPING = { idle: true, walk: true, die: false };
+
+// Register sprites.
+for (const anim of ["idle", "walk", "die"]) {
   for (const d of DIRS) {
     const key = `witch_${anim}_${d}`;
     loadImage(key, `assets/sprites/player/${key}.png`);
@@ -51,23 +49,25 @@ export class Player {
     this.x = x;
     this.y = y;
 
-    this.radius = 16;          // hitbox (collisions) — kept separate from sprite size
-    this.speed = 220;          // pixels per second
-    this.color = "#9b6cff";    // placeholder color (fallback only)
+    this.radius = 16;
+    this.speed = 220;
+    this.color = "#9b6cff"; // fallback only
 
     this.maxHealth = 100;
     this.health = 100;
     this.invulnDuration = 1.0;
     this.invulnTimer = 0;
 
-    // --- Animation state ---
-    this.facing = "s";         // start facing the camera
-    this.animState = "idle";   // "idle" | "walk"
+    // Animation state.
+    this.facing = "s";
+    this.animState = "idle"; // "idle" | "walk" | "die"
     this.animFrame = 0;
     this.animTimer = 0;
-    this.spriteScale = 1;      // bump this (e.g. 1.5) if you want the witch bigger
+    this.spriteScale = 1;    // bump if the witch looks too small
+    this.deathDone = false;  // true once the die animation reaches its last frame
   }
 
+  // Normal gameplay update (PLAYING state).
   update(dt, input, bounds) {
     const move = input.getMoveAxis();
 
@@ -84,12 +84,11 @@ export class Player {
   updateAnimation(dt, move) {
     const moving = move.x !== 0 || move.y !== 0;
 
-    // Pick facing from movement (horizontal wins ties); keep last when idle.
     if (moving) {
       if (Math.abs(move.x) > Math.abs(move.y)) {
         this.facing = move.x > 0 ? "e" : "w";
       } else {
-        this.facing = move.y > 0 ? "s" : "n"; // canvas y+ is downward
+        this.facing = move.y > 0 ? "s" : "n";
       }
     }
 
@@ -100,14 +99,42 @@ export class Player {
       this.animTimer = 0;
     }
 
-    // Advance the frame on a timer.
+    this.advanceFrames(dt);
+  }
+
+  // --- DEATH (one-shot) ---------------------------------------------------
+  startDying() {
+    this.animState = "die";
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.deathDone = false;
+  }
+
+  // Called by the game's "dying" state; only advances the death animation.
+  updateDying(dt) {
+    this.advanceFrames(dt);
+    if (this.animFrame >= PLAYER_ANIMS.die - 1) {
+      this.deathDone = true; // last frame reached → game can move to Game Over
+    }
+  }
+
+  // Shared frame stepper. Looping anims wrap; non-looping clamp on last frame.
+  advanceFrames(dt) {
     const fps = ANIM_FPS[this.animState];
     const frameCount = PLAYER_ANIMS[this.animState];
     const frameDur = 1 / fps;
+    const loops = LOOPING[this.animState];
+
     this.animTimer += dt;
     while (this.animTimer >= frameDur) {
       this.animTimer -= frameDur;
-      this.animFrame = (this.animFrame + 1) % frameCount;
+      if (loops) {
+        this.animFrame = (this.animFrame + 1) % frameCount;
+      } else if (this.animFrame < frameCount - 1) {
+        this.animFrame += 1;
+      } else {
+        break; // hold on last frame
+      }
     }
   }
 
@@ -126,8 +153,8 @@ export class Player {
   draw(ctx) {
     ctx.save();
 
-    // Flicker while invulnerable so i-frames are visible (sprite or fallback).
-    if (this.invulnTimer > 0) {
+    // Flicker while invulnerable — but NOT during the death animation.
+    if (this.invulnTimer > 0 && this.animState !== "die") {
       const blinkOn = Math.floor(this.invulnTimer * 10) % 2 === 0;
       ctx.globalAlpha = blinkOn ? 0.35 : 1;
     }
@@ -136,7 +163,6 @@ export class Player {
     const img = getImage(key);
 
     if (img && img.width > 0) {
-      // Slice the current frame out of the single-row strip.
       const frames = PLAYER_ANIMS[this.animState];
       const fw = img.width / frames;
       const fh = img.height;
@@ -145,7 +171,7 @@ export class Player {
       const sx = Math.floor(this.animFrame) * fw;
       ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
     } else {
-      // --- Fallback placeholder (until sprites are in place) ---
+      // Fallback placeholder.
       ctx.shadowColor = this.color;
       ctx.shadowBlur = 14;
       ctx.fillStyle = this.color;
@@ -175,5 +201,6 @@ export class Player {
     this.animState = "idle";
     this.animFrame = 0;
     this.animTimer = 0;
+    this.deathDone = false;
   }
 }
