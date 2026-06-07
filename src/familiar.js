@@ -1,41 +1,61 @@
 /* =========================================================================
-   familiar.js — the black cat: the REAL attacker in the game.
+   familiar.js — the black cat (a floating ghost): the REAL attacker.
 
-   Phase 2 responsibilities:
-     - FOLLOW the witch with a slight delay (so it feels alive, not glued on).
-     - Every `attackCooldown` seconds, find the NEAREST target in range and
-       fire a magic bolt at it.
-     - Manage its own bolts (move them, remove them when they hit or expire).
+   Follow + auto-fire bolts at the nearest enemy.
 
-   IMPORTANT (Phase 2): bolts do NOT deal damage yet, because enemies don't
-   have health until Phase 3. For now a bolt just flies and disappears when it
-   reaches a target. The damage hook is marked below so Phase 3 can plug in.
+   Phase 7 sprite animation (4 directions: N/S/E/W):
+     - IDLE (9 frames, loops) — its floaty "movement".
+     - ATTACK (6 frames, plays ONCE) — triggered when it fires an orb,
+       then it returns to idle.
+     - Facing: while idle it faces its drift/follow direction; when it fires
+       it turns to face the orb's target.
+     - Drawn SMALLER than the witch via `spriteScale`.
+     - Missing/loading sprite → fall back to the placeholder black cat.
 
-   "targets" is an array of objects shaped like: { x, y, radius, dead }.
-   Right now those are the temporary practice dummies from game.js.
-   In Phase 3 we simply pass the real enemies instead — no rewrite needed.
+   Sprite files (single-row strips) in assets/sprites/familiar/:
+     familiar_idle_{n,s,e,w}.png    (9 frames)
+     familiar_attack_{n,s,e,w}.png  (6 frames)
    ========================================================================= */
 
 import { distance, lerp } from "./utils.js";
+import { loadImage, getImage } from "./assets.js";
+
+const DIRS = ["n", "s", "e", "w"];
+const FAMILIAR_ANIMS = { idle: 9, attack: 6 };
+const FAMILIAR_FPS = { idle: 8, attack: 12 }; // attack: 6 @ 12fps = 0.5s (fits cooldown)
+const LOOPING = { idle: true, attack: false };
+
+// How far (px) the cat trails up-left of the witch. Bigger = more separation.
+const FOLLOW_OFFSET = 40;
+
+for (const anim of ["idle", "attack"]) {
+  for (const d of DIRS) {
+    const key = `familiar_${anim}_${d}`;
+    loadImage(key, `assets/sprites/familiar/${key}.png`);
+  }
+}
+
+// Pick N/S/E/W from a direction vector (horizontal wins ties).
+function dirFromVector(dx, dy) {
+  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "e" : "w";
+  return dy > 0 ? "s" : "n"; // canvas y+ is downward
+}
 
 // --- A single magic bolt -------------------------------------------------
-// It locks its direction at spawn time and flies straight (it does NOT home
-// in on a moving target). Simple and reliable.
 class Bolt {
   constructor(x, y, targetX, targetY, speed) {
     this.x = x;
     this.y = y;
     this.radius = 5;
 
-    // Aim: unit vector from the cat toward the target, times speed.
     const dx = targetX - x;
     const dy = targetY - y;
-    const len = Math.hypot(dx, dy) || 1; // avoid divide-by-zero
+    const len = Math.hypot(dx, dy) || 1;
     this.vx = (dx / len) * speed;
     this.vy = (dy / len) * speed;
 
-    this.life = 2;     // seconds before it auto-despawns (cleanup safety)
-    this.dead = false; // set true on hit or when life runs out
+    this.life = 2;
+    this.dead = false;
   }
 
   update(dt) {
@@ -63,59 +83,96 @@ export class Familiar {
     this.y = y;
     this.radius = 9;
 
-    // --- Tunable Phase 2 numbers (easy to change) ---
-    this.attackRange = 260;     // px: only fires at targets within this distance
-    this.attackCooldown = 1.2;  // seconds between shots
-    this.boltSpeed = 520;       // px per second
-    this.damage = 1;            // Sharper Claws upgrade will raise this (Phase 5)
+    this.attackRange = 260;
+    this.attackCooldown = 1.2;
+    this.boltSpeed = 520;
+    this.damage = 1;
 
-    this.attackTimer = 0;       // counts down; fires when <= 0 AND a target exists
-    this.bolts = [];            // bolts currently in flight
+    this.attackTimer = 0;
+    this.bolts = [];
+
+    // Animation.
+    this.facing = "s";
+    this.animState = "idle"; // "idle" | "attack"
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.spriteScale = 1;    // lower if the cat looks too big vs the witch
   }
 
-  // dt = seconds. player = the witch. targets = array of {x,y,radius,dead}.
   update(dt, player, targets) {
-    // --- FOLLOW ----------------------------------------------------------
-    // Aim for a spot slightly up-left of the witch so the cat never perfectly
-    // overlaps her. Frame-rate-independent smoothing: the cat eases toward
-    // that spot, lagging a little when she moves and settling when she stops.
-    const goalX = player.x - 22;
-    const goalY = player.y - 22;
-    const smooth = 1 - Math.pow(0.001, dt); // ~consistent feel at any fps
+    // --- FOLLOW (eases toward a spot near the witch) ---
+    const prevX = this.x;
+    const prevY = this.y;
+    const goalX = player.x - FOLLOW_OFFSET;
+    const goalY = player.y - FOLLOW_OFFSET;
+    const smooth = 1 - Math.pow(0.001, dt);
     this.x = lerp(this.x, goalX, smooth);
     this.y = lerp(this.y, goalY, smooth);
+    const moveX = this.x - prevX;
+    const moveY = this.y - prevY;
 
-    // --- FIRE on cooldown ------------------------------------------------
+    // --- FIRE on cooldown ---
     this.attackTimer -= dt;
     if (this.attackTimer <= 0) {
       const target = this.findNearestTarget(targets);
       if (target) {
         this.bolts.push(new Bolt(this.x, this.y, target.x, target.y, this.boltSpeed));
-        this.attackTimer = this.attackCooldown; // only reset when we actually fire
+        this.attackTimer = this.attackCooldown;
+        this.facing = dirFromVector(target.x - this.x, target.y - this.y); // face the shot
+        this.startAttackAnim();
       }
-      // If no target is in range, we keep the timer ready and fire the instant
-      // something comes into range.
     }
 
-    // --- MOVE bolts + check hits ----------------------------------------
+    // While idle (not mid-attack), face the way it's drifting.
+    if (this.animState === "idle" && (Math.abs(moveX) > 0.1 || Math.abs(moveY) > 0.1)) {
+      this.facing = dirFromVector(moveX, moveY);
+    }
+
+    // --- Move bolts + hits ---
     for (const bolt of this.bolts) {
       bolt.update(dt);
       for (const target of targets) {
         if (target.dead) continue;
         if (distance(bolt.x, bolt.y, target.x, target.y) < bolt.radius + target.radius) {
           bolt.dead = true;
-          // Phase 3: bolts now deal real damage. Enemy.takeDamage handles the
-          // hit-flash and marks the enemy dead when its health runs out.
           target.takeDamage(this.damage);
-          break; // one bolt hits one target
+          break;
         }
       }
     }
-    // Drop spent bolts.
     this.bolts = this.bolts.filter((b) => !b.dead);
+
+    this.updateAnimation(dt);
   }
 
-  // Closest living target within attackRange, or null if none.
+  startAttackAnim() {
+    this.animState = "attack";
+    this.animFrame = 0;
+    this.animTimer = 0;
+  }
+
+  updateAnimation(dt) {
+    const fps = FAMILIAR_FPS[this.animState];
+    const frames = FAMILIAR_ANIMS[this.animState];
+    const frameDur = 1 / fps;
+    const loops = LOOPING[this.animState];
+
+    this.animTimer += dt;
+    while (this.animTimer >= frameDur) {
+      this.animTimer -= frameDur;
+      if (loops) {
+        this.animFrame = (this.animFrame + 1) % frames;
+      } else if (this.animFrame < frames - 1) {
+        this.animFrame += 1;
+      } else {
+        this.animState = "idle";
+        this.animFrame = 0;
+        this.animTimer = 0;
+        break;
+      }
+    }
+  }
+
   findNearestTarget(targets) {
     let nearest = null;
     let nearestDist = this.attackRange;
@@ -131,49 +188,57 @@ export class Familiar {
   }
 
   draw(ctx) {
-    // Bolts first, then the cat on top.
     for (const bolt of this.bolts) bolt.draw(ctx);
 
-    ctx.save();
+    const key = `familiar_${this.animState}_${this.facing}`;
+    const img = getImage(key);
 
-    // Body: a dark circle. A faint purple rim-light keeps the "black cat"
-    // readable against the dark arena floor (placeholder until we add a sprite).
-    ctx.shadowColor = "rgba(155,108,255,0.5)";
-    ctx.shadowBlur = 8;
-    ctx.fillStyle = "#1c1a26";
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
-
-    // Two little ears.
-    ctx.beginPath();
-    ctx.moveTo(this.x - 7, this.y - 5);
-    ctx.lineTo(this.x - 4, this.y - 13);
-    ctx.lineTo(this.x - 1, this.y - 6);
-    ctx.closePath();
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(this.x + 1, this.y - 6);
-    ctx.lineTo(this.x + 4, this.y - 13);
-    ctx.lineTo(this.x + 7, this.y - 5);
-    ctx.closePath();
-    ctx.fill();
-
-    // Glowing gold eyes so the cat pops on the dark floor.
-    ctx.fillStyle = "#f4d58d";
-    ctx.beginPath(); ctx.arc(this.x - 3, this.y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(this.x + 3, this.y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
-
-    ctx.restore();
+    if (img && img.width > 0) {
+      const frames = FAMILIAR_ANIMS[this.animState];
+      const fw = img.width / frames;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = Math.floor(this.animFrame) * fw;
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+    } else {
+      // --- Fallback placeholder black cat ---
+      ctx.save();
+      ctx.shadowColor = "rgba(155,108,255,0.5)";
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = "#1c1a26";
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(this.x - 7, this.y - 5);
+      ctx.lineTo(this.x - 4, this.y - 13);
+      ctx.lineTo(this.x - 1, this.y - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(this.x + 1, this.y - 6);
+      ctx.lineTo(this.x + 4, this.y - 13);
+      ctx.lineTo(this.x + 7, this.y - 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#f4d58d";
+      ctx.beginPath(); ctx.arc(this.x - 3, this.y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.x + 3, this.y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
   }
 
-  // Fresh start (called from Game on restart).
   reset(x, y) {
     this.x = x;
     this.y = y;
     this.attackTimer = 0;
     this.bolts = [];
-    this.damage = 1; // back to base damage each new game
+    this.damage = 1;
+    this.facing = "s";
+    this.animState = "idle";
+    this.animFrame = 0;
+    this.animTimer = 0;
   }
 }
