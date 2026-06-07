@@ -234,6 +234,23 @@ export function drawWaveBanner(ctx, w, h, wave, timer) {
   ctx.restore();
 }
 
+// --- BOSS HEALTH BAR ------------------------------------------------------
+export function drawBossBar(ctx, w, h, boss) {
+  const barW = 520, barH = 16;
+  const x = (w - barW) / 2, y = 58;
+  const pct = Math.max(0, boss.health / boss.maxHealth);
+
+  text(ctx, boss.name.toUpperCase(), w / 2, y - 14, { size: 16, color: GOLD });
+
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
+  ctx.fillRect(x - 2, y - 2, barW + 4, barH + 4);
+  ctx.fillStyle = RED;
+  ctx.fillRect(x, y, barW * pct, barH);
+  ctx.strokeStyle = GOLD;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, barW, barH);
+}
+
 // --- VICTORY --------------------------------------------------------------
 export function drawVictory(ctx, w, h, state) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.85)";

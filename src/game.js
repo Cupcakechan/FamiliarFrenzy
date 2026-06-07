@@ -23,7 +23,7 @@ import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
-import { drawMenu, drawPlaceholder, drawHUD, drawUpgradeScreen, drawWaveBanner, drawVictory, drawGameOver } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawVictory, drawGameOver } from "./ui.js";
 
 const STATE = {
   MAIN_MENU: "mainMenu",
@@ -56,6 +56,9 @@ const FRENZY_DURATION = 6;  // seconds the frenzy lasts
 // World size (larger than the 960x540 viewport; the camera follows the player).
 const WORLD_W = 2400;
 const WORLD_H = 1350;
+
+// How many normal wisps the boss summons each time.
+const SUMMON_COUNT = 3;
 
 export class Game {
   constructor(width, height) {
@@ -217,6 +220,19 @@ export class Game {
 
     this.familiar.update(dt, this.player, this.enemies, this.frenzyTimer > 0);
 
+    // Boss summons: drop a few normal wisps next to the boss when it's ready.
+    const boss = this.waveManager.boss;
+    if (boss && !boss.dead && boss.summonReady) {
+      for (let i = 0; i < SUMMON_COUNT; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const r = 36 + Math.random() * 28;
+        const ex = clamp(boss.x + Math.cos(a) * r, 0, this.world.width);
+        const ey = clamp(boss.y + Math.sin(a) * r, 0, this.world.height);
+        this.enemies.push(new Enemy(ex, ey));
+      }
+      boss.summonReady = false;
+    }
+
     for (const enemy of this.enemies) {
       if (enemy.dead) {
         // Small random scatter so the mote + flask don't land on the same spot,
@@ -257,7 +273,8 @@ export class Game {
       this.state = STATE.DYING;
       return;
     }
-    if (this.waveManager.victory) {
+    // Victory: the Wave 10 boss has been defeated.
+    if (boss && boss.dead) {
       this.state = STATE.VICTORY;
       return;
     }
@@ -345,6 +362,9 @@ export class Game {
     switch (this.state) {
       case STATE.PLAYING:
         drawHUD(ctx, this.width, this.height, this.hudState());
+        if (this.waveManager.boss && !this.waveManager.boss.dead) {
+          drawBossBar(ctx, this.width, this.height, this.waveManager.boss);
+        }
         if (this.waveManager.phase === "intermission") {
           drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer);
         }

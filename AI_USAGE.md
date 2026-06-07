@@ -48,3 +48,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-07 | Gameplay | Familiar Frenzy meter (Space burst, faster attacks + glow) + drop scatter | Claude |
 | 2026-06-07 | Gameplay | Larger world + follow camera (Vampire-Survivors style); fixes off-screen drops | Claude |
 | 2026-06-07 | Menu/Flow | Main menu + mode select + Coming Soon placeholders (keyboard nav) | Claude |
+| 2026-06-07 | Gameplay | Wave 10 Elder Wisp boss: wobble-follow, telegraphed dash, periodic summons, boss HP bar, victory on defeat | Claude |
