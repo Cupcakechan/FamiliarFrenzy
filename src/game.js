@@ -21,9 +21,9 @@ import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask } from "./pickups.js";
-import { getOffers } from "./upgrades.js";
+import { getOffers, UPGRADES } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
-import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawVictory, drawGameOver } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver } from "./ui.js";
 
 const STATE = {
   MAIN_MENU: "mainMenu",
@@ -33,6 +33,8 @@ const STATE = {
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
   SETTINGS_PLACEHOLDER: "settingsPlaceholder",
   PLAYING: "playing",
+  PAUSED: "paused",
+  CONFIRM_QUIT: "confirmQuit", // confirm Main Menu from the Pause menu
   LEVEL_UP: "levelUp",
   DYING: "dying",      // brief: play the witch's death animation, then Game Over
   GAME_OVER: "gameOver",
@@ -42,6 +44,8 @@ const STATE = {
 const MAIN_MENU_ITEMS = ["Play", "How to Play", "High Scores", "Settings"];
 const MODE_SELECT_ITEMS = ["Tutorial Run", "Endless Mode", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
+const PAUSE_ITEMS = ["Resume", "Settings", "Main Menu"];
+const CONFIRM_ITEMS = ["Yes", "No"];
 
 const SCORE_PER_PICKUP = 10;
 const OFFER_COUNT = 3; // upgrade cards shown per level-up
@@ -81,6 +85,7 @@ export class Game {
 
     this.state = STATE.MAIN_MENU;
     this.menuIndex = 0; // highlighted option in the current menu
+    this.settingsReturn = STATE.MAIN_MENU; // where the Settings screen goes "back" to
 
     this.player = new Player(WORLD_W / 2, WORLD_H / 2);
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
@@ -181,7 +186,7 @@ export class Game {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
           else if (this.menuIndex === 1) this.state = STATE.HOW_TO_PLAY;
           else if (this.menuIndex === 2) this.state = STATE.HIGHSCORES_PLACEHOLDER;
-          else if (this.menuIndex === 3) this.state = STATE.SETTINGS_PLACEHOLDER;
+          else if (this.menuIndex === 3) { this.settingsReturn = STATE.MAIN_MENU; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
         break;
 
@@ -209,11 +214,55 @@ export class Game {
         break;
 
       case STATE.SETTINGS_PLACEHOLDER:
-        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+        if (this.backPressed() || this.confirmPressed()) {
+          this.state = this.settingsReturn || STATE.MAIN_MENU;
+          if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
+        }
         break;
 
       case STATE.PLAYING:
+        if (Input.wasPressed("Escape") || Input.wasPressed("KeyP")) {
+          this.state = STATE.PAUSED;
+          this.menuIndex = 0;
+          break;
+        }
         this.updatePlaying(dt);
+        break;
+
+      case STATE.PAUSED:
+        // Esc / P unpause (but only here, not inside the Settings sub-screen).
+        if (Input.wasPressed("Escape") || Input.wasPressed("KeyP")) {
+          this.state = STATE.PLAYING;
+          break;
+        }
+        this.navMenu(PAUSE_ITEMS.length);
+        if (this.confirmPressed()) {
+          if (this.menuIndex === 0) {
+            this.state = STATE.PLAYING;                 // Resume
+          } else if (this.menuIndex === 1) {
+            this.settingsReturn = STATE.PAUSED;         // Settings (returns to Pause)
+            this.state = STATE.SETTINGS_PLACEHOLDER;
+          } else {
+            this.state = STATE.CONFIRM_QUIT;            // Main Menu (confirm first)
+            this.menuIndex = 1;                         // default highlight = "No"
+          }
+        }
+        break;
+
+      case STATE.CONFIRM_QUIT:
+        this.navMenu(CONFIRM_ITEMS.length);
+        if (this.confirmPressed()) {
+          if (this.menuIndex === 0) {                   // Yes → end run, main menu
+            this.state = STATE.MAIN_MENU;
+            this.menuIndex = 0;
+          } else {                                      // No → back to Pause
+            this.state = STATE.PAUSED;
+            this.menuIndex = 0;
+          }
+        } else if (this.backPressed()) {
+          this.state = STATE.PAUSED;
+          this.menuIndex = 0;
+        }
         break;
 
       case STATE.LEVEL_UP:
@@ -492,6 +541,10 @@ export class Game {
       drawPlaceholder(ctx, this.width, this.height, "Settings");
       return;
     }
+    if (this.state === STATE.CONFIRM_QUIT) {
+      drawConfirmQuit(ctx, this.width, this.height, CONFIRM_ITEMS, this.menuIndex);
+      return;
+    }
 
     // World is drawn THROUGH the camera; HUD/overlays stay in screen space.
     const cam = this.getCamera();
@@ -518,6 +571,11 @@ export class Game {
       case STATE.LEVEL_UP:
         drawHUD(ctx, this.width, this.height, this.hudState());
         drawUpgradeScreen(ctx, this.width, this.height, this.offers);
+        break;
+
+      case STATE.PAUSED:
+        drawHUD(ctx, this.width, this.height, this.hudState());
+        drawPauseMenu(ctx, this.width, this.height, this.pauseInfo(), PAUSE_ITEMS, this.menuIndex);
         break;
 
       case STATE.DYING:
@@ -627,6 +685,29 @@ export class Game {
       enemiesDefeated: this.enemiesDefeated,
       upgradesChosen: this.upgradesChosen,
       timeText: `${mm}:${ss}`,
+    };
+  }
+
+  // Run info shown on the Pause screen.
+  pauseInfo() {
+    const upgrades = [];
+    for (const u of UPGRADES) {
+      const lvl = this.upgradeLevels[u.id] || 0;
+      if (lvl > 0) upgrades.push({ name: u.name, level: lvl, maxLevel: u.maxLevel });
+    }
+    const frenzy = this.frenzyTimer > 0
+      ? "ACTIVE"
+      : `${Math.round((this.frenzyCharge / FRENZY_MOTES) * 100)}%`;
+    return {
+      mode: this.gameMode === "endless" ? "Endless" : "Tutorial",
+      wave: this.waveManager.displayWave,
+      level: this.level,
+      score: this.score,
+      health: Math.ceil(this.player.health),
+      maxHealth: this.player.maxHealth,
+      frenzy,
+      upgrades,
+      evolution: this.phantomPounceUnlocked ? "Phantom Pounce" : "None",
     };
   }
 

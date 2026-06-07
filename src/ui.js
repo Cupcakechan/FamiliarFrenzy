@@ -319,6 +319,80 @@ export function drawBossBar(ctx, w, h, boss) {
   ctx.strokeRect(x, y, barW, barH);
 }
 
+// --- PAUSE MENU -----------------------------------------------------------
+export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
+  ctx.fillStyle = "rgba(8, 7, 18, 0.88)";
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "FAMILIAR FRENZY", w / 2, 52, { size: 28, color: GOLD });
+  text(ctx, "PAUSED", w / 2, 90, { size: 34, color: CREAM, weight: "700" });
+
+  // Left column: options + basic run stats.
+  const leftX = 150;
+  items.forEach((item, i) => {
+    const selected = i === selectedIndex;
+    const y = 162 + i * 44;
+    text(ctx, `${selected ? "> " : "  "}${item}`, leftX, y, {
+      size: 26,
+      color: selected ? GOLD : CREAM,
+      align: "left",
+      weight: selected ? "700" : "500",
+    });
+  });
+
+  const stats = [
+    `Mode: ${info.mode}`,
+    `Wave: ${info.wave}`,
+    `Level: ${info.level}`,
+    `Score: ${info.score}`,
+    `Health: ${info.health} / ${info.maxHealth}`,
+    `Frenzy: ${info.frenzy}`,
+  ];
+  stats.forEach((line, i) => {
+    text(ctx, line, leftX, 318 + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });
+  });
+
+  // Right column: upgrades taken + evolution.
+  const rightX = 540;
+  text(ctx, "Upgrades:", rightX, 162, { size: 18, color: GOLD, align: "left" });
+  if (info.upgrades.length === 0) {
+    text(ctx, "- none yet", rightX, 190, { size: 15, color: DIM, align: "left", weight: "500" });
+  } else {
+    info.upgrades.forEach((u, i) => {
+      text(ctx, `- ${u.name}  Lv. ${u.level} / ${u.maxLevel}`, rightX, 190 + i * 24, {
+        size: 15, color: CREAM, align: "left", weight: "500",
+      });
+    });
+  }
+  const evoY = 190 + Math.max(1, info.upgrades.length) * 24 + 14;
+  text(ctx, `Evolution: ${info.evolution}`, rightX, evoY, {
+    size: 16, color: info.evolution === "None" ? DIM : GOLD, align: "left", weight: "700",
+  });
+
+  text(ctx, "Esc / P: Resume      Enter: select", w / 2, h - 28, { size: 15, color: DIM, weight: "500" });
+}
+
+// --- CONFIRM QUIT (Main Menu from Pause) ---------------------------------
+export function drawConfirmQuit(ctx, w, h, items, selectedIndex) {
+  ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "Return to Main Menu?", w / 2, h / 2 - 70, { size: 34, color: GOLD });
+  text(ctx, "Current run will be lost.", w / 2, h / 2 - 28, { size: 18, color: CREAM, weight: "500" });
+
+  items.forEach((item, i) => {
+    const selected = i === selectedIndex;
+    const y = h / 2 + 24 + i * 44;
+    text(ctx, `${selected ? "> " : "  "}${item}`, w / 2, y, {
+      size: 26,
+      color: selected ? GOLD : CREAM,
+      weight: selected ? "700" : "500",
+    });
+  });
+
+  text(ctx, "Esc / Backspace: cancel", w / 2, h - 28, { size: 15, color: DIM, weight: "500" });
+}
+
 // --- VICTORY --------------------------------------------------------------
 export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.88)";

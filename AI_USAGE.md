@@ -53,3 +53,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-07 | Menu/UI | How to Play screen: new main-menu entry + howToPlay state, single-screen controls & mechanics instructions | Claude |
 | 2026-06-07 | Gameplay/UI | Tutorial Complete victory screen with run summary + 3 navigable options; Wave 10 boss-incoming warning banner; added enemies/upgrades/time run counters | Claude |
 | 2026-06-07 | Gameplay | Endless Mode v1: tutorial/endless gameMode, boss every 10 waves, per-tier difficulty scaling, Tutorial->Endless continue at Wave 11 with build carryover, endless Game Over + localStorage best wave/score | Claude |
+| 2026-06-07 | Gameplay | Expanded upgrade pool (Magnet Charm, Ghost Pounce/pierce, Frenzy Focus, Lucky Paws) with tags; bolt piercing system; first familiar evolution Phantom Pounce (auto-unlock, one-shot, banner) | Claude |
