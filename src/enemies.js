@@ -241,6 +241,15 @@ export class Boss {
   }
 }
 
+// --- Endless scaling (tunable) -------------------------------------------
+// Tier = how many full blocks of 10 waves have passed: 0 for waves 1-10,
+// 1 for 11-20, 2 for 21-30, ... Tutorial only ever reaches tier 0.
+const ENEMY_SPEED_PER_TIER = 12;   // px/s added to wisp speed per tier
+const ENEMY_HP_PER_TIER = 1;       // +HP to wisps per tier
+const COUNT_PER_TIER = 3;          // extra wisps in the wave budget per tier
+const SPAWN_DELAY_PER_TIER = 0.05; // spawn interval shaved per tier...
+const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
+
 export class WaveManager {
   constructor(maxWaves = 10) {
     this.maxWaves = maxWaves;
@@ -253,18 +262,31 @@ export class WaveManager {
     this.reset();
   }
 
-  reset() {
+  reset(endless = false) {
+    this.endless = endless;        // false = capped tutorial, true = endless
     this.wave = 0;                 // becomes 1 when the first wave starts
     this.phase = "intermission";   // "intermission" | "spawning" | "boss"
     this.timer = 2.0;              // short "get ready" before wave 1
     this.toSpawn = 0;              // enemies left to spawn this wave
     this.spawnTimer = 0;
-    this.boss = null;              // the Wave 10 boss, once spawned
+    this.boss = null;              // the current boss, once spawned
+  }
+
+  // How many full 10-wave blocks have passed (0 for waves 1-10, 1 for 11-20...).
+  endlessTier() {
+    return Math.max(0, Math.floor((this.wave - 1) / 10));
+  }
+
+  // Effective spawn gap, tightened a little each endless tier (with a floor).
+  spawnGap() {
+    return Math.max(MIN_SPAWN_INTERVAL, this.spawnInterval - this.endlessTier() * SPAWN_DELAY_PER_TIER);
   }
 
   // The wave number to show on the HUD (the upcoming one during a break).
   get displayWave() {
-    return this.phase === "intermission" ? Math.min(this.wave + 1, this.maxWaves) : this.wave;
+    if (this.phase !== "intermission") return this.wave;
+    const next = this.wave + 1;
+    return this.endless ? next : Math.min(next, this.maxWaves);
   }
 
   // Mutates the `enemies` array. Call every frame while playing.
@@ -277,8 +299,14 @@ export class WaveManager {
     }
 
     if (this.phase === "boss") {
-      // Boss + its summons are driven by the boss and game.js; victory is
-      // decided when the boss dies, so there's nothing to spawn here.
+      // The boss + its summons are driven by the boss and game.js.
+      // In Endless, once the boss is down we roll straight into the next wave.
+      // In Tutorial, game.js shows the Victory screen instead, so we wait.
+      if (this.endless && this.boss && this.boss.dead) {
+        this.boss = null;
+        this.phase = "intermission";
+        this.timer = this.intermissionLength;
+      }
       return;
     }
 
@@ -288,7 +316,7 @@ export class WaveManager {
       if (this.spawnTimer <= 0 && enemies.length < this.maxAlive) {
         enemies.push(this.makeWisp(view));
         this.toSpawn -= 1;
-        this.spawnTimer = this.spawnInterval;
+        this.spawnTimer = this.spawnGap();
       }
     } else if (enemies.length === 0) {
       // Whole wave spawned AND cleared → break before the next wave.
@@ -299,15 +327,18 @@ export class WaveManager {
 
   startNextWave(enemies, view) {
     this.wave += 1;
-    // Boss wave. (For Endless later: use `this.wave % 10 === 0` instead.)
-    if (this.wave >= this.maxWaves) {
+
+    // Boss every 10th wave (Tutorial: wave 10; Endless: 10, 20, 30, ...).
+    if (this.wave % 10 === 0) {
       this.phase = "boss";
-      this.boss = this.makeBoss(view);
+      // Boss strength rises each block: wave 10 = x1, wave 20 = x2, wave 30 = x3.
+      const bossTier = this.endlessTier() + 1;
+      this.boss = this.makeBoss(view, bossTier);
       enemies.push(this.boss);
     } else {
       this.phase = "spawning";
-      this.toSpawn = 5 + this.wave * 2; // W1=7 ... W9=23
-      this.spawnTimer = 0;              // first enemy comes right away
+      this.toSpawn = 5 + this.wave * 2 + this.endlessTier() * COUNT_PER_TIER;
+      this.spawnTimer = 0; // first enemy comes right away
     }
   }
 
@@ -319,9 +350,10 @@ export class WaveManager {
   makeWisp(view) {
     const pos = spawnOutsideView(view);
     const e = new Enemy(pos.x, pos.y);
-    // Difficulty scaling per wave.
-    e.speed = 75 + this.wave * 4;
-    e.maxHealth = 2 + Math.floor(this.wave / 3);
+    const tier = this.endlessTier();
+    // Difficulty scaling: per-wave (as before) plus a small per-tier bump.
+    e.speed = 75 + this.wave * 4 + tier * ENEMY_SPEED_PER_TIER;
+    e.maxHealth = 2 + Math.floor(this.wave / 3) + tier * ENEMY_HP_PER_TIER;
     e.health = e.maxHealth;
     return e;
   }

@@ -92,19 +92,23 @@ export class Game {
     // Simple run-summary counters (shown on the Victory screen).
     this.enemiesDefeated = 0;
     this.upgradesChosen = 0;
+    this.bossesDefeated = 0;
     this.runTime = 0; // seconds spent in the PLAYING state this run
+
+    this.gameMode = "tutorial"; // "tutorial" | "endless"
 
     // Familiar Frenzy meter.
     this.frenzyCharge = 0;  // motes banked toward FRENZY_MOTES
     this.frenzyTimer = 0;   // > 0 while frenzy is active
   }
 
-  startGame() {
+  startGame(mode = "tutorial") {
+    this.gameMode = mode;
     this.score = 0;
     this.player.reset(WORLD_W / 2, WORLD_H / 2);
     this.familiar.reset(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
     this.enemies = [];
-    this.waveManager.reset();
+    this.waveManager.reset(mode === "endless");
     this.pickups = [];
     this.flasks = [];
 
@@ -117,11 +121,26 @@ export class Game {
 
     this.enemiesDefeated = 0;
     this.upgradesChosen = 0;
+    this.bossesDefeated = 0;
     this.runTime = 0;
 
     this.frenzyCharge = 0;
     this.frenzyTimer = 0;
 
+    this.state = STATE.PLAYING;
+  }
+
+  // From the Tutorial Complete screen: roll the SAME run into Endless at Wave 11.
+  // Health, score, upgrades, familiar stats and counters all carry over.
+  continueToEndless() {
+    this.gameMode = "endless";
+    this.waveManager.endless = true;
+    // The wave-10 boss is already defeated; clear its leftover summons and
+    // queue the next wave. wave stays 10, so the next wave starts at 11.
+    this.waveManager.boss = null;
+    this.waveManager.phase = "intermission";
+    this.waveManager.timer = this.waveManager.intermissionLength;
+    this.enemies = [];
     this.state = STATE.PLAYING;
   }
 
@@ -145,8 +164,8 @@ export class Game {
       case STATE.MODE_SELECT:
         this.navMenu(MODE_SELECT_ITEMS.length);
         if (this.confirmPressed()) {
-          if (this.menuIndex === 0) this.startGame();                 // Tutorial Run
-          else if (this.menuIndex === 1) this.state = STATE.ENDLESS_PLACEHOLDER;
+          if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Run
+          else if (this.menuIndex === 1) this.startGame("endless");    // Endless Mode
           else if (this.menuIndex === 2) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         } else if (this.backPressed()) {
           this.state = STATE.MAIN_MENU; this.menuIndex = 0;
@@ -175,19 +194,19 @@ export class Game {
 
       case STATE.DYING:
         this.player.updateDying(dt);
-        if (this.player.deathDone) this.state = STATE.GAME_OVER;
+        if (this.player.deathDone) {
+          if (this.gameMode === "endless") this.recordEndlessResult();
+          this.state = STATE.GAME_OVER;
+        }
         break;
 
       case STATE.VICTORY:
         this.navMenu(VICTORY_ITEMS.length);
         if (this.confirmPressed()) {
           if (this.menuIndex === 0) {
-            // FUTURE (Endless): instead of the placeholder, start Endless at
-            // Wave 11 carrying the current build/upgrades over from this run.
-            this.state = STATE.ENDLESS_PLACEHOLDER;
-            this.menuIndex = 0;
+            this.continueToEndless();         // continue this run at Wave 11
           } else if (this.menuIndex === 1) {
-            this.startGame();                 // Replay Tutorial from Wave 1
+            this.startGame("tutorial");       // Replay Tutorial from Wave 1
           } else {
             this.state = STATE.MAIN_MENU;
             this.menuIndex = 0;
@@ -197,7 +216,7 @@ export class Game {
 
       case STATE.GAME_OVER:
         if (Input.wasPressed("KeyR")) {
-          this.startGame();
+          this.startGame(this.gameMode);      // retry in the same mode
         } else if (this.backPressed()) {
           this.state = STATE.MAIN_MENU;
           this.menuIndex = 0;
@@ -271,6 +290,7 @@ export class Game {
     for (const enemy of this.enemies) {
       if (enemy.dead) {
         this.enemiesDefeated += 1;
+        if (enemy.isBoss) this.bossesDefeated += 1;
         // Small random scatter so the mote + flask don't land on the same spot,
         // clamped inside the world so drops never land out of reach.
         const j = () => (Math.random() - 0.5) * 24; // ±12px
@@ -309,8 +329,9 @@ export class Game {
       this.state = STATE.DYING;
       return;
     }
-    // Victory: the Wave 10 boss has been defeated.
-    if (boss && boss.dead) {
+    // Victory only in Tutorial: defeating the Wave 10 boss ends the run.
+    // In Endless, the WaveManager rolls straight into the next wave instead.
+    if (this.gameMode === "tutorial" && boss && boss.dead) {
       this.menuIndex = 0;
       this.state = STATE.VICTORY;
       return;
@@ -434,7 +455,7 @@ export class Game {
         break;
 
       case STATE.GAME_OVER:
-        drawGameOver(ctx, this.width, this.height, this.hudState());
+        drawGameOver(ctx, this.width, this.height, this.gameOverSummary());
         break;
     }
   }
@@ -483,6 +504,40 @@ export class Game {
     ctx.strokeStyle = "rgba(244, 213, 141, 0.35)";
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, W, H);
+  }
+
+  // Persist endless bests (best wave + best score) in the browser. Wrapped in
+  // try/catch so a storage-blocked browser simply skips it instead of erroring.
+  recordEndlessResult() {
+    try {
+      const wave = this.waveManager.wave;
+      const bw = parseInt(localStorage.getItem("ff_bestEndlessWave") || "0", 10);
+      const bs = parseInt(localStorage.getItem("ff_bestEndlessScore") || "0", 10);
+      if (wave > bw) localStorage.setItem("ff_bestEndlessWave", String(wave));
+      if (this.score > bs) localStorage.setItem("ff_bestEndlessScore", String(this.score));
+    } catch (e) {
+      /* localStorage unavailable — skip persistent bests */
+    }
+  }
+
+  // Data for the Game Over screen (mode-aware).
+  gameOverSummary() {
+    let bestWave = 0;
+    let bestScore = 0;
+    try {
+      bestWave = parseInt(localStorage.getItem("ff_bestEndlessWave") || "0", 10);
+      bestScore = parseInt(localStorage.getItem("ff_bestEndlessScore") || "0", 10);
+    } catch (e) {
+      /* ignore */
+    }
+    return {
+      endless: this.gameMode === "endless",
+      wave: this.waveManager.wave,
+      score: this.score,
+      bossesDefeated: this.bossesDefeated,
+      bestWave,
+      bestScore,
+    };
   }
 
   // Simple end-of-run summary for the Victory screen (existing data only).

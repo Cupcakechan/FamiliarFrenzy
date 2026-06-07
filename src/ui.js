@@ -359,15 +359,29 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
 }
 
 // --- GAME OVER ------------------------------------------------------------
-export function drawGameOver(ctx, w, h, state) {
+export function drawGameOver(ctx, w, h, info) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.82)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "GAME OVER", w / 2, h / 2 - 50, { size: 56, color: RED });
-  text(ctx, `Final Score: ${state.score}`, w / 2, h / 2 + 10, { size: 24, color: GOLD });
-  text(ctx, `Reached Wave ${state.wave}`, w / 2, h / 2 + 44, { size: 20, color: DIM, weight: "500" });
-
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+
+  if (info.endless) {
+    text(ctx, "ENDLESS RUN OVER", w / 2, h / 2 - 78, { size: 48, color: RED });
+    text(ctx, `Wave reached: ${info.wave}`, w / 2, h / 2 - 18, { size: 24, color: GOLD });
+    text(ctx, `Score: ${info.score}`, w / 2, h / 2 + 14, { size: 20, color: CREAM, weight: "500" });
+    text(ctx, `Bosses defeated: ${info.bossesDefeated}`, w / 2, h / 2 + 42, { size: 18, color: DIM, weight: "500" });
+    text(ctx, `Best wave: ${info.bestWave}      Best score: ${info.bestScore}`, w / 2, h / 2 + 70, { size: 16, color: DIM, weight: "500" });
+
+    ctx.globalAlpha = pulse;
+    text(ctx, "R: new endless run      Esc: main menu", w / 2, h / 2 + 114, { size: 18, color: PURPLE });
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  text(ctx, "GAME OVER", w / 2, h / 2 - 50, { size: 56, color: RED });
+  text(ctx, `Final Score: ${info.score}`, w / 2, h / 2 + 10, { size: 24, color: GOLD });
+  text(ctx, `Reached Wave ${info.wave}`, w / 2, h / 2 + 44, { size: 20, color: DIM, weight: "500" });
+
   ctx.globalAlpha = pulse;
   text(ctx, "R: try again      Esc: main menu", w / 2, h / 2 + 90, { size: 20, color: PURPLE });
   ctx.globalAlpha = 1;

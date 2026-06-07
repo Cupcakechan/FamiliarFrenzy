@@ -51,3 +51,5 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-07 | Gameplay | Wave 10 Elder Wisp boss: wobble-follow, telegraphed dash, periodic summons, boss HP bar, victory on defeat | Claude |
 | 2026-06-07 | Gameplay | Upgrade levels & caps: per-upgrade maxLevel, Lv. x/y card indicators, maxed upgrades drop from pool, Spirit Recovery fallback when all maxed | Claude |
 | 2026-06-07 | Menu/UI | How to Play screen: new main-menu entry + howToPlay state, single-screen controls & mechanics instructions | Claude |
+| 2026-06-07 | Gameplay/UI | Tutorial Complete victory screen with run summary + 3 navigable options; Wave 10 boss-incoming warning banner; added enemies/upgrades/time run counters | Claude |
+| 2026-06-07 | Gameplay | Endless Mode v1: tutorial/endless gameMode, boss every 10 waves, per-tier difficulty scaling, Tutorial->Endless continue at Wave 11 with build carryover, endless Game Over + localStorage best wave/score | Claude |
