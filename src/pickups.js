@@ -28,7 +28,7 @@ export class Pickup {
     this.dead = false;
 
     this.bob = randomRange(0, Math.PI * 2);  // gentle float, desynced per mote
-    this.spriteScale = 1;                    // lower if the mote looks too big
+    this.spriteScale = 0.5;                  // small pickup; raise/lower to taste
     this.animFrame = randomInt(0, MOTE_FRAMES - 1);
     this.animTimer = 0;
   }
