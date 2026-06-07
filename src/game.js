@@ -23,11 +23,12 @@ import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
-import { drawMenu, drawPlaceholder, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawVictory, drawGameOver } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawVictory, drawGameOver } from "./ui.js";
 
 const STATE = {
   MAIN_MENU: "mainMenu",
   MODE_SELECT: "modeSelect",
+  HOW_TO_PLAY: "howToPlay",
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
   SETTINGS_PLACEHOLDER: "settingsPlaceholder",
@@ -38,7 +39,7 @@ const STATE = {
   VICTORY: "victory",
 };
 
-const MAIN_MENU_ITEMS = ["Play", "High Scores", "Settings"];
+const MAIN_MENU_ITEMS = ["Play", "How to Play", "High Scores", "Settings"];
 const MODE_SELECT_ITEMS = ["Tutorial Run", "Endless Mode", "Back"];
 
 const SCORE_PER_PICKUP = 10;
@@ -121,9 +122,14 @@ export class Game {
         this.navMenu(MAIN_MENU_ITEMS.length);
         if (this.confirmPressed()) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
-          else if (this.menuIndex === 1) this.state = STATE.HIGHSCORES_PLACEHOLDER;
-          else if (this.menuIndex === 2) this.state = STATE.SETTINGS_PLACEHOLDER;
+          else if (this.menuIndex === 1) this.state = STATE.HOW_TO_PLAY;
+          else if (this.menuIndex === 2) this.state = STATE.HIGHSCORES_PLACEHOLDER;
+          else if (this.menuIndex === 3) this.state = STATE.SETTINGS_PLACEHOLDER;
         }
+        break;
+
+      case STATE.HOW_TO_PLAY:
+        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         break;
 
       case STATE.MODE_SELECT:
@@ -346,6 +352,10 @@ export class Game {
     if (this.state === STATE.MODE_SELECT) {
       drawMenu(ctx, this.width, this.height, "Choose Mode", MODE_SELECT_ITEMS, this.menuIndex,
         ["Tutorial: capped 10-wave run", "Endless: coming soon", "Up/Down move • Enter select • Esc back"]);
+      return;
+    }
+    if (this.state === STATE.HOW_TO_PLAY) {
+      drawHowToPlay(ctx, this.width, this.height);
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {

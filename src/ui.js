@@ -93,6 +93,51 @@ export function drawPlaceholder(ctx, w, h, title) {
   ctx.globalAlpha = 1;
 }
 
+// --- HOW TO PLAY ----------------------------------------------------------
+// Single-screen instructions (Option A): everything fits at 960x540.
+export function drawHowToPlay(ctx, w, h) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "HOW TO PLAY", w / 2, 50, { size: 40, color: GOLD });
+
+  const headX = 150;  // left margin for section headings
+  const bodyX = 172;  // slight indent for body lines
+
+  const controls = [
+    "Move:  WASD / Arrow Keys",
+    "Confirm:  Enter / Space",
+    "Frenzy:  Space  (when the Frenzy meter is full)",
+    "Back / Pause:  Esc / Backspace",
+    "Restart:  R  (after Game Over or Victory)",
+  ];
+
+  const survive = [
+    "Your ghost cat familiar attacks automatically — no aiming needed.",
+    "Dodge enemies and position yourself so the cat can hit them.",
+    "Defeated enemies drop EXP motes — collect them to level up.",
+    "Leveling up lets you pick an upgrade (maxed ones stop appearing).",
+    "Touching enemies hurts you; grab health flasks to recover.",
+    "Frenzy makes the cat fire faster — save it for swarms or the boss.",
+    "Tutorial Run is 10 waves; clear them and defeat the Wave 10 boss to win.",
+  ];
+
+  text(ctx, "CONTROLS", headX, 92, { size: 20, color: GOLD, align: "left" });
+  controls.forEach((line, i) => {
+    text(ctx, line, bodyX, 120 + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });
+  });
+
+  text(ctx, "HOW TO SURVIVE", headX, 264, { size: 20, color: GOLD, align: "left" });
+  survive.forEach((line, i) => {
+    text(ctx, line, bodyX, 292 + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });
+  });
+
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+  ctx.globalAlpha = pulse;
+  text(ctx, "Press Esc or Backspace to return", w / 2, h - 30, { size: 16, color: PURPLE, weight: "500" });
+  ctx.globalAlpha = 1;
+}
+
 // --- IN-GAME HUD ----------------------------------------------------------
 export function drawHUD(ctx, w, h, state) {
   // Health bar (top-left).
