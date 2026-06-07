@@ -41,6 +41,7 @@ const STATE = {
 
 const MAIN_MENU_ITEMS = ["Play", "How to Play", "High Scores", "Settings"];
 const MODE_SELECT_ITEMS = ["Tutorial Run", "Endless Mode", "Back"];
+const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
 
 const SCORE_PER_PICKUP = 10;
 const OFFER_COUNT = 3; // upgrade cards shown per level-up
@@ -88,6 +89,11 @@ export class Game {
     this.offers = [];
     this.upgradeLevels = {}; // { upgradeId: currentLevel }
 
+    // Simple run-summary counters (shown on the Victory screen).
+    this.enemiesDefeated = 0;
+    this.upgradesChosen = 0;
+    this.runTime = 0; // seconds spent in the PLAYING state this run
+
     // Familiar Frenzy meter.
     this.frenzyCharge = 0;  // motes banked toward FRENZY_MOTES
     this.frenzyTimer = 0;   // > 0 while frenzy is active
@@ -108,6 +114,10 @@ export class Game {
     this.pendingLevelUps = 0;
     this.offers = [];
     this.upgradeLevels = {};
+
+    this.enemiesDefeated = 0;
+    this.upgradesChosen = 0;
+    this.runTime = 0;
 
     this.frenzyCharge = 0;
     this.frenzyTimer = 0;
@@ -168,8 +178,24 @@ export class Game {
         if (this.player.deathDone) this.state = STATE.GAME_OVER;
         break;
 
-      case STATE.GAME_OVER:
       case STATE.VICTORY:
+        this.navMenu(VICTORY_ITEMS.length);
+        if (this.confirmPressed()) {
+          if (this.menuIndex === 0) {
+            // FUTURE (Endless): instead of the placeholder, start Endless at
+            // Wave 11 carrying the current build/upgrades over from this run.
+            this.state = STATE.ENDLESS_PLACEHOLDER;
+            this.menuIndex = 0;
+          } else if (this.menuIndex === 1) {
+            this.startGame();                 // Replay Tutorial from Wave 1
+          } else {
+            this.state = STATE.MAIN_MENU;
+            this.menuIndex = 0;
+          }
+        }
+        break;
+
+      case STATE.GAME_OVER:
         if (Input.wasPressed("KeyR")) {
           this.startGame();
         } else if (this.backPressed()) {
@@ -199,6 +225,7 @@ export class Game {
   }
 
   updatePlaying(dt) {
+    this.runTime += dt;
     this.player.update(dt, Input, this.world);
 
     // Familiar Frenzy: tick the active timer, else allow activation when full.
@@ -243,6 +270,7 @@ export class Game {
 
     for (const enemy of this.enemies) {
       if (enemy.dead) {
+        this.enemiesDefeated += 1;
         // Small random scatter so the mote + flask don't land on the same spot,
         // clamped inside the world so drops never land out of reach.
         const j = () => (Math.random() - 0.5) * 24; // ±12px
@@ -283,6 +311,7 @@ export class Game {
     }
     // Victory: the Wave 10 boss has been defeated.
     if (boss && boss.dead) {
+      this.menuIndex = 0;
       this.state = STATE.VICTORY;
       return;
     }
@@ -307,6 +336,7 @@ export class Game {
   applyUpgrade(index) {
     const offer = this.offers[index];
     offer.apply(this);
+    this.upgradesChosen += 1;
 
     // Bump the level for real (capped) upgrades. The fallback has no maxLevel.
     if (offer.maxLevel !== undefined) {
@@ -385,7 +415,8 @@ export class Game {
           drawBossBar(ctx, this.width, this.height, this.waveManager.boss);
         }
         if (this.waveManager.phase === "intermission") {
-          drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer);
+          const bossWave = this.waveManager.displayWave >= this.waveManager.maxWaves;
+          drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer, bossWave);
         }
         break;
 
@@ -399,7 +430,7 @@ export class Game {
         break;
 
       case STATE.VICTORY:
-        drawVictory(ctx, this.width, this.height, this.hudState());
+        drawVictory(ctx, this.width, this.height, this.runSummary(), VICTORY_ITEMS, this.menuIndex);
         break;
 
       case STATE.GAME_OVER:
@@ -452,6 +483,22 @@ export class Game {
     ctx.strokeStyle = "rgba(244, 213, 141, 0.35)";
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, W, H);
+  }
+
+  // Simple end-of-run summary for the Victory screen (existing data only).
+  runSummary() {
+    const total = Math.floor(this.runTime);
+    const mm = String(Math.floor(total / 60)).padStart(2, "0");
+    const ss = String(total % 60).padStart(2, "0");
+    return {
+      level: this.level,
+      wave: this.waveManager.wave,
+      maxWaves: this.waveManager.maxWaves,
+      score: this.score,
+      enemiesDefeated: this.enemiesDefeated,
+      upgradesChosen: this.upgradesChosen,
+      timeText: `${mm}:${ss}`,
+    };
   }
 
   hudState() {

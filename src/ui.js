@@ -275,13 +275,17 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
 }
 
 // --- WAVE BANNER (during the between-wave intermission) -------------------
-export function drawWaveBanner(ctx, w, h, wave, timer) {
+export function drawWaveBanner(ctx, w, h, wave, timer, isBoss = false) {
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.save();
   ctx.globalAlpha = pulse;
   text(ctx, `WAVE ${wave}`, w / 2, h / 2 - 20, { size: 52, color: GOLD });
   ctx.globalAlpha = 1;
-  text(ctx, "Get ready...", w / 2, h / 2 + 30, { size: 22, color: DIM, weight: "500" });
+  if (isBoss) {
+    text(ctx, "Boss Incoming: Elder Wisp", w / 2, h / 2 + 32, { size: 24, color: RED, weight: "700" });
+  } else {
+    text(ctx, "Get ready...", w / 2, h / 2 + 30, { size: 22, color: DIM, weight: "500" });
+  }
   ctx.restore();
 }
 
@@ -303,26 +307,55 @@ export function drawBossBar(ctx, w, h, boss) {
 }
 
 // --- VICTORY --------------------------------------------------------------
-export function drawVictory(ctx, w, h, state) {
-  ctx.fillStyle = "rgba(8, 7, 18, 0.85)";
+export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
+  ctx.fillStyle = "rgba(8, 7, 18, 0.88)";
   ctx.fillRect(0, 0, w, h);
 
-  // A warm glow behind the message.
+  // Warm glow behind the title.
   ctx.save();
   ctx.fillStyle = "rgba(244, 213, 141, 0.10)";
   ctx.beginPath();
-  ctx.arc(w / 2, h / 2 - 20, 170, 0, Math.PI * 2);
+  ctx.arc(w / 2, h * 0.30, 170, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  text(ctx, "YOU SURVIVED!", w / 2, h / 2 - 50, { size: 54, color: GOLD });
-  text(ctx, `All ${state.maxWaves} waves cleared`, w / 2, h / 2 + 6, { size: 22, color: DIM, weight: "500" });
-  text(ctx, `Final Score: ${state.score}`, w / 2, h / 2 + 44, { size: 24, color: GOLD });
+  text(ctx, "TUTORIAL COMPLETE!", w / 2, 70, { size: 44, color: GOLD });
+  text(ctx, "You defeated the Elder Wisp.", w / 2, 112, { size: 18, color: CREAM, weight: "500" });
+  text(ctx, "Your familiar is ready for greater danger.", w / 2, 138, { size: 18, color: DIM, weight: "500" });
 
-  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
-  ctx.globalAlpha = pulse;
-  text(ctx, "R: play again      Esc: main menu", w / 2, h / 2 + 96, { size: 20, color: PURPLE });
-  ctx.globalAlpha = 1;
+  // Run summary — two tidy rows of existing tracked data.
+  const row1 = `Level ${summary.level}      Wave ${summary.wave} / ${summary.maxWaves}      Score ${summary.score}`;
+  const row2 = `Enemies defeated ${summary.enemiesDefeated}      Upgrades ${summary.upgradesChosen}      Time ${summary.timeText}`;
+  text(ctx, row1, w / 2, 186, { size: 17, color: GOLD, weight: "700" });
+  text(ctx, row2, w / 2, 212, { size: 16, color: CREAM, weight: "500" });
+
+  // Menu options.
+  const startY = 280;
+  const lineH = 50;
+  const boxW = 420, boxH = 42;
+
+  items.forEach((item, i) => {
+    const y = startY + i * lineH;
+    const selected = i === selectedIndex;
+
+    if (selected) {
+      ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
+      roundRect(ctx, w / 2 - boxW / 2, y - boxH / 2, boxW, boxH, 8);
+      ctx.fill();
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, w / 2 - boxW / 2, y - boxH / 2, boxW, boxH, 8);
+      ctx.stroke();
+    }
+
+    text(ctx, item, w / 2, y, {
+      size: 24,
+      color: selected ? GOLD : CREAM,
+      weight: selected ? "700" : "500",
+    });
+  });
+
+  text(ctx, "Up / Down: move      Enter / Space: select", w / 2, h - 34, { size: 15, color: DIM, weight: "500" });
 }
 
 // --- GAME OVER ------------------------------------------------------------
