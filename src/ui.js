@@ -182,7 +182,7 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
   const subtitle = offers.length > 1 ? "Choose an upgrade" : "New power gained";
   text(ctx, subtitle, w / 2, h * 0.22 + 42, { size: 20, color: DIM, weight: "500" });
 
-  const cardW = 280, cardH = 170, gap = 28;
+  const cardW = 280, cardH = 188, gap = 28;
   const totalW = offers.length * cardW + (offers.length - 1) * gap;
   let x = (w - totalW) / 2;
   const y = h / 2 - cardH / 2 + 16;
@@ -213,8 +213,14 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
   ctx.fill();
   ctx.restore();
 
-  text(ctx, up.name, x + cw / 2, y + 96, { size: 22, color: GOLD });
-  text(ctx, up.description, x + cw / 2, y + 124, { size: 16, color: DIM, weight: "500" });
+  text(ctx, up.name, x + cw / 2, y + 88, { size: 22, color: GOLD });
+
+  // Level indicator (real upgrades only; the fallback reward has no level).
+  if (up.maxLevel !== undefined) {
+    text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 114, { size: 15, color: PURPLE, weight: "700" });
+  }
+
+  text(ctx, up.description, x + cw / 2, y + 138, { size: 16, color: DIM, weight: "500" });
 
   const prompt = count > 1 ? `Press ${i + 1}` : "Press ENTER";
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);

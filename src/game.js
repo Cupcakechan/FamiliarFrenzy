@@ -85,6 +85,7 @@ export class Game {
 
     this.pendingLevelUps = 0;
     this.offers = [];
+    this.upgradeLevels = {}; // { upgradeId: currentLevel }
 
     // Familiar Frenzy meter.
     this.frenzyCharge = 0;  // motes banked toward FRENZY_MOTES
@@ -105,6 +106,7 @@ export class Game {
     this.xpToNext = 5;
     this.pendingLevelUps = 0;
     this.offers = [];
+    this.upgradeLevels = {};
 
     this.frenzyCharge = 0;
     this.frenzyTimer = 0;
@@ -279,7 +281,7 @@ export class Game {
       return;
     }
     if (this.pendingLevelUps > 0) {
-      this.offers = getOffers(OFFER_COUNT);
+      this.offers = getOffers(OFFER_COUNT, this.upgradeLevels);
       this.state = STATE.LEVEL_UP;
     }
   }
@@ -297,11 +299,18 @@ export class Game {
   }
 
   applyUpgrade(index) {
-    this.offers[index].apply(this);
+    const offer = this.offers[index];
+    offer.apply(this);
+
+    // Bump the level for real (capped) upgrades. The fallback has no maxLevel.
+    if (offer.maxLevel !== undefined) {
+      this.upgradeLevels[offer.id] = (this.upgradeLevels[offer.id] || 0) + 1;
+    }
+
     this.pendingLevelUps -= 1;
 
     if (this.pendingLevelUps > 0) {
-      this.offers = getOffers(OFFER_COUNT);
+      this.offers = getOffers(OFFER_COUNT, this.upgradeLevels);
     } else {
       this.offers = [];
       this.state = STATE.PLAYING;
