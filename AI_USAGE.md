@@ -43,3 +43,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-06 | Phase 7 | Player death animation + dying state (one-shot anim before Game Over) | Claude |
 | 2026-06-06 | Phase 7 | Cat familiar sprites: looping idle + one-shot attack animation | Claude |
 | 2026-06-06 | Phase 7 | Currency mote sprite (looping idle animation) | Claude |
+| 2026-06-07 | Gameplay | Health flask drops: chance-based heal pickup (tunable) | Claude |

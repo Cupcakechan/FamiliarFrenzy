@@ -20,7 +20,7 @@ import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager } from "./enemies.js";
-import { Pickup } from "./pickups.js";
+import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers } from "./upgrades.js";
 import { circlesOverlap } from "./utils.js";
 import { drawTitle, drawHUD, drawUpgradeScreen, drawWaveBanner, drawVictory, drawGameOver } from "./ui.js";
@@ -38,6 +38,10 @@ const SCORE_PER_PICKUP = 10;
 const OFFER_COUNT = 1;
 const MAX_WAVES = 10;
 
+// Health flask drops (Feature 1) — both easy to tune.
+const FLASK_DROP_CHANCE = 0.12; // 12% chance per enemy killed
+const FLASK_HEAL = 25;          // HP restored per flask
+
 export class Game {
   constructor(width, height) {
     this.width = width;
@@ -52,6 +56,7 @@ export class Game {
     this.enemies = [];
     this.waveManager = new WaveManager(MAX_WAVES);
     this.pickups = [];
+    this.flasks = [];
 
     this.score = 0;
 
@@ -70,6 +75,7 @@ export class Game {
     this.enemies = [];
     this.waveManager.reset();
     this.pickups = [];
+    this.flasks = [];
 
     this.xp = 0;
     this.level = 1;
@@ -127,7 +133,12 @@ export class Game {
     this.familiar.update(dt, this.player, this.enemies);
 
     for (const enemy of this.enemies) {
-      if (enemy.dead) this.pickups.push(new Pickup(enemy.x, enemy.y));
+      if (enemy.dead) {
+        this.pickups.push(new Pickup(enemy.x, enemy.y));
+        if (Math.random() < FLASK_DROP_CHANCE) {
+          this.flasks.push(new HealthFlask(enemy.x, enemy.y, FLASK_HEAL));
+        }
+      }
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
 
@@ -139,6 +150,16 @@ export class Game {
       }
     }
     this.pickups = this.pickups.filter((p) => !p.dead);
+
+    // Collect health flasks (heal on walk-over).
+    for (const flask of this.flasks) {
+      flask.update(dt);
+      if (circlesOverlap(flask.x, flask.y, flask.radius + 6, this.player.x, this.player.y, this.player.radius)) {
+        flask.dead = true;
+        this.player.heal(flask.heal);
+      }
+    }
+    this.flasks = this.flasks.filter((f) => !f.dead);
 
     // Priority: death, then victory, then a level-up.
     if (this.player.health <= 0) {
@@ -237,6 +258,7 @@ export class Game {
   drawWorld(ctx) {
     this.drawArena(ctx);
     for (const pickup of this.pickups) pickup.draw(ctx);
+    for (const flask of this.flasks) flask.draw(ctx);
     for (const enemy of this.enemies) enemy.draw(ctx);
     this.familiar.draw(ctx);
     this.player.draw(ctx);

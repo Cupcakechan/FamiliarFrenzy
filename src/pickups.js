@@ -1,14 +1,12 @@
 /* =========================================================================
-   pickups.js — the currency "mote" dropped when an enemy dies.
+   pickups.js — things enemies drop that the witch collects.
 
-   Phase 4: holds an XP value, sits on the ground until collected.
-   Phase 7: a small looping idle sprite (4 frames, single direction).
-            Falls back to the gold placeholder circle if the sprite is
-            missing or still loading. Each mote starts on a random frame so a
-            field of them doesn't animate in lockstep.
+   Pickup (currency mote): grants XP. Uses a small looping idle sprite, with
+   a gold-circle fallback.
 
-   Sprite file (single-row strip) in assets/sprites/pickups/:
-     mote_idle.png   (4 frames)
+   HealthFlask (Feature 1): a rarer drop that restores HP. Uses a SIMPLE green
+   placeholder shape for now (no sprite — art is paused). Carries its heal
+   amount so the game stays the single source of tuning.
    ========================================================================= */
 
 import { randomRange, randomInt } from "./utils.js";
@@ -23,12 +21,12 @@ export class Pickup {
   constructor(x, y) {
     this.x = x;
     this.y = y;
-    this.radius = 7;     // collection hitbox (kept small; +grace added in game.js)
-    this.value = 1;      // XP granted on collect
+    this.radius = 7;
+    this.value = 1;
     this.dead = false;
 
-    this.bob = randomRange(0, Math.PI * 2);  // gentle float, desynced per mote
-    this.spriteScale = 0.5;                  // small pickup; raise/lower to taste
+    this.bob = randomRange(0, Math.PI * 2);
+    this.spriteScale = 0.5;
     this.animFrame = randomInt(0, MOTE_FRAMES - 1);
     this.animTimer = 0;
   }
@@ -56,7 +54,6 @@ export class Pickup {
       const sx = Math.floor(this.animFrame) * fw;
       ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y + yOff - dh / 2, dw, dh);
     } else {
-      // Fallback gold mote.
       ctx.save();
       ctx.shadowColor = "#f4d58d";
       ctx.shadowBlur = 12;
@@ -71,5 +68,46 @@ export class Pickup {
       ctx.fill();
       ctx.restore();
     }
+  }
+}
+
+// --- Health Flask (Feature 1) --------------------------------------------
+// Placeholder: a green orb with a white "+" cross. Easy to swap for a sprite
+// later when art resumes.
+export class HealthFlask {
+  constructor(x, y, heal) {
+    this.x = x;
+    this.y = y;
+    this.radius = 9;
+    this.heal = heal;     // HP restored on pickup
+    this.dead = false;
+    this.bob = randomRange(0, Math.PI * 2);
+  }
+
+  update(dt) {
+    this.bob += dt * 4;
+  }
+
+  draw(ctx) {
+    const yOff = Math.sin(this.bob) * 2;
+    const cy = this.y + yOff;
+    ctx.save();
+
+    ctx.shadowColor = "#5ad17a";
+    ctx.shadowBlur = 12;
+    ctx.fillStyle = "#5ad17a";
+    ctx.beginPath();
+    ctx.arc(this.x, cy, this.radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // White health "+" cross.
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#ffffff";
+    const arm = 6;  // length from center
+    const thick = 2; // half-thickness
+    ctx.fillRect(this.x - thick, cy - arm, thick * 2, arm * 2); // vertical
+    ctx.fillRect(this.x - arm, cy - thick, arm * 2, thick * 2); // horizontal
+
+    ctx.restore();
   }
 }

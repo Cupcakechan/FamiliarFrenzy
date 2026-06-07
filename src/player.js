@@ -146,6 +146,11 @@ export class Player {
     return true;
   }
 
+  // Restore health, never exceeding max.
+  heal(amount) {
+    this.health = Math.min(this.maxHealth, this.health + amount);
+  }
+
   get isInvulnerable() {
     return this.invulnTimer > 0;
   }
