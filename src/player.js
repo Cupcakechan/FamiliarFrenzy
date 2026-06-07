@@ -1,23 +1,25 @@
 /* =========================================================================
    player.js — the witch.
 
-   Phase 7 sprite animation:
-     - 4-direction facing (N/S/E/W) from movement; idle when stopped.
+   Sprite animation:
+     - 8-direction facing (N/S/E/W + NE/NW/SE/SW) from movement; idle when stopped.
      - WALK (loops) while moving, IDLE (loops) when still.
      - DIE (plays ONCE) when health hits 0 — driven by the game's "dying" state.
      - "Hurt" is just the invulnerability flicker (no hurt sprite).
      - Missing/loading sprite → fall back to the purple placeholder circle.
 
-   Sprite files (single-row strips) in assets/sprites/player/:
-     witch_idle_{n,s,e,w}.png   (4 frames)
-     witch_walk_{n,s,e,w}.png   (6 frames)
-     witch_die_{n,s,e,w}.png    (8 frames)
+   Sprite files (single-row strips) in assets/sprites/player/, where
+   <dir> is one of: n, s, e, w, ne, nw, se, sw (diagonals use the same
+   frame counts as the cardinals):
+     witch_idle_<dir>.png   (4 frames)
+     witch_walk_<dir>.png   (6 frames)
+     witch_die_<dir>.png    (8 frames)
    ========================================================================= */
 
 import { clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
 
-const DIRS = ["n", "s", "e", "w"];
+const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 
 // Animation name -> frames in its strip.
 const PLAYER_ANIMS = {
@@ -85,11 +87,11 @@ export class Player {
     const moving = move.x !== 0 || move.y !== 0;
 
     if (moving) {
-      if (Math.abs(move.x) > Math.abs(move.y)) {
-        this.facing = move.x > 0 ? "e" : "w";
-      } else {
-        this.facing = move.y > 0 ? "s" : "n";
-      }
+      // Combine vertical + horizontal so diagonals pick ne/nw/se/sw, and a
+      // single axis picks the cardinal. (y > 0 is south/down, y < 0 north/up.)
+      const vert = move.y > 0 ? "s" : move.y < 0 ? "n" : "";
+      const horiz = move.x > 0 ? "e" : move.x < 0 ? "w" : "";
+      this.facing = (vert + horiz) || this.facing;
     }
 
     const newState = moving ? "walk" : "idle";
