@@ -23,7 +23,7 @@ import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
-import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawVictory, drawGameOver } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawVictory, drawGameOver } from "./ui.js";
 
 const STATE = {
   MAIN_MENU: "mainMenu",
@@ -48,8 +48,19 @@ const OFFER_COUNT = 3; // upgrade cards shown per level-up
 const MAX_WAVES = 10;
 
 // Health flask drops (Feature 1) — both easy to tune.
-const FLASK_DROP_CHANCE = 0.12; // 12% chance per enemy killed
+const FLASK_DROP_CHANCE = 0.12; // 12% base chance per enemy killed
 const FLASK_HEAL = 25;          // HP restored per flask
+
+// Magnet Charm: pulls nearby pickups toward the witch when in range.
+const MAGNET_PULL_SPEED = 280;  // px/s a pickup is drawn toward the player
+
+// Lucky Paws: per-level drop-chance bonuses.
+const LUCK_FLASK_STEP = 0.04;   // +4% flask chance per Lucky Paws level
+const LUCK_MOTE_STEP = 0.08;    // chance per level for a bonus mote on a kill
+
+// Phantom Pounce evolution bonuses (applied once).
+const PHANTOM_PIERCE_BONUS = 2;
+const PHANTOM_DAMAGE_BONUS = 2;
 
 // Familiar Frenzy meter (Feature 3).
 const FRENZY_MOTES = 25;    // motes collected to fill the meter
@@ -89,6 +100,16 @@ export class Game {
     this.offers = [];
     this.upgradeLevels = {}; // { upgradeId: currentLevel }
 
+    // Upgrade-driven values (mutated by apply()); reset each run.
+    this.magnetRange = 0;     // Magnet Charm: pickup attraction radius (0 = none)
+    this.frenzyPerMote = 1;   // Frenzy Focus: charge added per mote
+    this.luckLevel = 0;       // Lucky Paws: drop-chance level
+
+    // Evolution (one-shot).
+    this.phantomPounceUnlocked = false;
+    this.evoBannerText = "";
+    this.evoBannerTimer = 0;  // seconds the unlock banner stays on screen
+
     // Simple run-summary counters (shown on the Victory screen).
     this.enemiesDefeated = 0;
     this.upgradesChosen = 0;
@@ -118,6 +139,13 @@ export class Game {
     this.pendingLevelUps = 0;
     this.offers = [];
     this.upgradeLevels = {};
+
+    this.magnetRange = 0;
+    this.frenzyPerMote = 1;
+    this.luckLevel = 0;
+    this.phantomPounceUnlocked = false;
+    this.evoBannerText = "";
+    this.evoBannerTimer = 0;
 
     this.enemiesDefeated = 0;
     this.upgradesChosen = 0;
@@ -245,6 +273,7 @@ export class Game {
 
   updatePlaying(dt) {
     this.runTime += dt;
+    if (this.evoBannerTimer > 0) this.evoBannerTimer -= dt;
     this.player.update(dt, Input, this.world);
 
     // Familiar Frenzy: tick the active timer, else allow activation when full.
@@ -297,7 +326,13 @@ export class Game {
         const cx = (v) => clamp(v, 0, this.world.width);
         const cy = (v) => clamp(v, 0, this.world.height);
         this.pickups.push(new Pickup(cx(enemy.x + j()), cy(enemy.y + j())));
-        if (Math.random() < FLASK_DROP_CHANCE) {
+
+        // Lucky Paws: chance for a bonus mote, and a higher flask chance.
+        if (this.luckLevel > 0 && Math.random() < this.luckLevel * LUCK_MOTE_STEP) {
+          this.pickups.push(new Pickup(cx(enemy.x + j()), cy(enemy.y + j())));
+        }
+        const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP;
+        if (Math.random() < flaskChance) {
           this.flasks.push(new HealthFlask(cx(enemy.x + j()), cy(enemy.y + j()), FLASK_HEAL));
         }
       }
@@ -306,6 +341,7 @@ export class Game {
 
     for (const pickup of this.pickups) {
       pickup.update(dt);
+      this.applyMagnet(pickup, dt);
       if (circlesOverlap(pickup.x, pickup.y, pickup.radius + 6, this.player.x, this.player.y, this.player.radius)) {
         pickup.dead = true;
         this.collectPickup(pickup);
@@ -316,6 +352,7 @@ export class Game {
     // Collect health flasks (heal on walk-over).
     for (const flask of this.flasks) {
       flask.update(dt);
+      this.applyMagnet(flask, dt);
       if (circlesOverlap(flask.x, flask.y, flask.radius + 6, this.player.x, this.player.y, this.player.radius)) {
         flask.dead = true;
         this.player.heal(flask.heal);
@@ -364,6 +401,8 @@ export class Game {
       this.upgradeLevels[offer.id] = (this.upgradeLevels[offer.id] || 0) + 1;
     }
 
+    this.checkEvolutions();
+
     this.pendingLevelUps -= 1;
 
     if (this.pendingLevelUps > 0) {
@@ -374,13 +413,45 @@ export class Game {
     }
   }
 
+  // Magnet Charm: ease an item toward the witch when within attraction range.
+  applyMagnet(item, dt) {
+    if (this.magnetRange <= 0) return;
+    const dx = this.player.x - item.x;
+    const dy = this.player.y - item.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 0.001 && d < this.magnetRange) {
+      item.x += (dx / d) * MAGNET_PULL_SPEED * dt;
+      item.y += (dy / d) * MAGNET_PULL_SPEED * dt;
+    }
+  }
+
+  // First familiar evolution: Phantom Pounce. Auto-unlocks ONCE when
+  // Sharper Spirit Claws is maxed AND Ghost Pounce is at least level 2.
+  checkEvolutions() {
+    if (this.phantomPounceUnlocked) return;
+
+    const sharper = this.upgradeLevels["sharper_spirit_claws"] || 0;
+    const pounce = this.upgradeLevels["ghost_pounce"] || 0;
+    const sharperMax = 5; // matches Sharper Spirit Claws maxLevel
+
+    if (sharper >= sharperMax && pounce >= 2) {
+      this.phantomPounceUnlocked = true;
+      this.familiar.pierce += PHANTOM_PIERCE_BONUS;
+      this.familiar.damage += PHANTOM_DAMAGE_BONUS;
+      this.familiar.evolved = true;
+      this.evoBannerText = "Evolution Unlocked: Phantom Pounce";
+      this.evoBannerTimer = 4; // seconds on screen
+    }
+  }
+
   collectPickup(pickup) {
     this.xp += pickup.value;
     this.score += SCORE_PER_PICKUP;
 
     // Charge the frenzy meter (only while not already frenzied / not full).
+    // Frenzy Focus raises how much each mote adds (this.frenzyPerMote).
     if (this.frenzyTimer <= 0 && this.frenzyCharge < FRENZY_MOTES) {
-      this.frenzyCharge += 1;
+      this.frenzyCharge = Math.min(FRENZY_MOTES, this.frenzyCharge + this.frenzyPerMote);
     }
 
     while (this.xp >= this.xpToNext) {
@@ -434,6 +505,9 @@ export class Game {
         drawHUD(ctx, this.width, this.height, this.hudState());
         if (this.waveManager.boss && !this.waveManager.boss.dead) {
           drawBossBar(ctx, this.width, this.height, this.waveManager.boss);
+        }
+        if (this.evoBannerTimer > 0) {
+          drawEvolutionBanner(ctx, this.width, this.height, this.evoBannerText, this.evoBannerTimer);
         }
         if (this.waveManager.phase === "intermission") {
           const bossWave = this.waveManager.displayWave >= this.waveManager.maxWaves;

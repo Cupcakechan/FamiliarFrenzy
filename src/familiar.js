@@ -46,7 +46,7 @@ function dirFromVector(dx, dy) {
 
 // --- A single magic bolt -------------------------------------------------
 class Bolt {
-  constructor(x, y, targetX, targetY, speed) {
+  constructor(x, y, targetX, targetY, speed, pierce = 0, evolved = false) {
     this.x = x;
     this.y = y;
     this.radius = 5;
@@ -59,6 +59,10 @@ class Bolt {
 
     this.life = 2;
     this.dead = false;
+
+    this.remainingPierce = pierce; // extra enemies it can pass through
+    this.hitTargets = new Set();   // so it never hits the same enemy twice
+    this.evolved = evolved;        // cosmetic: Phantom Pounce golden tint
   }
 
   update(dt) {
@@ -70,11 +74,17 @@ class Bolt {
 
   draw(ctx) {
     ctx.save();
-    ctx.shadowColor = "#b18cff";
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = "#c9a8ff";
+    if (this.evolved) {
+      ctx.shadowColor = "#f4d58d";
+      ctx.shadowBlur = 14;
+      ctx.fillStyle = "#ffe7a6";
+    } else {
+      ctx.shadowColor = "#b18cff";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#c9a8ff";
+    }
     ctx.beginPath();
-    ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
+    ctx.arc(this.x, this.y, this.evolved ? this.radius + 1.5 : this.radius, 0, Math.PI * 2);
     ctx.fill();
     ctx.restore();
   }
@@ -90,6 +100,8 @@ export class Familiar {
     this.attackCooldown = 1.2;
     this.boltSpeed = 520;
     this.damage = 1;
+    this.pierce = 0;        // extra enemies each bolt passes through (Ghost Pounce)
+    this.evolved = false;   // Phantom Pounce unlocked
 
     this.attackTimer = 0;
     this.bolts = [];
@@ -122,7 +134,7 @@ export class Familiar {
     if (this.attackTimer <= 0) {
       const target = this.findNearestTarget(targets);
       if (target) {
-        this.bolts.push(new Bolt(this.x, this.y, target.x, target.y, this.boltSpeed));
+        this.bolts.push(new Bolt(this.x, this.y, target.x, target.y, this.boltSpeed, this.pierce, this.evolved));
         this.attackTimer = this.attackCooldown * (frenzyActive ? FRENZY_COOLDOWN_SCALE : 1);
         this.facing = dirFromVector(target.x - this.x, target.y - this.y); // face the shot
         this.startAttackAnim();
@@ -134,15 +146,21 @@ export class Familiar {
       this.facing = dirFromVector(moveX, moveY);
     }
 
-    // --- Move bolts + hits ---
+    // --- Move bolts + hits (with piercing) ---
     for (const bolt of this.bolts) {
       bolt.update(dt);
+      if (bolt.dead) continue;
       for (const target of targets) {
-        if (target.dead) continue;
+        if (target.dead || bolt.hitTargets.has(target)) continue;
         if (distance(bolt.x, bolt.y, target.x, target.y) < bolt.radius + target.radius) {
-          bolt.dead = true;
           target.takeDamage(this.damage);
-          break;
+          bolt.hitTargets.add(target);
+          if (bolt.remainingPierce > 0) {
+            bolt.remainingPierce -= 1; // pass through to the next enemy
+          } else {
+            bolt.dead = true;
+            break;
+          }
         }
       }
     }
@@ -257,6 +275,8 @@ export class Familiar {
     this.bolts = [];
     this.damage = 1;
     this.attackCooldown = 1.2;
+    this.pierce = 0;
+    this.evolved = false;
     this.frenzyActive = false;
     this.facing = "s";
     this.animState = "idle";

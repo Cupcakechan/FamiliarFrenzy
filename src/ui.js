@@ -289,6 +289,19 @@ export function drawWaveBanner(ctx, w, h, wave, timer, isBoss = false) {
   ctx.restore();
 }
 
+// --- EVOLUTION BANNER (transient unlock notice) --------------------------
+export function drawEvolutionBanner(ctx, w, h, text_, timer) {
+  // Fade out over the last second.
+  const alpha = Math.min(1, timer);
+  const pulse = 0.85 + 0.15 * Math.sin(performance.now() / 200);
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.shadowColor = "#f4d58d";
+  ctx.shadowBlur = 18 * pulse;
+  text(ctx, text_, w / 2, h * 0.30, { size: 26, color: GOLD });
+  ctx.restore();
+}
+
 // --- BOSS HEALTH BAR ------------------------------------------------------
 export function drawBossBar(ctx, w, h, boss) {
   const barW = 520, barH = 16;
