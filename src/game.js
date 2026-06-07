@@ -23,16 +23,23 @@ import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
-import { drawTitle, drawHUD, drawUpgradeScreen, drawWaveBanner, drawVictory, drawGameOver } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHUD, drawUpgradeScreen, drawWaveBanner, drawVictory, drawGameOver } from "./ui.js";
 
 const STATE = {
-  TITLE: "title",
+  MAIN_MENU: "mainMenu",
+  MODE_SELECT: "modeSelect",
+  ENDLESS_PLACEHOLDER: "endlessPlaceholder",
+  HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
+  SETTINGS_PLACEHOLDER: "settingsPlaceholder",
   PLAYING: "playing",
   LEVEL_UP: "levelUp",
   DYING: "dying",      // brief: play the witch's death animation, then Game Over
   GAME_OVER: "gameOver",
   VICTORY: "victory",
 };
+
+const MAIN_MENU_ITEMS = ["Play", "High Scores", "Settings"];
+const MODE_SELECT_ITEMS = ["Tutorial Run", "Endless Mode", "Back"];
 
 const SCORE_PER_PICKUP = 10;
 const OFFER_COUNT = 3; // upgrade cards shown per level-up
@@ -56,7 +63,8 @@ export class Game {
     this.height = height;
     this.world = { width: WORLD_W, height: WORLD_H };
 
-    this.state = STATE.TITLE;
+    this.state = STATE.MAIN_MENU;
+    this.menuIndex = 0; // highlighted option in the current menu
 
     this.player = new Player(WORLD_W / 2, WORLD_H / 2);
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
@@ -104,10 +112,36 @@ export class Game {
   // --- UPDATE ------------------------------------------------------------
   update(dt) {
     switch (this.state) {
-      case STATE.TITLE:
-        if (Input.wasPressed("Enter") || Input.wasPressed("NumpadEnter")) {
-          this.startGame();
+      case STATE.MAIN_MENU:
+        this.navMenu(MAIN_MENU_ITEMS.length);
+        if (this.confirmPressed()) {
+          if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
+          else if (this.menuIndex === 1) this.state = STATE.HIGHSCORES_PLACEHOLDER;
+          else if (this.menuIndex === 2) this.state = STATE.SETTINGS_PLACEHOLDER;
         }
+        break;
+
+      case STATE.MODE_SELECT:
+        this.navMenu(MODE_SELECT_ITEMS.length);
+        if (this.confirmPressed()) {
+          if (this.menuIndex === 0) this.startGame();                 // Tutorial Run
+          else if (this.menuIndex === 1) this.state = STATE.ENDLESS_PLACEHOLDER;
+          else if (this.menuIndex === 2) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+        } else if (this.backPressed()) {
+          this.state = STATE.MAIN_MENU; this.menuIndex = 0;
+        }
+        break;
+
+      case STATE.ENDLESS_PLACEHOLDER:
+        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
+        break;
+
+      case STATE.HIGHSCORES_PLACEHOLDER:
+        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+        break;
+
+      case STATE.SETTINGS_PLACEHOLDER:
+        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         break;
 
       case STATE.PLAYING:
@@ -127,9 +161,30 @@ export class Game {
       case STATE.VICTORY:
         if (Input.wasPressed("KeyR")) {
           this.startGame();
+        } else if (this.backPressed()) {
+          this.state = STATE.MAIN_MENU;
+          this.menuIndex = 0;
         }
         break;
     }
+  }
+
+  // --- Menu helpers ------------------------------------------------------
+  navMenu(count) {
+    if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+      this.menuIndex = (this.menuIndex - 1 + count) % count;
+    }
+    if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+      this.menuIndex = (this.menuIndex + 1) % count;
+    }
+  }
+
+  confirmPressed() {
+    return Input.wasPressed("Enter") || Input.wasPressed("NumpadEnter") || Input.wasPressed("Space");
+  }
+
+  backPressed() {
+    return Input.wasPressed("Escape") || Input.wasPressed("Backspace");
   }
 
   updatePlaying(dt) {
@@ -257,8 +312,26 @@ export class Game {
   render(ctx) {
     ctx.clearRect(0, 0, this.width, this.height);
 
-    if (this.state === STATE.TITLE) {
-      drawTitle(ctx, this.width, this.height);
+    if (this.state === STATE.MAIN_MENU) {
+      drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
+        ["Up / Down: move      Enter: select"]);
+      return;
+    }
+    if (this.state === STATE.MODE_SELECT) {
+      drawMenu(ctx, this.width, this.height, "Choose Mode", MODE_SELECT_ITEMS, this.menuIndex,
+        ["Tutorial: capped 10-wave run", "Endless: coming soon", "Up/Down move • Enter select • Esc back"]);
+      return;
+    }
+    if (this.state === STATE.ENDLESS_PLACEHOLDER) {
+      drawPlaceholder(ctx, this.width, this.height, "Endless Mode");
+      return;
+    }
+    if (this.state === STATE.HIGHSCORES_PLACEHOLDER) {
+      drawPlaceholder(ctx, this.width, this.height, "High Scores");
+      return;
+    }
+    if (this.state === STATE.SETTINGS_PLACEHOLDER) {
+      drawPlaceholder(ctx, this.width, this.height, "Settings");
       return;
     }
 

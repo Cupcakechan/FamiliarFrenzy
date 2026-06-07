@@ -20,7 +20,7 @@ window.addEventListener("keydown", (e) => {
   heldKeys.add(e.code);
 
   // Stop arrow keys / space from scrolling the page while playing.
-  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space"].includes(e.code)) {
+  if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "Backspace"].includes(e.code)) {
     e.preventDefault();
   }
 });

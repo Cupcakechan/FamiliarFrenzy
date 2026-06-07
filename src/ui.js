@@ -10,6 +10,8 @@ const GOLD = "#f4d58d";
 const PURPLE = "#9b6cff";
 const RED = "#e2536b";
 const DIM = "rgba(244, 213, 141, 0.65)";
+const CREAM = "#f3e7c6";
+const MENU_BG = "#140d24"; // dark purple
 
 // --- Shared helpers -------------------------------------------------------
 function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font = "Cinzel, Georgia, serif", weight = "700" } = {}) {
@@ -31,27 +33,64 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// --- TITLE SCREEN ---------------------------------------------------------
-export function drawTitle(ctx, w, h) {
-  ctx.fillStyle = "#0d0b1c";
+// --- MENUS ----------------------------------------------------------------
+// Generic vertical menu: title + highlighted option list + footer hints.
+export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = []) {
+  ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
+  // Faint moon backdrop for flavor.
   ctx.save();
-  ctx.fillStyle = "rgba(244, 213, 141, 0.10)";
+  ctx.fillStyle = "rgba(244, 213, 141, 0.08)";
   ctx.beginPath();
-  ctx.arc(w / 2, h / 2 - 30, 150, 0, Math.PI * 2);
+  ctx.arc(w / 2, h * 0.40, 150, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  text(ctx, "FAMILIAR FRENZY", w / 2, h / 2 - 70, { size: 56, color: GOLD });
-  text(ctx, "A witch survives. Her cat does the fighting.", w / 2, h / 2 - 20, { size: 20, color: DIM, weight: "500" });
+  text(ctx, title, w / 2, h * 0.24, { size: 52, color: GOLD });
+
+  const startY = h * 0.46;
+  const lineH = 50;
+  const boxW = 380, boxH = 42;
+
+  items.forEach((item, i) => {
+    const y = startY + i * lineH;
+    const selected = i === selectedIndex;
+
+    if (selected) {
+      ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
+      roundRect(ctx, w / 2 - boxW / 2, y - boxH / 2, boxW, boxH, 8);
+      ctx.fill();
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, w / 2 - boxW / 2, y - boxH / 2, boxW, boxH, 8);
+      ctx.stroke();
+    }
+
+    text(ctx, item, w / 2, y, {
+      size: 28,
+      color: selected ? GOLD : CREAM,
+      weight: selected ? "700" : "500",
+    });
+  });
+
+  footerLines.forEach((line, i) => {
+    text(ctx, line, w / 2, h - 64 + i * 22, { size: 15, color: DIM, weight: "500" });
+  });
+}
+
+// --- PLACEHOLDER ("Coming Soon") screen -----------------------------------
+export function drawPlaceholder(ctx, w, h, title) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, title, w / 2, h / 2 - 30, { size: 48, color: GOLD });
+  text(ctx, "Coming Soon", w / 2, h / 2 + 20, { size: 24, color: CREAM, weight: "500" });
 
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, "Press ENTER to begin", w / 2, h / 2 + 60, { size: 26, color: PURPLE });
+  text(ctx, "Press Esc or Backspace to return", w / 2, h - 60, { size: 16, color: PURPLE, weight: "500" });
   ctx.globalAlpha = 1;
-
-  text(ctx, "Move: WASD / Arrow Keys", w / 2, h - 50, { size: 16, color: DIM, weight: "500" });
 }
 
 // --- IN-GAME HUD ----------------------------------------------------------
@@ -214,7 +253,7 @@ export function drawVictory(ctx, w, h, state) {
 
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, "Press R to play again", w / 2, h / 2 + 96, { size: 22, color: PURPLE });
+  text(ctx, "R: play again      Esc: main menu", w / 2, h / 2 + 96, { size: 20, color: PURPLE });
   ctx.globalAlpha = 1;
 }
 
@@ -229,6 +268,6 @@ export function drawGameOver(ctx, w, h, state) {
 
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, "Press R to try again", w / 2, h / 2 + 90, { size: 24, color: PURPLE });
+  text(ctx, "R: try again      Esc: main menu", w / 2, h / 2 + 90, { size: 20, color: PURPLE });
   ctx.globalAlpha = 1;
 }
