@@ -28,6 +28,9 @@ const LOOPING = { idle: true, attack: false };
 // How far (px) the cat trails up-left of the witch. Bigger = more separation.
 const FOLLOW_OFFSET = 40;
 
+// During Familiar Frenzy the cat fires this fraction of its normal cooldown.
+const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
+
 for (const anim of ["idle", "attack"]) {
   for (const d of DIRS) {
     const key = `familiar_${anim}_${d}`;
@@ -90,6 +93,7 @@ export class Familiar {
 
     this.attackTimer = 0;
     this.bolts = [];
+    this.frenzyActive = false;
 
     // Animation.
     this.facing = "s";
@@ -99,7 +103,9 @@ export class Familiar {
     this.spriteScale = 1;    // lower if the cat looks too big vs the witch
   }
 
-  update(dt, player, targets) {
+  update(dt, player, targets, frenzyActive = false) {
+    this.frenzyActive = frenzyActive;
+
     // --- FOLLOW (eases toward a spot near the witch) ---
     const prevX = this.x;
     const prevY = this.y;
@@ -117,7 +123,7 @@ export class Familiar {
       const target = this.findNearestTarget(targets);
       if (target) {
         this.bolts.push(new Bolt(this.x, this.y, target.x, target.y, this.boltSpeed));
-        this.attackTimer = this.attackCooldown;
+        this.attackTimer = this.attackCooldown * (frenzyActive ? FRENZY_COOLDOWN_SCALE : 1);
         this.facing = dirFromVector(target.x - this.x, target.y - this.y); // face the shot
         this.startAttackAnim();
       }
@@ -190,6 +196,20 @@ export class Familiar {
   draw(ctx) {
     for (const bolt of this.bolts) bolt.draw(ctx);
 
+    // Frenzy aura (cheap drawn glow, no sprite).
+    if (this.frenzyActive) {
+      const pulse = 16 + Math.sin(performance.now() / 110) * 4;
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.shadowColor = "#f4d58d";
+      ctx.shadowBlur = 22;
+      ctx.fillStyle = "rgba(244, 213, 141, 0.28)";
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.radius + pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
     const key = `familiar_${this.animState}_${this.facing}`;
     const img = getImage(key);
 
@@ -236,6 +256,8 @@ export class Familiar {
     this.attackTimer = 0;
     this.bolts = [];
     this.damage = 1;
+    this.attackCooldown = 1.2;
+    this.frenzyActive = false;
     this.facing = "s";
     this.animState = "idle";
     this.animFrame = 0;

@@ -22,7 +22,7 @@ import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers } from "./upgrades.js";
-import { circlesOverlap } from "./utils.js";
+import { circlesOverlap, clamp } from "./utils.js";
 import { drawTitle, drawHUD, drawUpgradeScreen, drawWaveBanner, drawVictory, drawGameOver } from "./ui.js";
 
 const STATE = {
@@ -35,23 +35,31 @@ const STATE = {
 };
 
 const SCORE_PER_PICKUP = 10;
-const OFFER_COUNT = 1;
+const OFFER_COUNT = 3; // upgrade cards shown per level-up
 const MAX_WAVES = 10;
 
 // Health flask drops (Feature 1) — both easy to tune.
 const FLASK_DROP_CHANCE = 0.12; // 12% chance per enemy killed
 const FLASK_HEAL = 25;          // HP restored per flask
 
+// Familiar Frenzy meter (Feature 3).
+const FRENZY_MOTES = 25;    // motes collected to fill the meter
+const FRENZY_DURATION = 6;  // seconds the frenzy lasts
+
+// World size (larger than the 960x540 viewport; the camera follows the player).
+const WORLD_W = 2400;
+const WORLD_H = 1350;
+
 export class Game {
   constructor(width, height) {
-    this.width = width;
+    this.width = width;   // viewport (canvas) size
     this.height = height;
-    this.bounds = { width, height };
+    this.world = { width: WORLD_W, height: WORLD_H };
 
     this.state = STATE.TITLE;
 
-    this.player = new Player(width / 2, height / 2);
-    this.familiar = new Familiar(width / 2 - 22, height / 2 - 22);
+    this.player = new Player(WORLD_W / 2, WORLD_H / 2);
+    this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
 
     this.enemies = [];
     this.waveManager = new WaveManager(MAX_WAVES);
@@ -66,12 +74,16 @@ export class Game {
 
     this.pendingLevelUps = 0;
     this.offers = [];
+
+    // Familiar Frenzy meter.
+    this.frenzyCharge = 0;  // motes banked toward FRENZY_MOTES
+    this.frenzyTimer = 0;   // > 0 while frenzy is active
   }
 
   startGame() {
     this.score = 0;
-    this.player.reset(this.width / 2, this.height / 2);
-    this.familiar.reset(this.width / 2 - 22, this.height / 2 - 22);
+    this.player.reset(WORLD_W / 2, WORLD_H / 2);
+    this.familiar.reset(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
     this.enemies = [];
     this.waveManager.reset();
     this.pickups = [];
@@ -82,6 +94,9 @@ export class Game {
     this.xpToNext = 5;
     this.pendingLevelUps = 0;
     this.offers = [];
+
+    this.frenzyCharge = 0;
+    this.frenzyTimer = 0;
 
     this.state = STATE.PLAYING;
   }
@@ -118,10 +133,25 @@ export class Game {
   }
 
   updatePlaying(dt) {
-    this.player.update(dt, Input, this.bounds);
+    this.player.update(dt, Input, this.world);
 
-    // Waves: spawn this wave's enemies, run intermissions, flag victory.
-    this.waveManager.update(dt, this.enemies, this.bounds);
+    // Familiar Frenzy: tick the active timer, else allow activation when full.
+    if (this.frenzyTimer > 0) {
+      this.frenzyTimer -= dt;
+    } else if (this.frenzyCharge >= FRENZY_MOTES && Input.wasPressed("Space")) {
+      this.frenzyTimer = FRENZY_DURATION;
+      this.frenzyCharge = 0;
+    }
+
+    // Waves: spawn just outside the current view so enemies always approach
+    // from the screen edges, wherever you are in the world.
+    const cam = this.getCamera();
+    const view = {
+      camX: cam.x, camY: cam.y,
+      viewW: this.width, viewH: this.height,
+      worldW: this.world.width, worldH: this.world.height,
+    };
+    this.waveManager.update(dt, this.enemies, view);
 
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player);
@@ -130,13 +160,18 @@ export class Game {
       }
     }
 
-    this.familiar.update(dt, this.player, this.enemies);
+    this.familiar.update(dt, this.player, this.enemies, this.frenzyTimer > 0);
 
     for (const enemy of this.enemies) {
       if (enemy.dead) {
-        this.pickups.push(new Pickup(enemy.x, enemy.y));
+        // Small random scatter so the mote + flask don't land on the same spot,
+        // clamped inside the world so drops never land out of reach.
+        const j = () => (Math.random() - 0.5) * 24; // ±12px
+        const cx = (v) => clamp(v, 0, this.world.width);
+        const cy = (v) => clamp(v, 0, this.world.height);
+        this.pickups.push(new Pickup(cx(enemy.x + j()), cy(enemy.y + j())));
         if (Math.random() < FLASK_DROP_CHANCE) {
-          this.flasks.push(new HealthFlask(enemy.x, enemy.y, FLASK_HEAL));
+          this.flasks.push(new HealthFlask(cx(enemy.x + j()), cy(enemy.y + j()), FLASK_HEAL));
         }
       }
     }
@@ -205,6 +240,11 @@ export class Game {
     this.xp += pickup.value;
     this.score += SCORE_PER_PICKUP;
 
+    // Charge the frenzy meter (only while not already frenzied / not full).
+    if (this.frenzyTimer <= 0 && this.frenzyCharge < FRENZY_MOTES) {
+      this.frenzyCharge += 1;
+    }
+
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level += 1;
@@ -217,42 +257,51 @@ export class Game {
   render(ctx) {
     ctx.clearRect(0, 0, this.width, this.height);
 
-    switch (this.state) {
-      case STATE.TITLE:
-        drawTitle(ctx, this.width, this.height);
-        break;
+    if (this.state === STATE.TITLE) {
+      drawTitle(ctx, this.width, this.height);
+      return;
+    }
 
+    // World is drawn THROUGH the camera; HUD/overlays stay in screen space.
+    const cam = this.getCamera();
+    ctx.save();
+    ctx.translate(-cam.x, -cam.y);
+    this.drawWorld(ctx);
+    ctx.restore();
+
+    switch (this.state) {
       case STATE.PLAYING:
-        this.drawWorld(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
-        // Between-wave banner (player can still move during the breather).
         if (this.waveManager.phase === "intermission") {
           drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer);
         }
         break;
 
       case STATE.LEVEL_UP:
-        this.drawWorld(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
         drawUpgradeScreen(ctx, this.width, this.height, this.offers);
         break;
 
-      case STATE.VICTORY:
-        this.drawWorld(ctx);
-        drawVictory(ctx, this.width, this.height, this.hudState());
-        break;
-
       case STATE.DYING:
-        // Frozen world + HUD while the death animation plays (no overlay yet).
-        this.drawWorld(ctx);
         drawHUD(ctx, this.width, this.height, this.hudState());
         break;
 
+      case STATE.VICTORY:
+        drawVictory(ctx, this.width, this.height, this.hudState());
+        break;
+
       case STATE.GAME_OVER:
-        this.drawWorld(ctx);
         drawGameOver(ctx, this.width, this.height, this.hudState());
         break;
     }
+  }
+
+  // Camera top-left in world coords: centers the player, clamped to the world
+  // so the view never shows past the edges.
+  getCamera() {
+    const camX = clamp(this.player.x - this.width / 2, 0, this.world.width - this.width);
+    const camY = clamp(this.player.y - this.height / 2, 0, this.world.height - this.height);
+    return { x: camX, y: camY };
   }
 
   drawWorld(ctx) {
@@ -265,24 +314,32 @@ export class Game {
   }
 
   drawArena(ctx) {
+    const W = this.world.width;
+    const H = this.world.height;
+
     ctx.fillStyle = "#161430";
-    ctx.fillRect(0, 0, this.width, this.height);
+    ctx.fillRect(0, 0, W, H);
 
     ctx.strokeStyle = "rgba(155, 108, 255, 0.08)";
     ctx.lineWidth = 1;
     const step = 48;
-    for (let x = step; x < this.width; x += step) {
+    for (let x = step; x < W; x += step) {
       ctx.beginPath();
       ctx.moveTo(x, 0);
-      ctx.lineTo(x, this.height);
+      ctx.lineTo(x, H);
       ctx.stroke();
     }
-    for (let y = step; y < this.height; y += step) {
+    for (let y = step; y < H; y += step) {
       ctx.beginPath();
       ctx.moveTo(0, y);
-      ctx.lineTo(this.width, y);
+      ctx.lineTo(W, y);
       ctx.stroke();
     }
+
+    // World border so the edges of the playfield are visible.
+    ctx.strokeStyle = "rgba(244, 213, 141, 0.35)";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(0, 0, W, H);
   }
 
   hudState() {
@@ -295,6 +352,11 @@ export class Game {
       xp: this.xp,
       xpToNext: this.xpToNext,
       level: this.level,
+      frenzyCharge: this.frenzyCharge,
+      frenzyMax: FRENZY_MOTES,
+      frenzyActive: this.frenzyTimer > 0,
+      frenzyTimer: this.frenzyTimer,
+      frenzyDuration: FRENZY_DURATION,
     };
   }
 }

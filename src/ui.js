@@ -94,6 +94,41 @@ export function drawHUD(ctx, w, h, state) {
   ctx.strokeRect(xpX, xpY, xpW, xpH);
 
   text(ctx, `Lv ${state.level}`, xpX - 12, xpY + xpH / 2, { size: 16, color: GOLD, align: "right" });
+
+  // Familiar Frenzy meter (just above the XP bar).
+  const frW = 300, frH = 12;
+  const frX = (w - frW) / 2, frY = h - 52;
+
+  let frPct, fillColor, leftLabel, leftColor;
+  if (state.frenzyActive) {
+    frPct = Math.max(0, state.frenzyTimer / state.frenzyDuration); // drains
+    fillColor = GOLD;
+    leftLabel = "FRENZY!";
+    leftColor = GOLD;
+  } else {
+    frPct = Math.min(1, state.frenzyCharge / state.frenzyMax);
+    fillColor = "#c77dff";
+    leftLabel = "Frenzy";
+    leftColor = DIM;
+  }
+
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillRect(frX - 2, frY - 2, frW + 4, frH + 4);
+  ctx.fillStyle = fillColor;
+  ctx.fillRect(frX, frY, frW * frPct, frH);
+  ctx.strokeStyle = GOLD;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(frX, frY, frW, frH);
+
+  text(ctx, leftLabel, frX - 12, frY + frH / 2, { size: 13, color: leftColor, align: "right" });
+
+  // Pulsing "ready" prompt when the meter is full and not yet active.
+  if (!state.frenzyActive && frPct >= 1) {
+    const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 250);
+    ctx.globalAlpha = pulse;
+    text(ctx, "SPACE: FRENZY!", w / 2, frY - 14, { size: 15, color: PURPLE });
+    ctx.globalAlpha = 1;
+  }
 }
 
 // --- LEVEL-UP / UPGRADE SCREEN -------------------------------------------

@@ -44,3 +44,6 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-06 | Phase 7 | Cat familiar sprites: looping idle + one-shot attack animation | Claude |
 | 2026-06-06 | Phase 7 | Currency mote sprite (looping idle animation) | Claude |
 | 2026-06-07 | Gameplay | Health flask drops: chance-based heal pickup (tunable) | Claude |
+| 2026-06-07 | Gameplay | Three upgrade choices (Sharper Spirit Claws, Restless Wisp, Spirit Heart) | Claude |
+| 2026-06-07 | Gameplay | Familiar Frenzy meter (Space burst, faster attacks + glow) + drop scatter | Claude |
+| 2026-06-07 | Gameplay | Larger world + follow camera (Vampire-Survivors style); fixes off-screen drops | Claude |

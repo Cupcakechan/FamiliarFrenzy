@@ -200,6 +200,7 @@ export class Player {
   reset(x, y) {
     this.x = x;
     this.y = y;
+    this.maxHealth = 100;
     this.health = this.maxHealth;
     this.invulnTimer = 0;
     this.facing = "s";

@@ -10,7 +10,7 @@
 - **Cinzel** — Google Fonts (Open Font License). Used for title/UI text.
 
 ## Art
-- _(Placeholder shapes for now. List sprite sources / AI art tools here as added.)_
+- PixelLab.ai
 
 ## Audio
 - _(None yet. List music + sound effect sources here as added.)_

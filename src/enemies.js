@@ -13,7 +13,7 @@
      health  = 2 + floor(wave/3)  (+1 HP every 3 waves)
    ========================================================================= */
 
-import { randomInt, randomRange } from "./utils.js";
+import { randomInt, randomRange, clamp } from "./utils.js";
 
 export class Enemy {
   constructor(x, y) {
@@ -70,13 +70,26 @@ export class Enemy {
   }
 }
 
-// Spawn just OUTSIDE a random edge so wisps drift inward.
-function randomEdgePosition(bounds, margin = 24) {
+// Spawn just OUTSIDE the current viewport so wisps approach from the screen
+// edges wherever the player is, then clamp into the world so none spawn out of
+// bounds. `view` = { camX, camY, viewW, viewH, worldW, worldH }.
+function spawnOutsideView(view, margin = 40) {
+  const left = view.camX;
+  const top = view.camY;
+  const right = view.camX + view.viewW;
+  const bottom = view.camY + view.viewH;
+
   const edge = randomInt(0, 3); // 0 top, 1 right, 2 bottom, 3 left
-  if (edge === 0) return { x: randomRange(0, bounds.width), y: -margin };
-  if (edge === 1) return { x: bounds.width + margin, y: randomRange(0, bounds.height) };
-  if (edge === 2) return { x: randomRange(0, bounds.width), y: bounds.height + margin };
-  return { x: -margin, y: randomRange(0, bounds.height) };
+  let x, y;
+  if (edge === 0)      { x = randomRange(left, right);  y = top - margin; }
+  else if (edge === 1) { x = right + margin;            y = randomRange(top, bottom); }
+  else if (edge === 2) { x = randomRange(left, right);  y = bottom + margin; }
+  else                 { x = left - margin;             y = randomRange(top, bottom); }
+
+  return {
+    x: clamp(x, 0, view.worldW),
+    y: clamp(y, 0, view.worldH),
+  };
 }
 
 export class WaveManager {
@@ -107,7 +120,8 @@ export class WaveManager {
   }
 
   // Mutates the `enemies` array. Call every frame while playing.
-  update(dt, enemies, bounds) {
+  // `view` describes the camera/world so spawns happen just off-screen.
+  update(dt, enemies, view) {
     if (this.victory) return;
 
     if (this.phase === "intermission") {
@@ -120,7 +134,7 @@ export class WaveManager {
     if (this.toSpawn > 0) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0 && enemies.length < this.maxAlive) {
-        enemies.push(this.makeWisp(bounds));
+        enemies.push(this.makeWisp(view));
         this.toSpawn -= 1;
         this.spawnTimer = this.spawnInterval;
       }
@@ -142,8 +156,8 @@ export class WaveManager {
     this.spawnTimer = 0;              // first enemy comes right away
   }
 
-  makeWisp(bounds) {
-    const pos = randomEdgePosition(bounds);
+  makeWisp(view) {
+    const pos = spawnOutsideView(view);
     const e = new Enemy(pos.x, pos.y);
     // Difficulty scaling per wave.
     e.speed = 75 + this.wave * 4;
