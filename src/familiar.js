@@ -3,8 +3,9 @@
 
    Follow + auto-fire bolts at the nearest enemy.
 
-   Phase 7 sprite animation (4 directions: N/S/E/W):
-     - IDLE (9 frames, loops) — its floaty "movement".
+   Sprite animation (8 directions: N/S/E/W + NE/NW/SE/SW, like the witch):
+     - IDLE (4 frames, loops) — its floaty "movement". It's a ghost, so the
+       idle loop doubles as drifting/following; there is no separate walk.
      - ATTACK (6 frames, plays ONCE) — triggered when it fires an orb,
        then it returns to idle.
      - Facing: while idle it faces its drift/follow direction; when it fires
@@ -12,17 +13,18 @@
      - Drawn SMALLER than the witch via `spriteScale`.
      - Missing/loading sprite → fall back to the placeholder black cat.
 
-   Sprite files (single-row strips) in assets/sprites/familiar/:
-     familiar_idle_{n,s,e,w}.png    (9 frames)
-     familiar_attack_{n,s,e,w}.png  (6 frames)
+   Sprite files (single-row strips) in assets/sprites/familiar/, where <dir>
+   is one of: n, s, e, w, ne, nw, se, sw:
+     familiar_idle_<dir>.png    (4 frames)
+     familiar_attack_<dir>.png  (6 frames)
    ========================================================================= */
 
 import { distance, lerp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
 
-const DIRS = ["n", "s", "e", "w"];
-const FAMILIAR_ANIMS = { idle: 9, attack: 6 };
-const FAMILIAR_FPS = { idle: 8, attack: 12 }; // attack: 6 @ 12fps = 0.5s (fits cooldown)
+const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+const FAMILIAR_ANIMS = { idle: 4, attack: 6 };
+const FAMILIAR_FPS = { idle: 6, attack: 12 }; // attack: 6 @ 12fps = 0.5s (fits cooldown)
 const LOOPING = { idle: true, attack: false };
 
 // How far (px) the cat trails up-left of the witch. Bigger = more separation.
@@ -31,6 +33,7 @@ const FOLLOW_OFFSET = 40;
 // During Familiar Frenzy the cat fires this fraction of its normal cooldown.
 const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 
+// Registers 8 dirs x 2 anims = 16 strips (missing ones fall back gracefully).
 for (const anim of ["idle", "attack"]) {
   for (const d of DIRS) {
     const key = `familiar_${anim}_${d}`;
@@ -38,10 +41,22 @@ for (const anim of ["idle", "attack"]) {
   }
 }
 
-// Pick N/S/E/W from a direction vector (horizontal wins ties).
+// Pick one of 8 directions (N/S/E/W + diagonals) from a direction vector.
+// Canvas y+ points DOWN, so positive dy = south. Diagonal names are
+// vertical-first (e.g. "ne", "sw") to match the sprite file naming + the witch.
 function dirFromVector(dx, dy) {
-  if (Math.abs(dx) > Math.abs(dy)) return dx > 0 ? "e" : "w";
-  return dy > 0 ? "s" : "n"; // canvas y+ is downward
+  const octant = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  switch ((octant + 8) % 8) {
+    case 0: return "e";
+    case 1: return "se";
+    case 2: return "s";
+    case 3: return "sw";
+    case 4: return "w";
+    case 5: return "nw";
+    case 6: return "n";
+    case 7: return "ne";
+    default: return "s";
+  }
 }
 
 // --- A single magic bolt -------------------------------------------------
