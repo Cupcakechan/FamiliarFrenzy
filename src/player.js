@@ -75,8 +75,11 @@ export class Player {
 
     this.x += move.x * this.speed * dt;
     this.y += move.y * this.speed * dt;
-    this.x = clamp(this.x, this.radius, bounds.width - this.radius);
-    this.y = clamp(this.y, this.radius, bounds.height - this.radius);
+    // Keep the whole circle inside the arena, minus an optional edge inset
+    // (the wall-ring thickness) so the witch stays on the floor.
+    const m = bounds.inset || 0;
+    this.x = clamp(this.x, this.radius + m, bounds.width - this.radius - m);
+    this.y = clamp(this.y, this.radius + m, bounds.height - this.radius - m);
 
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
 

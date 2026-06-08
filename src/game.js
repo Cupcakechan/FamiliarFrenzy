@@ -29,6 +29,12 @@ import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, d
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
 const TILE = 32;
 loadImage("dungeon_tiles", "assets/tiles/Main_Dungeon.png");
+loadImage("floor_props", "assets/tiles/floor_props.png");
+
+// Floor prop density (seeded per cell). Rows 0-2 = floor variants, row 3 = rune circles.
+// Dial these up/down to taste: ~0.05 very subtle · ~0.10 subtle · ~0.22 busy.
+const PROP_VARIANT_CHANCE = 0.09;  // cracks / moss / rune-tinted floor
+const PROP_CIRCLE_CHANCE = 0.003;  // rune-circle seals (a few across the map)
 
 const STATE = {
   MAIN_MENU: "mainMenu",
@@ -82,11 +88,19 @@ const WORLD_H = 1344; // 42 tiles tall (multiple of 32 so the wall row lands flu
 // How many normal wisps the boss summons each time.
 const SUMMON_COUNT = 3;
 
+// Deterministic 0..1 value for a tile + seed (stable every frame, no flicker).
+function tileRand(x, y, seed) {
+  let h = (x * 73856093) ^ (y * 19349663) ^ (seed * 83492791);
+  h = (h ^ (h >>> 13)) >>> 0;
+  h = (h * 1274126177) >>> 0;
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
 export class Game {
   constructor(width, height) {
     this.width = width;   // viewport (canvas) size
     this.height = height;
-    this.world = { width: WORLD_W, height: WORLD_H };
+    this.world = { width: WORLD_W, height: WORLD_H, inset: TILE };
 
     this.state = STATE.MAIN_MENU;
     this.menuIndex = 0; // highlighted option in the current menu
@@ -363,8 +377,8 @@ export class Game {
       for (let i = 0; i < SUMMON_COUNT; i++) {
         const a = Math.random() * Math.PI * 2;
         const r = 36 + Math.random() * 28;
-        const ex = clamp(boss.x + Math.cos(a) * r, 0, this.world.width);
-        const ey = clamp(boss.y + Math.sin(a) * r, 0, this.world.height);
+        const ex = clamp(boss.x + Math.cos(a) * r, TILE, this.world.width - TILE);
+        const ey = clamp(boss.y + Math.sin(a) * r, TILE, this.world.height - TILE);
         this.enemies.push(new Enemy(ex, ey));
       }
       boss.summonReady = false;
@@ -377,8 +391,8 @@ export class Game {
         // Small random scatter so the mote + flask don't land on the same spot,
         // clamped inside the world so drops never land out of reach.
         const j = () => (Math.random() - 0.5) * 24; // ±12px
-        const cx = (v) => clamp(v, 0, this.world.width);
-        const cy = (v) => clamp(v, 0, this.world.height);
+        const cx = (v) => clamp(v, TILE, this.world.width - TILE);
+        const cy = (v) => clamp(v, TILE, this.world.height - TILE);
         this.pickups.push(new Pickup(cx(enemy.x + j()), cy(enemy.y + j())));
 
         // Lucky Paws: chance for a bonus mote, and a higher flask chance.
@@ -646,6 +660,7 @@ export class Game {
   // Draw the floor everywhere with a stone wall ring around the world edge.
   // Only the tiles inside the camera viewport are drawn (cheap culling).
   drawTiledArena(ctx, sheet, W, H) {
+    const props = getImage("floor_props");
     const cam = this.getCamera();
     const lastX = Math.floor(W / TILE) - 1; // 74
     const lastY = Math.floor(H / TILE) - 1; // 41
@@ -657,26 +672,39 @@ export class Game {
 
     for (let ty = startY; ty <= endY; ty++) {
       for (let tx = startX; tx <= endX; tx++) {
+        const dx = tx * TILE, dy = ty * TILE;
         const top = ty === 0, bottom = ty === lastY;
         const left = tx === 0, right = tx === lastX;
+        const border = top || bottom || left || right;
 
-        let scol, srow;
-        if (top && left)       { scol = 0; srow = 0; }
-        else if (top && right) { scol = 3; srow = 0; }
-        else if (bottom && left)  { scol = 0; srow = 3; }
-        else if (bottom && right) { scol = 3; srow = 3; }
-        else if (top)    { scol = 1; srow = 0; }
-        else if (bottom) { scol = 1; srow = 3; }
-        else if (left)   { scol = 0; srow = 1; }
-        else if (right)  { scol = 3; srow = 1; }
-        else {
-          // Interior floor: repeat the 2x2 detailed-floor block by world parity
-          // (keeps the cells' original adjacency, so it stays seamless).
-          scol = 1 + (tx % 2);
-          srow = 1 + (ty % 2);
+        if (border) {
+          let scol, srow;
+          if (top && left)          { scol = 0; srow = 0; }
+          else if (top && right)    { scol = 3; srow = 0; }
+          else if (bottom && left)  { scol = 0; srow = 3; }
+          else if (bottom && right) { scol = 3; srow = 3; }
+          else if (top)    { scol = 1; srow = 0; }
+          else if (bottom) { scol = 1; srow = 3; }
+          else if (left)   { scol = 0; srow = 1; }
+          else             { scol = 3; srow = 1; }
+          ctx.drawImage(sheet, scol * TILE, srow * TILE, TILE, TILE, dx, dy, TILE, TILE);
+          continue;
         }
 
-        ctx.drawImage(sheet, scol * TILE, srow * TILE, TILE, TILE, tx * TILE, ty * TILE, TILE, TILE);
+        // Interior: base floor (2x2 block by parity) first...
+        ctx.drawImage(sheet, (1 + (tx % 2)) * TILE, (1 + (ty % 2)) * TILE, TILE, TILE, dx, dy, TILE, TILE);
+
+        // ...then a seeded prop on top (props have soft edges, so the floor shows through).
+        if (props) {
+          const roll = tileRand(tx, ty, 1);
+          if (roll < PROP_CIRCLE_CHANCE) {
+            const i = Math.floor(tileRand(tx, ty, 2) * 4); // row 3 = rune circles
+            ctx.drawImage(props, i * TILE, 3 * TILE, TILE, TILE, dx, dy, TILE, TILE);
+          } else if (roll < PROP_CIRCLE_CHANCE + PROP_VARIANT_CHANCE) {
+            const k = Math.floor(tileRand(tx, ty, 3) * 12); // rows 0-2 = 12 floor variants
+            ctx.drawImage(props, (k % 4) * TILE, Math.floor(k / 4) * TILE, TILE, TILE, dx, dy, TILE, TILE);
+          }
+        }
       }
     }
   }
