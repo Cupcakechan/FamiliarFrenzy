@@ -61,3 +61,5 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-07 | Art/Tiles | Floor prop layer: normalized 131px prop sheet to clean 128 grid; seeded per-tile prop pass over the arena floor (22% variants + rare rune-circle seals), interior-only, no flicker | Claude |
 | 2026-06-07 | Art/FX | EXP mote glow polish: pulsing gold radial-gradient halo + gentle breathing scale (cheap, swarm-safe, sprite path only) | Claude |
 | 2026-06-07 | Docs | README rewritten to current build (full feature list, Live Server run steps, accurate controls + game-flow, updated file tree) | Claude |
+| 2026-06-07 | Art/Sprites | Familiar expanded to 8-direction facing (added NE/NW/SE/SW) with 8-way angle-based dirFromVector; idle frame count set to 4 (idle doubles as ghost drift) | Claude |
+| 2026-06-07 | UI/Polish | Hide mouse cursor over the canvas (keyboard-only game; cursor was overlapping the player) | Claude |

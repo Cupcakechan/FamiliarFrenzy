@@ -127,7 +127,7 @@ export class Familiar {
     this.animState = "idle"; // "idle" | "attack"
     this.animFrame = 0;
     this.animTimer = 0;
-    this.spriteScale = 1;    // lower if the cat looks too big vs the witch
+    this.spriteScale = 0.65; // visual only; lower if the cat looks too big vs the witch
   }
 
   update(dt, player, targets, frenzyActive = false) {
