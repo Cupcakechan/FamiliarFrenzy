@@ -33,6 +33,11 @@ const FOLLOW_OFFSET = 40;
 // During Familiar Frenzy the cat fires this fraction of its normal cooldown.
 const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 
+// --- Ghost trail (visual only) -------------------------------------------
+const TRAIL_MAX = 6;          // past snapshots kept (the newest sits under the cat)
+const TRAIL_ALPHA_MIN = 0.12; // oldest afterimage opacity
+const TRAIL_ALPHA_MAX = 0.40; // newest visible afterimage opacity
+
 // Registers 8 dirs x 2 anims = 16 strips (missing ones fall back gracefully).
 for (const anim of ["idle", "attack"]) {
   for (const d of DIRS) {
@@ -128,6 +133,7 @@ export class Familiar {
     this.animFrame = 0;
     this.animTimer = 0;
     this.spriteScale = 0.65; // visual only; lower if the cat looks too big vs the witch
+    this.trail = [];         // ghost-trail snapshots (visual only)
   }
 
   update(dt, player, targets, frenzyActive = false) {
@@ -182,6 +188,16 @@ export class Familiar {
     this.bolts = this.bolts.filter((b) => !b.dead);
 
     this.updateAnimation(dt);
+
+    // Record a snapshot for the ghost trail (visual only). Sampled every frame,
+    // so the trail naturally spreads when moving and bunches up when still.
+    this.trail.push({
+      x: this.x, y: this.y,
+      facing: this.facing,
+      animState: this.animState,
+      animFrame: this.animFrame,
+    });
+    if (this.trail.length > TRAIL_MAX) this.trail.shift();
   }
 
   startAttackAnim() {
@@ -226,8 +242,64 @@ export class Familiar {
     return nearest;
   }
 
+  // Draw one cat (sprite or fallback) at a position + facing + frame, at a
+  // given opacity. Used for BOTH the real cat (alpha 1) and the ghost-trail
+  // afterimages (low alpha). Wrapped in save/restore so globalAlpha + shadow
+  // never leak out and dim anything else on screen.
+  drawCat(ctx, x, y, facing, animState, animFrame, alpha) {
+    const key = `familiar_${animState}_${facing}`;
+    const img = getImage(key);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    if (img && img.width > 0) {
+      const frames = FAMILIAR_ANIMS[animState];
+      const fw = img.width / frames;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = Math.floor(animFrame) * fw;
+      ctx.drawImage(img, sx, 0, fw, fh, x - dw / 2, y - dh / 2, dw, dh);
+    } else {
+      // --- Fallback placeholder black cat ---
+      ctx.shadowColor = "rgba(155,108,255,0.5)";
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = "#1c1a26";
+      ctx.beginPath();
+      ctx.arc(x, y, this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(x - 7, y - 5);
+      ctx.lineTo(x - 4, y - 13);
+      ctx.lineTo(x - 1, y - 6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(x + 1, y - 6);
+      ctx.lineTo(x + 4, y - 13);
+      ctx.lineTo(x + 7, y - 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = "#f4d58d";
+      ctx.beginPath(); ctx.arc(x - 3, y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(x + 3, y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
   draw(ctx) {
     for (const bolt of this.bolts) bolt.draw(ctx);
+
+    // --- Ghost trail: faded afterimages behind the cat, oldest → newest ---
+    for (let i = 0; i < this.trail.length; i++) {
+      const s = this.trail[i];
+      const t = this.trail.length > 1 ? i / (this.trail.length - 1) : 1;
+      const alpha = TRAIL_ALPHA_MIN + (TRAIL_ALPHA_MAX - TRAIL_ALPHA_MIN) * t;
+      this.drawCat(ctx, s.x, s.y, s.facing, s.animState, s.animFrame, alpha);
+    }
 
     // Frenzy aura (cheap drawn glow, no sprite).
     if (this.frenzyActive) {
@@ -243,44 +315,8 @@ export class Familiar {
       ctx.restore();
     }
 
-    const key = `familiar_${this.animState}_${this.facing}`;
-    const img = getImage(key);
-
-    if (img && img.width > 0) {
-      const frames = FAMILIAR_ANIMS[this.animState];
-      const fw = img.width / frames;
-      const fh = img.height;
-      const dw = fw * this.spriteScale;
-      const dh = fh * this.spriteScale;
-      const sx = Math.floor(this.animFrame) * fw;
-      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
-    } else {
-      // --- Fallback placeholder black cat ---
-      ctx.save();
-      ctx.shadowColor = "rgba(155,108,255,0.5)";
-      ctx.shadowBlur = 8;
-      ctx.fillStyle = "#1c1a26";
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.beginPath();
-      ctx.moveTo(this.x - 7, this.y - 5);
-      ctx.lineTo(this.x - 4, this.y - 13);
-      ctx.lineTo(this.x - 1, this.y - 6);
-      ctx.closePath();
-      ctx.fill();
-      ctx.beginPath();
-      ctx.moveTo(this.x + 1, this.y - 6);
-      ctx.lineTo(this.x + 4, this.y - 13);
-      ctx.lineTo(this.x + 7, this.y - 5);
-      ctx.closePath();
-      ctx.fill();
-      ctx.fillStyle = "#f4d58d";
-      ctx.beginPath(); ctx.arc(this.x - 3, this.y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(this.x + 3, this.y - 1, 1.7, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-    }
+    // The real cat on top, full opacity.
+    this.drawCat(ctx, this.x, this.y, this.facing, this.animState, this.animFrame, 1);
   }
 
   reset(x, y) {
@@ -297,5 +333,6 @@ export class Familiar {
     this.animState = "idle";
     this.animFrame = 0;
     this.animTimer = 0;
+    this.trail = [];
   }
 }

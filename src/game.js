@@ -541,7 +541,7 @@ export class Game {
     }
     if (this.state === STATE.MODE_SELECT) {
       drawMenu(ctx, this.width, this.height, "Choose Mode", MODE_SELECT_ITEMS, this.menuIndex,
-        ["Tutorial: capped 10-wave run", "Endless: coming soon", "Up/Down move • Enter select • Esc back"]);
+        ["Up/Down move • Enter select • Esc back"]);
       return;
     }
     if (this.state === STATE.HOW_TO_PLAY) {
