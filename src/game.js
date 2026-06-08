@@ -23,7 +23,12 @@ import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers, UPGRADES } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
+import { loadImage, getImage } from "./assets.js";
 import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver } from "./ui.js";
+
+// Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
+const TILE = 32;
+loadImage("dungeon_tiles", "assets/tiles/Main_Dungeon.png");
 
 const STATE = {
   MAIN_MENU: "mainMenu",
@@ -71,8 +76,8 @@ const FRENZY_MOTES = 25;    // motes collected to fill the meter
 const FRENZY_DURATION = 6;  // seconds the frenzy lasts
 
 // World size (larger than the 960x540 viewport; the camera follows the player).
-const WORLD_W = 2400;
-const WORLD_H = 1350;
+const WORLD_W = 2400; // 75 tiles wide
+const WORLD_H = 1344; // 42 tiles tall (multiple of 32 so the wall row lands flush)
 
 // How many normal wisps the boss summons each time.
 const SUMMON_COUNT = 3;
@@ -597,7 +602,7 @@ export class Game {
   getCamera() {
     const camX = clamp(this.player.x - this.width / 2, 0, this.world.width - this.width);
     const camY = clamp(this.player.y - this.height / 2, 0, this.world.height - this.height);
-    return { x: camX, y: camY };
+    return { x: Math.round(camX), y: Math.round(camY) };
   }
 
   drawWorld(ctx) {
@@ -612,7 +617,14 @@ export class Game {
   drawArena(ctx) {
     const W = this.world.width;
     const H = this.world.height;
+    const sheet = getImage("dungeon_tiles");
 
+    if (sheet) {
+      this.drawTiledArena(ctx, sheet, W, H);
+      return;
+    }
+
+    // Fallback (sheet missing / still loading): flat floor + faint grid + border.
     ctx.fillStyle = "#161430";
     ctx.fillRect(0, 0, W, H);
 
@@ -620,22 +632,53 @@ export class Game {
     ctx.lineWidth = 1;
     const step = 48;
     for (let x = step; x < W; x += step) {
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(x, H);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
     }
     for (let y = step; y < H; y += step) {
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(W, y);
-      ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
     }
 
-    // World border so the edges of the playfield are visible.
     ctx.strokeStyle = "rgba(244, 213, 141, 0.35)";
     ctx.lineWidth = 4;
     ctx.strokeRect(0, 0, W, H);
+  }
+
+  // Draw the floor everywhere with a stone wall ring around the world edge.
+  // Only the tiles inside the camera viewport are drawn (cheap culling).
+  drawTiledArena(ctx, sheet, W, H) {
+    const cam = this.getCamera();
+    const lastX = Math.floor(W / TILE) - 1; // 74
+    const lastY = Math.floor(H / TILE) - 1; // 41
+
+    const startX = Math.max(0, Math.floor(cam.x / TILE));
+    const endX = Math.min(lastX, Math.floor((cam.x + this.width - 1) / TILE));
+    const startY = Math.max(0, Math.floor(cam.y / TILE));
+    const endY = Math.min(lastY, Math.floor((cam.y + this.height - 1) / TILE));
+
+    for (let ty = startY; ty <= endY; ty++) {
+      for (let tx = startX; tx <= endX; tx++) {
+        const top = ty === 0, bottom = ty === lastY;
+        const left = tx === 0, right = tx === lastX;
+
+        let scol, srow;
+        if (top && left)       { scol = 0; srow = 0; }
+        else if (top && right) { scol = 3; srow = 0; }
+        else if (bottom && left)  { scol = 0; srow = 3; }
+        else if (bottom && right) { scol = 3; srow = 3; }
+        else if (top)    { scol = 1; srow = 0; }
+        else if (bottom) { scol = 1; srow = 3; }
+        else if (left)   { scol = 0; srow = 1; }
+        else if (right)  { scol = 3; srow = 1; }
+        else {
+          // Interior floor: repeat the 2x2 detailed-floor block by world parity
+          // (keeps the cells' original adjacency, so it stays seamless).
+          scol = 1 + (tx % 2);
+          srow = 1 + (ty % 2);
+        }
+
+        ctx.drawImage(sheet, scol * TILE, srow * TILE, TILE, TILE, tx * TILE, ty * TILE, TILE, TILE);
+      }
+    }
   }
 
   // Persist endless bests (best wave + best score) in the browser. Wrapped in

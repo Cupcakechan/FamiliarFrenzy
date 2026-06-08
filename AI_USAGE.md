@@ -56,3 +56,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-07 | Gameplay | Expanded upgrade pool (Magnet Charm, Ghost Pounce/pierce, Frenzy Focus, Lucky Paws) with tags; bolt piercing system; first familiar evolution Phantom Pounce (auto-unlock, one-shot, banner) | Claude |
 | 2026-06-07 | UI/Systems | Pause menu (Esc/P) with frozen gameplay, run-info panel (mode/wave/level/score/health/frenzy/upgrades/evolution), Settings-from-pause with return target, Main Menu confirm | Claude |
 | 2026-06-07 | Art/Sprites | Player witch expanded to 8-direction facing (added NE/NW/SE/SW) reusing idle/walk/die frame counts; auto-registers 24 strips with placeholder fallback | Claude |
+| 2026-06-07 | Art/Tiles | Tiled arena floor + stone wall border from 32px 4x4 dungeon tileset (culled drawImage, 2x2 floor variation, integer-camera anti-seam); world height aligned to 1344 | Claude |
