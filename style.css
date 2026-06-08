@@ -56,6 +56,10 @@ body {
   background: #000;
   border-radius: 2px;
 
+  /* The game is keyboard-only, so hide the mouse cursor over the play area
+     (it was sitting on top of the player). */
+  cursor: none;
+
   /* CRISP PIXEL ART:
      Tells the browser NOT to blur the canvas when it is scaled.
      (We also turn off smoothing in JS via ctx.imageSmoothingEnabled = false.) */
