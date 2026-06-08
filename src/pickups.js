@@ -2,7 +2,9 @@
    pickups.js — things enemies drop that the witch collects.
 
    Pickup (currency mote): grants XP. Uses a small looping idle sprite, with
-   a gold-circle fallback.
+   a gold-circle fallback. The loaded sprite now gets a soft, pulsing gold
+   GLOW HALO + a gentle "breathing" scale so motes read as little magical
+   beacons (cheap: a radial gradient, NOT shadowBlur, so swarms stay smooth).
 
    HealthFlask (Feature 1): a rarer drop that restores HP. Uses a SIMPLE green
    placeholder shape for now (no sprite — art is paused). Carries its heal
@@ -15,6 +17,12 @@ import { loadImage, getImage } from "./assets.js";
 const MOTE_FRAMES = 4;
 const MOTE_FPS = 6;
 
+// --- Mote glow tuning (all easy to dial) ---------------------------------
+const MOTE_GLOW_SPEED = 3;        // radians/sec the halo + scale pulse breathes
+const MOTE_HALO_SCALE = 2.6;      // halo radius as a multiple of the mote radius
+const MOTE_HALO_PULSE = 0.30;     // how much the halo radius grows/shrinks (0..1)
+const MOTE_BREATHE_AMOUNT = 0.14; // sprite scale swing (≈ ±7%)
+
 loadImage("mote_idle", "assets/sprites/pickups/mote_idle.png");
 
 export class Pickup {
@@ -26,6 +34,7 @@ export class Pickup {
     this.dead = false;
 
     this.bob = randomRange(0, Math.PI * 2);
+    this.glow = randomRange(0, Math.PI * 2); // own phase so glow ≠ in lock-step with bob
     this.spriteScale = 0.5;
     this.animFrame = randomInt(0, MOTE_FRAMES - 1);
     this.animTimer = 0;
@@ -33,6 +42,7 @@ export class Pickup {
 
   update(dt) {
     this.bob += dt * 4;
+    this.glow += dt * MOTE_GLOW_SPEED;
 
     const frameDur = 1 / MOTE_FPS;
     this.animTimer += dt;
@@ -44,27 +54,47 @@ export class Pickup {
 
   draw(ctx) {
     const yOff = Math.sin(this.bob) * 2;
+    const cy = this.y + yOff;
     const img = getImage("mote_idle");
 
+    // Breathing value 0..1 (drives both the halo and the sprite scale).
+    const pulse = 0.5 + 0.5 * Math.sin(this.glow);
+
     if (img && img.width > 0) {
+      // --- Soft glow halo behind the sprite ---
+      // A radial gradient is far cheaper than ctx.shadowBlur, so dozens of
+      // motes on screen at once (swarms / Lucky Paws) stay smooth.
+      const haloR = this.radius * MOTE_HALO_SCALE * (1 - MOTE_HALO_PULSE / 2 + pulse * MOTE_HALO_PULSE);
+      const g = ctx.createRadialGradient(this.x, cy, 0, this.x, cy, haloR);
+      g.addColorStop(0, `rgba(244, 213, 141, ${0.32 + pulse * 0.26})`);
+      g.addColorStop(0.45, "rgba(244, 213, 141, 0.16)");
+      g.addColorStop(1, "rgba(244, 213, 141, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, cy, haloR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // --- Sprite, with a subtle breathing scale ---
+      const breathe = 1 + (pulse - 0.5) * MOTE_BREATHE_AMOUNT;
       const fw = img.width / MOTE_FRAMES;
       const fh = img.height;
-      const dw = fw * this.spriteScale;
-      const dh = fh * this.spriteScale;
+      const dw = fw * this.spriteScale * breathe;
+      const dh = fh * this.spriteScale * breathe;
       const sx = Math.floor(this.animFrame) * fw;
-      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y + yOff - dh / 2, dw, dh);
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, cy - dh / 2, dw, dh);
     } else {
+      // --- Fallback gold mote (unchanged) ---
       ctx.save();
       ctx.shadowColor = "#f4d58d";
       ctx.shadowBlur = 12;
       ctx.fillStyle = "#f4d58d";
       ctx.beginPath();
-      ctx.arc(this.x, this.y + yOff, this.radius, 0, Math.PI * 2);
+      ctx.arc(this.x, cy, this.radius, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
       ctx.fillStyle = "#fff6dd";
       ctx.beginPath();
-      ctx.arc(this.x, this.y + yOff, this.radius * 0.45, 0, Math.PI * 2);
+      ctx.arc(this.x, cy, this.radius * 0.45, 0, Math.PI * 2);
       ctx.fill();
       ctx.restore();
     }

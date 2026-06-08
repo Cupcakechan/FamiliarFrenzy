@@ -59,3 +59,5 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-07 | Art/Tiles | Tiled arena floor + stone wall border from 32px 4x4 dungeon tileset (culled drawImage, 2x2 floor variation, integer-camera anti-seam); world height aligned to 1344 | Claude |
 | 2026-06-07 | Gameplay | Wall-ring collision inset — player clamps to floor interior; drops and boss summons kept off the wall border | Claude |
 | 2026-06-07 | Art/Tiles | Floor prop layer: normalized 131px prop sheet to clean 128 grid; seeded per-tile prop pass over the arena floor (22% variants + rare rune-circle seals), interior-only, no flicker | Claude |
+| 2026-06-07 | Art/FX | EXP mote glow polish: pulsing gold radial-gradient halo + gentle breathing scale (cheap, swarm-safe, sprite path only) | Claude |
+| 2026-06-07 | Docs | README rewritten to current build (full feature list, Live Server run steps, accurate controls + game-flow, updated file tree) | Claude |
