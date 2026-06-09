@@ -135,7 +135,7 @@ export class Familiar {
     this.animState = "idle"; // "idle" | "attack"
     this.animFrame = 0;
     this.animTimer = 0;
-    this.spriteScale = 0.65; // visual only; lower if the cat looks too big vs the witch
+    this.spriteScale = 0.50; // visual only; lower if the cat looks too big vs the witch
     this.trail = [];            // ghost imprints (visual only)
     this.lastImprintX = this.x; // where the last imprint was dropped
     this.lastImprintY = this.y;

@@ -21,6 +21,14 @@ const ctx = canvas.getContext("2d");
 // Crisp pixels (matters once we add sprites — no blurry scaling).
 ctx.imageSmoothingEnabled = false;
 
+// Kick off loading the custom font now. Canvas text does NOT trigger a font
+// download on its own (there's no DOM text using it), so without this nudge the
+// title could fall back to serif until the font happens to load. Once it's
+// ready, the game loop just starts drawing with it on the next frame.
+if (document.fonts && document.fonts.load) {
+  document.fonts.load('700 16px "Darkrunes Arcanum"').catch(() => {});
+}
+
 // Internal resolution is fixed by the <canvas width/height> attributes.
 const game = new Game(canvas.width, canvas.height);
 

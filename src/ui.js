@@ -14,7 +14,7 @@ const CREAM = "#f3e7c6";
 const MENU_BG = "#140d24"; // dark purple
 
 // --- Shared helpers -------------------------------------------------------
-function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font = "Cinzel, Georgia, serif", weight = "700" } = {}) {
+function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font = "'Darkrunes Arcanum', Georgia, serif", weight = "700" } = {}) {
   ctx.fillStyle = color;
   ctx.font = `${weight} ${size}px ${font}`;
   ctx.textAlign = align;

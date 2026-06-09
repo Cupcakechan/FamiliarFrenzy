@@ -4,6 +4,14 @@
    Theme: cozy-arcane — deep indigo night, moonlit gold accents.
    ========================================================================= */
 
+@font-face {
+  font-family: "Darkrunes Arcanum";
+  src: url("assets/fonts/darkrunes-arcanum.ttf") format("truetype");
+  font-weight: 100 900; /* one file covers every weight the game requests */
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg-deep:   #0b0a18; /* page background, darkest */
   --bg-frame:  #14122a; /* area just around the canvas */
@@ -32,7 +40,7 @@ body {
   user-select: none;
   -webkit-user-select: none;
 
-  font-family: "Cinzel", Georgia, serif;
+  font-family: "Darkrunes Arcanum", Georgia, serif;
   color: var(--gold);
   overflow: hidden;
 }
