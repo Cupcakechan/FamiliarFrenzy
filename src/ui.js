@@ -317,8 +317,10 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
 
   text(ctx, up.name, x + cw / 2, y + 88, { size: 22, color: GOLD, maxWidth: cw - 24 });
 
-  // Level indicator (real upgrades only; the fallback reward has no level).
-  if (up.maxLevel !== undefined) {
+  // Level indicator — or an "EVOLUTION" tag for one-time evolution upgrades.
+  if (up.tag === "evolution") {
+    text(ctx, "EVOLUTION", x + cw / 2, y + 114, { size: 15, color: GOLD, weight: "700" });
+  } else if (up.maxLevel !== undefined) {
     text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 114, { size: 15, color: PURPLE, weight: "700" });
   }
 

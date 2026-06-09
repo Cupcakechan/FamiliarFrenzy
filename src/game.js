@@ -74,10 +74,6 @@ const MAGNET_PULL_SPEED = 280;  // px/s a pickup is drawn toward the player
 const LUCK_FLASK_STEP = 0.04;   // +4% flask chance per Lucky Paws level
 const LUCK_MOTE_STEP = 0.08;    // chance per level for a bonus mote on a kill
 
-// Phantom Pounce evolution bonuses (applied once).
-const PHANTOM_PIERCE_BONUS = 2;
-const PHANTOM_DAMAGE_BONUS = 2;
-
 // Familiar Frenzy meter (Feature 3).
 const FRENZY_MOTES = 25;    // motes collected to fill the meter
 const FRENZY_DURATION = 6;  // seconds the frenzy lasts
@@ -502,8 +498,6 @@ export class Game {
       this.upgradeLevels[offer.id] = (this.upgradeLevels[offer.id] || 0) + 1;
     }
 
-    this.checkEvolutions();
-
     this.pendingLevelUps -= 1;
 
     if (this.pendingLevelUps > 0) {
@@ -526,25 +520,9 @@ export class Game {
     }
   }
 
-  // First familiar evolution: Phantom Pounce. Auto-unlocks ONCE when
-  // Sharper Spirit Claws is maxed AND Ghost Pounce is at least level 2.
-  checkEvolutions() {
-    if (this.phantomPounceUnlocked) return;
-
-    const sharper = this.upgradeLevels["sharper_spirit_claws"] || 0;
-    const pounce = this.upgradeLevels["ghost_pounce"] || 0;
-    const sharperMax = 5; // matches Sharper Spirit Claws maxLevel
-
-    if (sharper >= sharperMax && pounce >= 2) {
-      this.phantomPounceUnlocked = true;
-      this.familiar.pierce += PHANTOM_PIERCE_BONUS;
-      this.familiar.damage += PHANTOM_DAMAGE_BONUS;
-      this.familiar.evolved = true;
-      this.evoBannerText = "Evolution Unlocked: Phantom Pounce";
-      this.evoBannerTimer = 4; // seconds on screen
-    }
-  }
-
+  // First familiar evolution: Phantom Pounce. It now enters the upgrade pool
+  // as a choosable card (see EVOLUTIONS in upgrades.js) once its requirements
+  // are met, instead of auto-applying — so the player reads + picks it.
   collectPickup(pickup) {
     this.xp += pickup.value;
     this.score += SCORE_PER_PICKUP;
