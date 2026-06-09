@@ -36,7 +36,7 @@ const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 // --- Ghost imprints (visual only) ----------------------------------------
 // Spaced afterimages: drop one only after travelling IMPRINT_GAP px, then let
 // it fade over IMPRINT_LIFE. Gives "2  2  2  2" spacing, not a packed smear.
-const IMPRINT_GAP = 40;         // px the cat must travel before dropping a new imprint
+const IMPRINT_GAP = 22;         // px the cat must travel before dropping a new imprint
 const IMPRINT_LIFE = 0.45;      // seconds an imprint takes to fade out
 const IMPRINT_MAX = 6;          // safety cap on simultaneous imprints
 const IMPRINT_ALPHA_MAX = 0.40; // opacity of a fresh imprint
@@ -47,6 +47,19 @@ for (const anim of ["idle", "attack"]) {
     const key = `familiar_${anim}_${d}`;
     loadImage(key, `assets/sprites/familiar/${key}.png`);
   }
+}
+
+// --- Rune projectile sprite pool (visual only) ---------------------------
+// Each bolt picks one rune at spawn and keeps it for its whole lifetime.
+// Set RUNE_COUNT to however many rune_0N.png files you actually have. Any that
+// are missing/still loading just fall back to the orb draw — never a crash.
+const RUNE_COUNT = 15;
+const RUNE_SCALE = .5;  // visual size = native sprite size * this (lower if too big)
+const RUNE_KEYS = [];
+for (let i = 1; i <= RUNE_COUNT; i++) {
+  const key = `rune_${String(i).padStart(2, "0")}`;
+  RUNE_KEYS.push(key);
+  loadImage(key, `assets/sprites/projectiles/${key}.png`);
 }
 
 // Pick one of 8 directions (N/S/E/W + diagonals) from a direction vector.
@@ -86,6 +99,11 @@ class Bolt {
     this.remainingPierce = pierce; // extra enemies it can pass through
     this.hitTargets = new Set();   // so it never hits the same enemy twice
     this.evolved = evolved;        // cosmetic: Phantom Pounce golden tint
+
+    // Pick one rune from the pool for this bolt's whole lifetime (visual only).
+    this.runeKey = RUNE_KEYS.length
+      ? RUNE_KEYS[Math.floor(Math.random() * RUNE_KEYS.length)]
+      : null;
   }
 
   update(dt) {
@@ -96,20 +114,34 @@ class Bolt {
   }
 
   draw(ctx) {
-    ctx.save();
-    if (this.evolved) {
-      ctx.shadowColor = "#f4d58d";
-      ctx.shadowBlur = 14;
-      ctx.fillStyle = "#ffe7a6";
+    const img = this.runeKey ? getImage(this.runeKey) : null;
+
+    if (img && img.width > 0) {
+      // --- Rune sprite (chosen once at spawn; keeps the magical glow) ---
+      const dw = img.width * RUNE_SCALE;
+      const dh = img.height * RUNE_SCALE;
+      ctx.save();
+      ctx.shadowColor = this.evolved ? "#f4d58d" : "#b18cff";
+      ctx.shadowBlur = this.evolved ? 14 : 12;
+      ctx.drawImage(img, this.x - dw / 2, this.y - dh / 2, dw, dh);
+      ctx.restore();
     } else {
-      ctx.shadowColor = "#b18cff";
-      ctx.shadowBlur = 12;
-      ctx.fillStyle = "#c9a8ff";
+      // --- Fallback orb (unchanged) ---
+      ctx.save();
+      if (this.evolved) {
+        ctx.shadowColor = "#f4d58d";
+        ctx.shadowBlur = 14;
+        ctx.fillStyle = "#ffe7a6";
+      } else {
+        ctx.shadowColor = "#b18cff";
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = "#c9a8ff";
+      }
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, this.evolved ? this.radius + 1.5 : this.radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
     }
-    ctx.beginPath();
-    ctx.arc(this.x, this.y, this.evolved ? this.radius + 1.5 : this.radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
   }
 }
 
@@ -135,7 +167,7 @@ export class Familiar {
     this.animState = "idle"; // "idle" | "attack"
     this.animFrame = 0;
     this.animTimer = 0;
-    this.spriteScale = 0.50; // visual only; lower if the cat looks too big vs the witch
+    this.spriteScale = 0.65; // visual only; lower if the cat looks too big vs the witch
     this.trail = [];            // ghost imprints (visual only)
     this.lastImprintX = this.x; // where the last imprint was dropped
     this.lastImprintY = this.y;
