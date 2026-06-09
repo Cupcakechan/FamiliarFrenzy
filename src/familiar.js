@@ -33,10 +33,13 @@ const FOLLOW_OFFSET = 40;
 // During Familiar Frenzy the cat fires this fraction of its normal cooldown.
 const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 
-// --- Ghost trail (visual only) -------------------------------------------
-const TRAIL_MAX = 6;          // past snapshots kept (the newest sits under the cat)
-const TRAIL_ALPHA_MIN = 0.12; // oldest afterimage opacity
-const TRAIL_ALPHA_MAX = 0.40; // newest visible afterimage opacity
+// --- Ghost imprints (visual only) ----------------------------------------
+// Spaced afterimages: drop one only after travelling IMPRINT_GAP px, then let
+// it fade over IMPRINT_LIFE. Gives "2  2  2  2" spacing, not a packed smear.
+const IMPRINT_GAP = 22;         // px the cat must travel before dropping a new imprint
+const IMPRINT_LIFE = 0.45;      // seconds an imprint takes to fade out
+const IMPRINT_MAX = 6;          // safety cap on simultaneous imprints
+const IMPRINT_ALPHA_MAX = 0.40; // opacity of a fresh imprint
 
 // Registers 8 dirs x 2 anims = 16 strips (missing ones fall back gracefully).
 for (const anim of ["idle", "attack"]) {
@@ -133,7 +136,9 @@ export class Familiar {
     this.animFrame = 0;
     this.animTimer = 0;
     this.spriteScale = 0.65; // visual only; lower if the cat looks too big vs the witch
-    this.trail = [];         // ghost-trail snapshots (visual only)
+    this.trail = [];            // ghost imprints (visual only)
+    this.lastImprintX = this.x; // where the last imprint was dropped
+    this.lastImprintY = this.y;
   }
 
   update(dt, player, targets, frenzyActive = false) {
@@ -189,15 +194,25 @@ export class Familiar {
 
     this.updateAnimation(dt);
 
-    // Record a snapshot for the ghost trail (visual only). Sampled every frame,
-    // so the trail naturally spreads when moving and bunches up when still.
-    this.trail.push({
-      x: this.x, y: this.y,
-      facing: this.facing,
-      animState: this.animState,
-      animFrame: this.animFrame,
-    });
-    if (this.trail.length > TRAIL_MAX) this.trail.shift();
+    // --- Ghost imprints (visual only) ---
+    // Drop a new imprint only after the cat has travelled IMPRINT_GAP px, so
+    // imprints sit spaced apart instead of as a packed smear. Each one then
+    // fades over IMPRINT_LIFE, so the trail dissolves when the cat stops.
+    const movedFromLast = Math.hypot(this.x - this.lastImprintX, this.y - this.lastImprintY);
+    if (movedFromLast >= IMPRINT_GAP) {
+      this.trail.push({
+        x: this.x, y: this.y,
+        facing: this.facing,
+        animState: this.animState,
+        animFrame: this.animFrame,
+        life: IMPRINT_LIFE,
+      });
+      this.lastImprintX = this.x;
+      this.lastImprintY = this.y;
+      if (this.trail.length > IMPRINT_MAX) this.trail.shift();
+    }
+    for (const s of this.trail) s.life -= dt; // age them
+    this.trail = this.trail.filter((s) => s.life > 0);
   }
 
   startAttackAnim() {
@@ -293,11 +308,9 @@ export class Familiar {
   draw(ctx) {
     for (const bolt of this.bolts) bolt.draw(ctx);
 
-    // --- Ghost trail: faded afterimages behind the cat, oldest → newest ---
-    for (let i = 0; i < this.trail.length; i++) {
-      const s = this.trail[i];
-      const t = this.trail.length > 1 ? i / (this.trail.length - 1) : 1;
-      const alpha = TRAIL_ALPHA_MIN + (TRAIL_ALPHA_MAX - TRAIL_ALPHA_MIN) * t;
+    // --- Ghost imprints: spaced, fading afterimages behind the cat ---
+    for (const s of this.trail) {
+      const alpha = (s.life / IMPRINT_LIFE) * IMPRINT_ALPHA_MAX;
       this.drawCat(ctx, s.x, s.y, s.facing, s.animState, s.animFrame, alpha);
     }
 
@@ -334,5 +347,7 @@ export class Familiar {
     this.animFrame = 0;
     this.animTimer = 0;
     this.trail = [];
+    this.lastImprintX = x;
+    this.lastImprintY = y;
   }
 }

@@ -66,3 +66,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-08 | Art/Sprites | Reduced familiar sprite scale (1 → 0.65) so the ghost cat reads as a companion rather than dwarfing the witch | Claude |
 | 2026-06-08 | Menu/UI | Mode-select cleanup: removed "capped 10-wave run" and "Endless: coming soon" footer text, leaving only the controls hint | Claude |
 | 2026-06-08 | Art/FX | Ghost trail for familiar: per-frame snapshot buffer (pos/facing/frame), faded afterimages drawn behind the cat via shared drawCat helper; visual-only, bounded, fallback-safe | Claude |
+| 2026-06-08 | Art/FX | Ghost imprints for familiar: distance-spaced afterimages (drop per IMPRINT_GAP px travelled) that fade over a short lifetime; visual-only, bounded, fallback-safe | Claude |
