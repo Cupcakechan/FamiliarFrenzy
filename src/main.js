@@ -14,6 +14,7 @@
 
 import { Game } from "./game.js";
 import { Input } from "./input.js";
+import { initAudio } from "./audio.js";
 
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
@@ -29,6 +30,10 @@ if (document.fonts && document.fonts.load) {
   document.fonts.load('700 16px "Darkrunes Arcanum"').catch(() => {});
   document.fonts.load('400 16px "Neatpixels Standard"').catch(() => {});
 }
+
+// Set up music: load saved volume and arm a one-time "unlock on first user
+// gesture" listener (browsers block audio until the player interacts).
+initAudio();
 
 // Internal resolution is fixed by the <canvas width/height> attributes.
 const game = new Game(canvas.width, canvas.height);

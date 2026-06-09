@@ -108,6 +108,48 @@ export function drawPlaceholder(ctx, w, h, title) {
   ctx.globalAlpha = 1;
 }
 
+// --- SETTINGS -------------------------------------------------------------
+// Music volume slider. Left/Right adjusts; Esc/Backspace returns.
+export function drawSettings(ctx, w, h, musicVolume) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "SETTINGS", w / 2, h * 0.22, { size: 48, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+
+  const sliderW = 420, sliderH = 10;
+  const sx = (w - sliderW) / 2;
+  const sy = h * 0.46;
+  const pct = Math.max(0, Math.min(1, musicVolume / 100));
+
+  text(ctx, "Music Volume", w / 2, sy - 34, { size: 22, color: CREAM, weight: "500" });
+
+  // Track + filled portion + border.
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillRect(sx - 2, sy - 2, sliderW + 4, sliderH + 4);
+  ctx.fillStyle = "rgba(244, 213, 141, 0.20)";
+  ctx.fillRect(sx, sy, sliderW, sliderH);
+  ctx.fillStyle = PURPLE;
+  ctx.fillRect(sx, sy, sliderW * pct, sliderH);
+  ctx.strokeStyle = GOLD;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(sx, sy, sliderW, sliderH);
+
+  // Knob.
+  ctx.fillStyle = GOLD;
+  ctx.beginPath();
+  ctx.arc(sx + sliderW * pct, sy + sliderH / 2, 9, 0, Math.PI * 2);
+  ctx.fill();
+
+  // Value readout.
+  text(ctx, `${Math.round(musicVolume)}%`, w / 2, sy + 38, { size: 20, color: GOLD });
+
+  text(ctx, "Left / Right: adjust volume", w / 2, h - 80, { size: 16, color: DIM, weight: "500" });
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+  ctx.globalAlpha = pulse;
+  text(ctx, "Esc / Backspace: back", w / 2, h - 50, { size: 16, color: PURPLE, weight: "500" });
+  ctx.globalAlpha = 1;
+}
+
 // --- HOW TO PLAY ----------------------------------------------------------
 // Single-screen instructions (Option A): everything fits at 960x540.
 export function drawHowToPlay(ctx, w, h) {

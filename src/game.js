@@ -24,7 +24,8 @@ import { Pickup, HealthFlask } from "./pickups.js";
 import { getOffers, UPGRADES } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawSettings } from "./ui.js";
+import { setMusicContext, setMusicVolume, getMusicVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
 const TILE = 32;
@@ -244,7 +245,13 @@ export class Game {
         break;
 
       case STATE.SETTINGS_PLACEHOLDER:
-        if (this.backPressed() || this.confirmPressed()) {
+        if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA")) {
+          setMusicVolume(getMusicVolume() - 5);
+        }
+        if (Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
+          setMusicVolume(getMusicVolume() + 5);
+        }
+        if (this.backPressed()) {
           this.state = this.settingsReturn || STATE.MAIN_MENU;
           if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
         }
@@ -330,6 +337,18 @@ export class Game {
         }
         break;
     }
+
+    // Keep music in sync with the current context (cheap; no-ops if unchanged).
+    this.updateMusic();
+  }
+
+  // Pick the right music context for the current state/wave. "boss" only while
+  // a boss is alive during play; everything else shares the normal pool (Opt A).
+  updateMusic() {
+    const inPlay = this.state === STATE.PLAYING || this.state === STATE.LEVEL_UP
+      || this.state === STATE.PAUSED || this.state === STATE.DYING;
+    const bossActive = this.waveManager.boss && !this.waveManager.boss.dead;
+    setMusicContext(inPlay && bossActive ? "boss" : "normal");
   }
 
   // --- Menu helpers ------------------------------------------------------
@@ -568,7 +587,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.SETTINGS_PLACEHOLDER) {
-      drawPlaceholder(ctx, this.width, this.height, "Settings");
+      drawSettings(ctx, this.width, this.height, getMusicVolume());
       return;
     }
     if (this.state === STATE.CONFIRM_QUIT) {
