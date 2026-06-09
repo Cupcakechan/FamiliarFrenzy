@@ -21,6 +21,7 @@
 
 import { distance, lerp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
+import { playFamiliarProjectileSfx } from "./audio.js";
 
 const DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
 const FAMILIAR_ANIMS = { idle: 4, attack: 6 };
@@ -53,8 +54,8 @@ for (const anim of ["idle", "attack"]) {
 // Each bolt picks one rune at spawn and keeps it for its whole lifetime.
 // Set RUNE_COUNT to however many rune_0N.png files you actually have. Any that
 // are missing/still loading just fall back to the orb draw — never a crash.
-const RUNE_COUNT = 14;
-const RUNE_SCALE = .4;  // visual size = native sprite size * this (lower if too big)
+const RUNE_COUNT = 4;
+const RUNE_SCALE = 1;  // visual size = native sprite size * this (lower if too big)
 const RUNE_KEYS = [];
 for (let i = 1; i <= RUNE_COUNT; i++) {
   const key = `rune_${String(i).padStart(2, "0")}`;
@@ -167,7 +168,7 @@ export class Familiar {
     this.animState = "idle"; // "idle" | "attack"
     this.animFrame = 0;
     this.animTimer = 0;
-    this.spriteScale = 0.55; // visual only; lower if the cat looks too big vs the witch
+    this.spriteScale = 0.65; // visual only; lower if the cat looks too big vs the witch
     this.trail = [];            // ghost imprints (visual only)
     this.lastImprintX = this.x; // where the last imprint was dropped
     this.lastImprintY = this.y;
@@ -196,6 +197,7 @@ export class Familiar {
         this.attackTimer = this.attackCooldown * (frenzyActive ? FRENZY_COOLDOWN_SCALE : 1);
         this.facing = dirFromVector(target.x - this.x, target.y - this.y); // face the shot
         this.startAttackAnim();
+        playFamiliarProjectileSfx(); // fire event only (throttled, autoplay-gated)
       }
     }
 

@@ -34,12 +34,12 @@ Then open the served URL (Live Server defaults to `http://127.0.0.1:5500`).
 | Move | WASD / Arrow Keys |
 | Confirm / Select | Enter / Space |
 | Pick an upgrade | Enter (first card) or 1 / 2 / 3 |
-| Familiar Frenzy | Space (when the Frenzy meter is full) |
+| Spirit Imbued | Space (when the meter is full) |
 | Pause / Resume | Esc / P |
 | Back (in menus) | Esc / Backspace |
 | Restart run | R (after Game Over or Victory) |
 
-> The familiar attacks automatically — there is no fire button. Frenzy makes it
+> The familiar attacks automatically — there is no fire button. Spirit Imbued makes it
 > fire much faster for a few seconds; save it for swarms or the boss.
 
 ---
@@ -59,7 +59,7 @@ Victory ─┬─ Continue to Endless Frenzy (same run carries into Wave 11)
 ```
 
 Pausing (Esc / P) freezes gameplay and shows a run-info panel (mode, wave,
-level, score, health, frenzy, upgrades taken, evolution).
+level, score, health, Spirit Imbued, upgrades taken, evolution).
 
 ---
 
@@ -76,7 +76,7 @@ The game is playable end-to-end in both modes.
   Tutorial → Endless carryover at Wave 11, localStorage best wave/score
 - Ghost cat familiar: follow + auto-fire bolts, bolt piercing, **Phantom Pounce**
   evolution (auto-unlock)
-- EXP motes (with glow), health flasks, the **Familiar Frenzy** meter
+- EXP motes (with glow), health flasks, the **Spirit Imbued** meter
 - Level-up upgrade picker with per-upgrade caps (Lv. x/y) and a Spirit Recovery
   fallback when everything is maxed; expanded upgrade pool
 - Tutorial Complete victory screen with run summary; mode-aware Game Over

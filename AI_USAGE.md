@@ -74,3 +74,7 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-08 | Art/FX | Familiar projectiles use a random rune sprite pool (rune_01..0N via existing loader); each bolt picks one rune at spawn and keeps it, orb fallback when missing/loading; hitbox/behaviour unchanged | Claude |
 | 2026-06-09 | Audio | Background music system (audio.js): shared random pool for menu+gameplay, dedicated looped boss track for Wave 10 / Endless bosses, autoplay-safe gesture unlock, clean hard switches; functional Settings screen with music volume slider persisted to localStorage | Claude |
 | 2026-06-09 | Audio | Crossfade between music tracks (audio.js): outgoing track fades down while incoming fades up over FADE_MS via rAF, replacing the hard switch; volume slider stays live mid-fade | Claude |
+| 2026-06-09 | UI/Fix | Pause menu: removed game-title line that overlapped "PAUSED" in the title font; single clean PAUSED header | Claude |
+| 2026-06-09 | Gameplay | Boss kill grants a free upgrade choice (queues a level-up on boss death) | Claude |
+| 2026-06-09 | Fix | Boss-incoming banner now only shows before multiples of 10 (was firing every wave after wave 10) | Claude |
+| 2026-06-09 | Gameplay/UI | Phantom Pounce evolution is now a choosable one-time upgrade: enters the level-up pool with a guaranteed slot once requirements are met (was auto-unlocked), shows an "EVOLUTION" card tag, applies only when picked | Claude |

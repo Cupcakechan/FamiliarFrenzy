@@ -20,7 +20,7 @@ import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager } from "./enemies.js";
-import { Pickup, HealthFlask } from "./pickups.js";
+import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
@@ -74,6 +74,12 @@ const MAGNET_PULL_SPEED = 280;  // px/s a pickup is drawn toward the player
 const LUCK_FLASK_STEP = 0.04;   // +4% flask chance per Lucky Paws level
 const LUCK_MOTE_STEP = 0.08;    // chance per level for a bonus mote on a kill
 
+// Spirit Magnet (rare pickup): vacuums all dropped rewards toward the player.
+const SPIRIT_MAGNET_DROP_CHANCE = 0.008; // 0.8% from normal enemies (rare)
+const SPIRIT_MAGNET_BOSS_CHANCE = 0.2;   // 20% from bosses (occasional treat)
+const VACUUM_DURATION = 1.5;             // seconds the vacuum pull lasts
+const VACUUM_PULL_SPEED = 1000;          // px/s items rush toward the player
+
 // Familiar Frenzy meter (Feature 3).
 const FRENZY_MOTES = 25;    // motes collected to fill the meter
 const FRENZY_DURATION = 6;  // seconds the frenzy lasts
@@ -121,6 +127,8 @@ export class Game {
     this.waveManager = new WaveManager(MAX_WAVES);
     this.pickups = [];
     this.flasks = [];
+    this.magnets = [];      // rare Spirit Magnet pickups
+    this.vacuumTimer = 0;   // > 0 while a Spirit Magnet vacuum is active
 
     this.score = 0;
 
@@ -164,6 +172,8 @@ export class Game {
     this.waveManager.reset(mode === "endless");
     this.pickups = [];
     this.flasks = [];
+    this.magnets = [];
+    this.vacuumTimer = 0;
 
     this.xp = 0;
     this.level = 1;
@@ -368,6 +378,7 @@ export class Game {
   updatePlaying(dt) {
     this.runTime += dt;
     if (this.evoBannerTimer > 0) this.evoBannerTimer -= dt;
+    if (this.vacuumTimer > 0) this.vacuumTimer -= dt;
     this.player.update(dt, Input, this.world);
 
     // Familiar Frenzy: tick the active timer, else allow activation when full.
@@ -432,6 +443,12 @@ export class Game {
         if (Math.random() < flaskChance) {
           this.flasks.push(new HealthFlask(cx(enemy.x + j()), cy(enemy.y + j()), FLASK_HEAL));
         }
+
+        // Rare Spirit Magnet drop (independent of Lucky Paws).
+        const magnetChance = enemy.isBoss ? SPIRIT_MAGNET_BOSS_CHANCE : SPIRIT_MAGNET_DROP_CHANCE;
+        if (Math.random() < magnetChance) {
+          this.magnets.push(new SpiritMagnet(cx(enemy.x + j()), cy(enemy.y + j())));
+        }
       }
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
@@ -439,6 +456,7 @@ export class Game {
     for (const pickup of this.pickups) {
       pickup.update(dt);
       this.applyMagnet(pickup, dt);
+      this.applyVacuum(pickup, dt);
       if (circlesOverlap(pickup.x, pickup.y, pickup.radius + 6, this.player.x, this.player.y, this.player.radius)) {
         pickup.dead = true;
         this.collectPickup(pickup);
@@ -450,12 +468,24 @@ export class Game {
     for (const flask of this.flasks) {
       flask.update(dt);
       this.applyMagnet(flask, dt);
+      this.applyVacuum(flask, dt);
       if (circlesOverlap(flask.x, flask.y, flask.radius + 6, this.player.x, this.player.y, this.player.radius)) {
         flask.dead = true;
         this.player.heal(flask.heal);
       }
     }
     this.flasks = this.flasks.filter((f) => !f.dead);
+
+    // Collect Spirit Magnets — each triggers a short "vacuum all rewards" burst.
+    for (const magnet of this.magnets) {
+      magnet.update(dt);
+      this.applyMagnet(magnet, dt);
+      if (circlesOverlap(magnet.x, magnet.y, magnet.radius + 6, this.player.x, this.player.y, this.player.radius)) {
+        magnet.dead = true;
+        this.vacuumTimer = VACUUM_DURATION;
+      }
+    }
+    this.magnets = this.magnets.filter((m) => !m.dead);
 
     // Priority: death, then victory, then a level-up.
     if (this.player.health <= 0) {
@@ -517,6 +547,21 @@ export class Game {
     if (d > 0.001 && d < this.magnetRange) {
       item.x += (dx / d) * MAGNET_PULL_SPEED * dt;
       item.y += (dy / d) * MAGNET_PULL_SPEED * dt;
+    }
+  }
+
+  // Spirit Magnet: while the vacuum is active, pull an item hard toward the
+  // player from any distance (clamped so it doesn't overshoot). The existing
+  // overlap check then collects it normally.
+  applyVacuum(item, dt) {
+    if (this.vacuumTimer <= 0) return;
+    const dx = this.player.x - item.x;
+    const dy = this.player.y - item.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 0.001) {
+      const step = Math.min(d, VACUUM_PULL_SPEED * dt);
+      item.x += (dx / d) * step;
+      item.y += (dy / d) * step;
     }
   }
 
@@ -635,6 +680,7 @@ export class Game {
     this.drawSpiritLink(ctx); // Frenzy ribbon: above the floor, below all actors
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
+    for (const magnet of this.magnets) magnet.draw(ctx);
     for (const enemy of this.enemies) enemy.draw(ctx);
     this.familiar.draw(ctx);
     this.player.draw(ctx);

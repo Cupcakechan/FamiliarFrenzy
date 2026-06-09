@@ -164,7 +164,7 @@ export function drawHowToPlay(ctx, w, h) {
   const controls = [
     "Move:  WASD / Arrow Keys",
     "Confirm:  Enter / Space",
-    "Frenzy:  Space  (when the Frenzy meter is full)",
+    "Spirit Imbued:  Space  (when the meter is full)",
     "Back / Pause:  Esc / Backspace",
     "Restart:  R  (after Game Over or Victory)",
   ];
@@ -175,7 +175,7 @@ export function drawHowToPlay(ctx, w, h) {
     "Defeated enemies drop EXP motes — collect them to level up.",
     "Leveling up lets you pick an upgrade (maxed ones stop appearing).",
     "Touching enemies hurts you; grab health flasks to recover.",
-    "Frenzy makes the cat fire faster — save it for swarms or the boss.",
+    "Spirit Imbued makes the cat fire faster — save it for swarms or the boss.",
     "Tutorial Run is 10 waves; clear them and defeat the Wave 10 boss to win.",
   ];
 
@@ -244,12 +244,12 @@ export function drawHUD(ctx, w, h, state) {
   if (state.frenzyActive) {
     frPct = Math.max(0, state.frenzyTimer / state.frenzyDuration); // drains
     fillColor = GOLD;
-    leftLabel = "FRENZY!";
+    leftLabel = "SPIRIT IMBUED!";
     leftColor = GOLD;
   } else {
     frPct = Math.min(1, state.frenzyCharge / state.frenzyMax);
     fillColor = "#c77dff";
-    leftLabel = "Frenzy";
+    leftLabel = "Spirit Imbued";
     leftColor = DIM;
   }
 
@@ -267,7 +267,7 @@ export function drawHUD(ctx, w, h, state) {
   if (!state.frenzyActive && frPct >= 1) {
     const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 250);
     ctx.globalAlpha = pulse;
-    text(ctx, "SPACE: FRENZY!", w / 2, frY - 14, { size: 15, color: PURPLE });
+    text(ctx, "SPACE: SPIRIT IMBUED!", w / 2, frY - 14, { size: 15, color: PURPLE });
     ctx.globalAlpha = 1;
   }
 }
@@ -404,7 +404,7 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
     `Level: ${info.level}`,
     `Score: ${info.score}`,
     `Health: ${info.health} / ${info.maxHealth}`,
-    `Frenzy: ${info.frenzy}`,
+    `Spirit Imbued: ${info.frenzy}`,
   ];
   stats.forEach((line, i) => {
     text(ctx, line, leftX, 318 + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });

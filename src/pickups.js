@@ -30,6 +30,7 @@ const FLASK_FPS = 6; // only used when FLASK_FRAMES > 1
 
 loadImage("mote_idle", "assets/sprites/pickups/mote_idle.png");
 loadImage("flask_idle", "assets/sprites/pickups/flask_idle.png");
+loadImage("spirit_magnet", "assets/sprites/pickups/spirit_magnet.png");
 
 export class Pickup {
   constructor(x, y) {
@@ -168,5 +169,69 @@ export class HealthFlask {
 
       ctx.restore();
     }
+  }
+}
+
+// --- Spirit Magnet (rare) -------------------------------------------------
+// A rare pickup that, when collected, vacuums all dropped rewards toward the
+// player (effect handled in game.js). Placeholder: a pulsing golden-orange
+// charm/ring. Future sprite: assets/sprites/pickups/spirit_magnet.png (single
+// frame). Missing/loading sprite falls back to the placeholder — never crashes.
+export class SpiritMagnet {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.radius = 10;
+    this.dead = false;
+    this.bob = randomRange(0, Math.PI * 2);
+    this.glow = randomRange(0, Math.PI * 2);
+    this.spriteScale = 0.5; // visual only; tune to match future art
+  }
+
+  update(dt) {
+    this.bob += dt * 4;
+    this.glow += dt * 3;
+  }
+
+  draw(ctx) {
+    const yOff = Math.sin(this.bob) * 2;
+    const cy = this.y + yOff;
+    const img = getImage("spirit_magnet");
+
+    if (img && img.width > 0) {
+      const dw = img.width * this.spriteScale;
+      const dh = img.height * this.spriteScale;
+      ctx.drawImage(img, this.x - dw / 2, cy - dh / 2, dw, dh);
+      return;
+    }
+
+    // --- Placeholder: pulsing golden-orange charm ---
+    const pulse = 0.5 + 0.5 * Math.sin(this.glow);
+    ctx.save();
+
+    // Soft halo (cheap radial gradient, like the EXP mote glow).
+    const haloR = this.radius * (2.0 + pulse * 0.5);
+    const g = ctx.createRadialGradient(this.x, cy, 0, this.x, cy, haloR);
+    g.addColorStop(0, `rgba(242, 165, 64, ${0.35 + pulse * 0.25})`);
+    g.addColorStop(1, "rgba(242, 165, 64, 0)");
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(this.x, cy, haloR, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hollow ring — distinct from the solid gold motes / green flasks.
+    ctx.strokeStyle = "#F2A540";
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.arc(this.x, cy, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Bright inner core.
+    ctx.fillStyle = "#ffe7c2";
+    ctx.beginPath();
+    ctx.arc(this.x, cy, this.radius * 0.35, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
   }
 }

@@ -72,8 +72,8 @@ export const UPGRADES = [
   },
   {
     id: "frenzy_focus",
-    name: "Frenzy Focus",
-    description: "Frenzy meter charges faster",
+    name: "Spirit Focus",
+    description: "Spirit Imbued charges faster",
     tag: "frenzy",
     maxLevel: 3,
     apply(game) {

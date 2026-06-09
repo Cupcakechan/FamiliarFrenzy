@@ -22,6 +22,7 @@
      setMusicVolume(v)      - 0..100, applies immediately + saves
      getMusicVolume()       - current 0..100
      stopMusic()            - stop everything
+     playFamiliarProjectileSfx() - one-shot sfx on familiar fire (autoplay-gated)
 
    Fails safe: a missing music file logs a console warning and the game keeps
    running with no music.
@@ -205,6 +206,50 @@ export function stopMusic() {
   currentContext = null;
 }
 
+// --- Sound effects --------------------------------------------------------
+// Short one-shots (currently just the familiar's projectile). Kept simple:
+//   - Fixed volume, INDEPENDENT of the music slider (there is no SFX slider).
+//   - Autoplay-gated on the same `unlocked` flag as the music.
+//   - A tiny round-robin pool of reused Audio voices so rapid fire overlaps
+//     cleanly instead of cutting itself off, plus a minimum interval so very
+//     fast attack speeds (Spirit Imbued) can't spam/clip the sound.
+//   - A missing file just fails silently — never throws.
+const SFX_PROJECTILE_SRC = `assets/sfx/familiar_projectile.wav`;
+const SFX_VOLUME = 0.35;       // modest; rapid fire shouldn't get loud
+const SFX_MIN_INTERVAL = 0.06; // seconds between projectile sfx (throttle)
+const SFX_VOICES = 4;          // reused Audio elements for overlap
+
+let sfxVoices = [];
+let sfxVoiceIndex = 0;
+let lastProjectileSfx = 0;     // performance.now() ms of the last one played
+
+function initSfx() {
+  for (let i = 0; i < SFX_VOICES; i++) {
+    const el = new Audio(SFX_PROJECTILE_SRC);
+    el.volume = SFX_VOLUME;
+    el.onerror = () => {}; // missing/blocked file — ignore, never crash
+    sfxVoices.push(el);
+  }
+}
+
+export function playFamiliarProjectileSfx() {
+  if (!unlocked || sfxVoices.length === 0) return; // respect autoplay
+  const now = performance.now();
+  if (now - lastProjectileSfx < SFX_MIN_INTERVAL * 1000) return; // throttle
+  lastProjectileSfx = now;
+
+  const el = sfxVoices[sfxVoiceIndex];
+  sfxVoiceIndex = (sfxVoiceIndex + 1) % sfxVoices.length;
+  try {
+    el.currentTime = 0;
+    el.volume = SFX_VOLUME;
+    const p = el.play();
+    if (p && typeof p.catch === "function") p.catch(() => {});
+  } catch (e) {
+    /* ignore */
+  }
+}
+
 // First user gesture unlocks audio (browsers block it until then). Stays
 // attached so a still-blocked browser retries on the next gesture.
 function onUserGesture() {
@@ -216,6 +261,7 @@ function onUserGesture() {
 
 export function initAudio() {
   loadVolume();
+  initSfx();
   window.addEventListener("keydown", onUserGesture);
   window.addEventListener("pointerdown", onUserGesture);
 }
