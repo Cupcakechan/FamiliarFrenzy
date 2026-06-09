@@ -215,7 +215,7 @@ export function stopMusic() {
 //     fast attack speeds (Spirit Imbued) can't spam/clip the sound.
 //   - A missing file just fails silently — never throws.
 const SFX_PROJECTILE_SRC = `assets/sfx/familiar_projectile.wav`;
-const SFX_VOLUME = 0.35;       // modest; rapid fire shouldn't get loud
+const SFX_VOLUME = 0.18;       // modest; rapid fire shouldn't get loud
 const SFX_MIN_INTERVAL = 0.06; // seconds between projectile sfx (throttle)
 const SFX_VOICES = 4;          // reused Audio elements for overlap
 

@@ -36,3 +36,23 @@ export function randomInt(min, max) {
 export function circlesOverlap(ax, ay, ar, bx, by, br) {
   return distance(ax, ay, bx, by) < ar + br;
 }
+
+// Pick one of 8 directions (N/S/E/W + diagonals) from a direction vector.
+// Canvas y+ points DOWN, so positive dy = south. Diagonal names are
+// vertical-first (e.g. "ne", "sw") to match the sprite file naming and the
+// witch/familiar conventions. Shared by the familiar and the enemies so the
+// 8-way facing logic lives in exactly one place.
+export function dirFromVector(dx, dy) {
+  const octant = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
+  switch ((octant + 8) % 8) {
+    case 0: return "e";
+    case 1: return "se";
+    case 2: return "s";
+    case 3: return "sw";
+    case 4: return "w";
+    case 5: return "nw";
+    case 6: return "n";
+    case 7: return "ne";
+    default: return "s";
+  }
+}

@@ -13,7 +13,32 @@
      health  = 2 + floor(wave/3)  (+1 HP every 3 waves)
    ========================================================================= */
 
-import { randomInt, randomRange, clamp } from "./utils.js";
+import { randomInt, randomRange, clamp, dirFromVector } from "./utils.js";
+import { loadImage, getImage } from "./assets.js";
+
+// --- Wisp enemy sprites (visual only) ------------------------------------
+// 8-direction FLOAT (default, loops) + ATTACK (loops while the wisp is
+// touching the player). The attack animation is purely cosmetic — contact
+// damage is still handled exactly as before in game.js. Single-row strips in
+// assets/sprites/enemies/, sliced at draw time (frameWidth = img.width/frames).
+// Missing/loading strips fall back to the placeholder blob, per direction, so
+// the game runs fine with partial or no wisp art.
+const WISP_DIRS = ["n", "s", "e", "w", "ne", "nw", "se", "sw"];
+const WISP_ANIMS = { float: 4, attack: 4 };
+const WISP_FPS = { float: 6, attack: 10 };
+const WISP_LOOPING = { float: true, attack: true };
+
+// Register 8 dirs x 2 anims = 16 strips (graceful fallback if any are absent).
+for (const anim of ["float", "attack"]) {
+  for (const d of WISP_DIRS) {
+    const key = `wisp_${anim}_${d}`;
+    loadImage(key, `assets/sprites/enemies/${key}.png`);
+  }
+}
+
+// Extra slack (px) beyond the touching radius before the wisp switches to its
+// Attack animation. VISUAL ONLY — does not change when contact damage occurs.
+const WISP_ATTACK_VISUAL_GAP = 6;
 
 export class Enemy {
   constructor(x, y) {
@@ -29,6 +54,14 @@ export class Enemy {
     this.dead = false;
     this.hitFlash = 0;
     this.wobble = randomRange(0, Math.PI * 2);
+
+    // Animation state (visual only). Start frame is randomized so a swarm of
+    // wisps doesn't pulse in perfect lockstep.
+    this.facing = "s";
+    this.animState = "float"; // "float" | "attack"
+    this.animFrame = randomInt(0, WISP_ANIMS.float - 1);
+    this.animTimer = 0;
+    this.spriteScale = 1; // tune once the art is in (native px * this)
   }
 
   update(dt, player) {
@@ -40,6 +73,45 @@ export class Enemy {
 
     this.wobble += dt * 6;
     if (this.hitFlash > 0) this.hitFlash -= dt;
+
+    // --- Animation (visual only) ---
+    // The wisp always chases the player, so the vector to the player gives its
+    // 8-way facing for both float and attack.
+    this.facing = dirFromVector(dx, dy);
+
+    // Play ATTACK while touching the player, FLOAT otherwise. This reads the
+    // same proximity the contact-damage check uses, but only swaps the sprite —
+    // damage, i-frames, and timing are untouched (handled in game.js).
+    const touching = len <= this.radius + player.radius + WISP_ATTACK_VISUAL_GAP;
+    const newState = touching ? "attack" : "float";
+    if (newState !== this.animState) {
+      this.animState = newState;
+      this.animFrame = 0;
+      this.animTimer = 0;
+    }
+    this.advanceFrames(dt);
+  }
+
+  // Step the current animation. Both wisp anims loop; the non-looping branch is
+  // kept for parity with the player/familiar steppers in case a one-shot
+  // (e.g. a future death anim) is added later.
+  advanceFrames(dt) {
+    const fps = WISP_FPS[this.animState];
+    const frameCount = WISP_ANIMS[this.animState];
+    const frameDur = 1 / fps;
+    const loops = WISP_LOOPING[this.animState];
+
+    this.animTimer += dt;
+    while (this.animTimer >= frameDur) {
+      this.animTimer -= frameDur;
+      if (loops) {
+        this.animFrame = (this.animFrame + 1) % frameCount;
+      } else if (this.animFrame < frameCount - 1) {
+        this.animFrame += 1;
+      } else {
+        break;
+      }
+    }
   }
 
   takeDamage(amount) {
@@ -49,8 +121,35 @@ export class Enemy {
   }
 
   draw(ctx) {
-    ctx.save();
     const flash = this.hitFlash > 0;
+    const key = `wisp_${this.animState}_${this.facing}`;
+    const img = getImage(key);
+
+    // --- Sprite path (real art) ---
+    if (img && img.width > 0) {
+      const frames = WISP_ANIMS[this.animState];
+      const fw = img.width / frames;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = Math.floor(this.animFrame) * fw;
+
+      ctx.save();
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+
+      // Brief white hit flash: redraw the same frame additively so damage still
+      // reads on the sprite (cheap; no offscreen canvas / tinting needed).
+      if (flash) {
+        ctx.globalAlpha = 0.55;
+        ctx.globalCompositeOperation = "lighter";
+        ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+      }
+      ctx.restore();
+      return;
+    }
+
+    // --- Fallback placeholder blob (per-direction, if a strip is missing) ---
+    ctx.save();
     const r = this.radius + Math.sin(this.wobble) * 1.5;
 
     ctx.shadowColor = "#e2536b";

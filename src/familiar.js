@@ -19,7 +19,7 @@
      familiar_attack_<dir>.png  (6 frames)
    ========================================================================= */
 
-import { distance, lerp } from "./utils.js";
+import { distance, lerp, dirFromVector } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
 import { playFamiliarProjectileSfx } from "./audio.js";
 
@@ -54,8 +54,8 @@ for (const anim of ["idle", "attack"]) {
 // Each bolt picks one rune at spawn and keeps it for its whole lifetime.
 // Set RUNE_COUNT to however many rune_0N.png files you actually have. Any that
 // are missing/still loading just fall back to the orb draw — never a crash.
-const RUNE_COUNT = 4;
-const RUNE_SCALE = 1;  // visual size = native sprite size * this (lower if too big)
+const RUNE_COUNT = 14;
+const RUNE_SCALE = .5;  // visual size = native sprite size * this (lower if too big)
 const RUNE_KEYS = [];
 for (let i = 1; i <= RUNE_COUNT; i++) {
   const key = `rune_${String(i).padStart(2, "0")}`;
@@ -63,23 +63,8 @@ for (let i = 1; i <= RUNE_COUNT; i++) {
   loadImage(key, `assets/sprites/projectiles/${key}.png`);
 }
 
-// Pick one of 8 directions (N/S/E/W + diagonals) from a direction vector.
-// Canvas y+ points DOWN, so positive dy = south. Diagonal names are
-// vertical-first (e.g. "ne", "sw") to match the sprite file naming + the witch.
-function dirFromVector(dx, dy) {
-  const octant = Math.round(Math.atan2(dy, dx) / (Math.PI / 4));
-  switch ((octant + 8) % 8) {
-    case 0: return "e";
-    case 1: return "se";
-    case 2: return "s";
-    case 3: return "sw";
-    case 4: return "w";
-    case 5: return "nw";
-    case 6: return "n";
-    case 7: return "ne";
-    default: return "s";
-  }
-}
+// dirFromVector (8-way facing from a movement/target vector) now lives in
+// utils.js so the familiar and the enemies share one copy.
 
 // --- A single magic bolt -------------------------------------------------
 class Bolt {
@@ -168,7 +153,7 @@ export class Familiar {
     this.animState = "idle"; // "idle" | "attack"
     this.animFrame = 0;
     this.animTimer = 0;
-    this.spriteScale = 0.65; // visual only; lower if the cat looks too big vs the witch
+    this.spriteScale = 0.55; // visual only; lower if the cat looks too big vs the witch
     this.trail = [];            // ghost imprints (visual only)
     this.lastImprintX = this.x; // where the last imprint was dropped
     this.lastImprintY = this.y;
