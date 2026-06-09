@@ -13,10 +13,25 @@ const DIM = "rgba(244, 213, 141, 0.65)";
 const CREAM = "#f3e7c6";
 const MENU_BG = "#140d24"; // dark purple
 
+// Fonts: a decorative rune face for big dramatic titles, and a clean pixel
+// font for everything else (menus, HUD, descriptions, prompts, stats).
+const TITLE_FONT = "'Darkrunes Arcanum', Georgia, serif";
+const BODY_FONT = "'Neatpixels Standard', Georgia, serif";
+
 // --- Shared helpers -------------------------------------------------------
-function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font = "'Darkrunes Arcanum', Georgia, serif", weight = "700" } = {}) {
+// Pass `maxWidth` to auto-shrink the font (proportionally, never squished) so
+// long titles always fit the canvas instead of clipping off the edges.
+function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font = BODY_FONT, weight = "700", maxWidth } = {}) {
   ctx.fillStyle = color;
-  ctx.font = `${weight} ${size}px ${font}`;
+  let fontSize = size;
+  ctx.font = `${weight} ${fontSize}px ${font}`;
+  if (maxWidth) {
+    const measured = ctx.measureText(str).width;
+    if (measured > maxWidth) {
+      fontSize = Math.max(1, Math.floor(size * (maxWidth / measured)));
+      ctx.font = `${weight} ${fontSize}px ${font}`;
+    }
+  }
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
   ctx.fillText(str, x, y);
@@ -47,7 +62,7 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
   ctx.fill();
   ctx.restore();
 
-  text(ctx, title, w / 2, h * 0.24, { size: 52, color: GOLD });
+  text(ctx, title, w / 2, h * 0.24, { size: 52, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
   const startY = h * 0.46;
   const lineH = 50;
@@ -84,7 +99,7 @@ export function drawPlaceholder(ctx, w, h, title) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, title, w / 2, h / 2 - 30, { size: 48, color: GOLD });
+  text(ctx, title, w / 2, h / 2 - 30, { size: 48, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   text(ctx, "Coming Soon", w / 2, h / 2 + 20, { size: 24, color: CREAM, weight: "500" });
 
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
@@ -99,7 +114,7 @@ export function drawHowToPlay(ctx, w, h) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "HOW TO PLAY", w / 2, 50, { size: 40, color: GOLD });
+  text(ctx, "HOW TO PLAY", w / 2, 50, { size: 40, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
   const headX = 150;  // left margin for section headings
   const bodyX = 172;  // slight indent for body lines
@@ -223,7 +238,7 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.86)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "LEVEL UP!", w / 2, h * 0.22, { size: 48, color: GOLD });
+  text(ctx, "LEVEL UP!", w / 2, h * 0.22, { size: 48, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   const subtitle = offers.length > 1 ? "Choose an upgrade" : "New power gained";
   text(ctx, subtitle, w / 2, h * 0.22 + 42, { size: 20, color: DIM, weight: "500" });
 
@@ -258,14 +273,14 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
   ctx.fill();
   ctx.restore();
 
-  text(ctx, up.name, x + cw / 2, y + 88, { size: 22, color: GOLD });
+  text(ctx, up.name, x + cw / 2, y + 88, { size: 22, color: GOLD, maxWidth: cw - 24 });
 
   // Level indicator (real upgrades only; the fallback reward has no level).
   if (up.maxLevel !== undefined) {
     text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 114, { size: 15, color: PURPLE, weight: "700" });
   }
 
-  text(ctx, up.description, x + cw / 2, y + 138, { size: 16, color: DIM, weight: "500" });
+  text(ctx, up.description, x + cw / 2, y + 138, { size: 16, color: DIM, weight: "500", maxWidth: cw - 24 });
 
   const prompt = count > 1 ? `Press ${i + 1}` : "Press ENTER";
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
@@ -279,7 +294,7 @@ export function drawWaveBanner(ctx, w, h, wave, timer, isBoss = false) {
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.save();
   ctx.globalAlpha = pulse;
-  text(ctx, `WAVE ${wave}`, w / 2, h / 2 - 20, { size: 52, color: GOLD });
+  text(ctx, `WAVE ${wave}`, w / 2, h / 2 - 20, { size: 52, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   ctx.globalAlpha = 1;
   if (isBoss) {
     text(ctx, "Boss Incoming: Elder Wisp", w / 2, h / 2 + 32, { size: 24, color: RED, weight: "700" });
@@ -298,7 +313,7 @@ export function drawEvolutionBanner(ctx, w, h, text_, timer) {
   ctx.globalAlpha = alpha;
   ctx.shadowColor = "#f4d58d";
   ctx.shadowBlur = 18 * pulse;
-  text(ctx, text_, w / 2, h * 0.30, { size: 26, color: GOLD });
+  text(ctx, text_, w / 2, h * 0.30, { size: 26, color: GOLD, maxWidth: w - 80 });
   ctx.restore();
 }
 
@@ -324,8 +339,8 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.88)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "FAMILIAR FRENZY", w / 2, 52, { size: 28, color: GOLD });
-  text(ctx, "PAUSED", w / 2, 90, { size: 34, color: CREAM, weight: "700" });
+  text(ctx, "FAMILIAR FRENZY", w / 2, 52, { size: 28, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, "PAUSED", w / 2, 90, { size: 34, color: CREAM, weight: "700", font: TITLE_FONT, maxWidth: w - 100 });
 
   // Left column: options + basic run stats.
   const leftX = 150;
@@ -377,7 +392,7 @@ export function drawConfirmQuit(ctx, w, h, items, selectedIndex) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "Return to Main Menu?", w / 2, h / 2 - 70, { size: 34, color: GOLD });
+  text(ctx, "Return to Main Menu?", w / 2, h / 2 - 70, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   text(ctx, "Current run will be lost.", w / 2, h / 2 - 28, { size: 18, color: CREAM, weight: "500" });
 
   items.forEach((item, i) => {
@@ -406,7 +421,7 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
   ctx.fill();
   ctx.restore();
 
-  text(ctx, "TUTORIAL COMPLETE!", w / 2, 70, { size: 44, color: GOLD });
+  text(ctx, "TUTORIAL COMPLETE!", w / 2, 70, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   text(ctx, "You defeated the Elder Wisp.", w / 2, 112, { size: 18, color: CREAM, weight: "500" });
   text(ctx, "Your familiar is ready for greater danger.", w / 2, 138, { size: 18, color: DIM, weight: "500" });
 
@@ -439,6 +454,7 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
       size: 24,
       color: selected ? GOLD : CREAM,
       weight: selected ? "700" : "500",
+      maxWidth: boxW - 24,
     });
   });
 
@@ -453,7 +469,7 @@ export function drawGameOver(ctx, w, h, info) {
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
 
   if (info.endless) {
-    text(ctx, "ENDLESS RUN OVER", w / 2, h / 2 - 78, { size: 48, color: RED });
+    text(ctx, "ENDLESS RUN OVER", w / 2, h / 2 - 78, { size: 48, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
     text(ctx, `Wave reached: ${info.wave}`, w / 2, h / 2 - 18, { size: 24, color: GOLD });
     text(ctx, `Score: ${info.score}`, w / 2, h / 2 + 14, { size: 20, color: CREAM, weight: "500" });
     text(ctx, `Bosses defeated: ${info.bossesDefeated}`, w / 2, h / 2 + 42, { size: 18, color: DIM, weight: "500" });
@@ -465,7 +481,7 @@ export function drawGameOver(ctx, w, h, info) {
     return;
   }
 
-  text(ctx, "GAME OVER", w / 2, h / 2 - 50, { size: 56, color: RED });
+  text(ctx, "GAME OVER", w / 2, h / 2 - 50, { size: 56, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
   text(ctx, `Final Score: ${info.score}`, w / 2, h / 2 + 10, { size: 24, color: GOLD });
   text(ctx, `Reached Wave ${info.wave}`, w / 2, h / 2 + 44, { size: 20, color: DIM, weight: "500" });
 

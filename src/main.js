@@ -27,6 +27,7 @@ ctx.imageSmoothingEnabled = false;
 // ready, the game loop just starts drawing with it on the next frame.
 if (document.fonts && document.fonts.load) {
   document.fonts.load('700 16px "Darkrunes Arcanum"').catch(() => {});
+  document.fonts.load('400 16px "Neatpixels Standard"').catch(() => {});
 }
 
 // Internal resolution is fixed by the <canvas width/height> attributes.

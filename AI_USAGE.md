@@ -70,3 +70,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-08 | Art/FX | Frenzy Spirit Link: visual-only wavy #F2A540 ribbon between witch and familiar during Frenzy, end-tapered animated wave, edge fade-in/out, brightens on cat attack; drawn below all actors | Claude |
 | 2026-06-08 | Art/Sprites | Health flask sprite support via existing loadImage/getImage pattern (flask_idle.png), strip-capable (FLASK_FRAMES default 1), green-orb fallback preserved; collection unchanged | Claude |
 | 2026-06-08 | UI/Fonts | Replaced Cinzel with self-hosted "Darkrunes Arcanum" TTF (@font-face in style.css, canvas text() default in ui.js, removed Google Fonts link, document.fonts.load nudge in main.js to avoid serif flash) | Claude |
+| 2026-06-08 | UI/Fonts | Body font switched to Neatpixels Standard (Darkrunes kept for titles); added proportional auto-shrink (maxWidth) to the text() helper so titles always fit the canvas instead of clipping | Claude |

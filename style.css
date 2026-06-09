@@ -12,6 +12,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Neatpixels Standard";
+  src: url("assets/fonts/neatpixels-standard.ttf") format("truetype");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --bg-deep:   #0b0a18; /* page background, darkest */
   --bg-frame:  #14122a; /* area just around the canvas */
@@ -40,7 +48,7 @@ body {
   user-select: none;
   -webkit-user-select: none;
 
-  font-family: "Darkrunes Arcanum", Georgia, serif;
+  font-family: "Neatpixels Standard", Georgia, serif;
   color: var(--gold);
   overflow: hidden;
 }
