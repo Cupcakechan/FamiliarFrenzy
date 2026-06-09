@@ -23,7 +23,13 @@ const MOTE_HALO_SCALE = 2.6;      // halo radius as a multiple of the mote radiu
 const MOTE_HALO_PULSE = 0.30;     // how much the halo radius grows/shrinks (0..1)
 const MOTE_BREATHE_AMOUNT = 0.14; // sprite scale swing (≈ ±7%)
 
+// Health flask sprite (single static frame by default; bump FLASK_FRAMES if a
+// future animated strip is provided). Missing/loading → green-orb fallback.
+const FLASK_FRAMES = 1;
+const FLASK_FPS = 6; // only used when FLASK_FRAMES > 1
+
 loadImage("mote_idle", "assets/sprites/pickups/mote_idle.png");
+loadImage("flask_idle", "assets/sprites/pickups/flask_idle.png");
 
 export class Pickup {
   constructor(x, y) {
@@ -112,32 +118,55 @@ export class HealthFlask {
     this.heal = heal;     // HP restored on pickup
     this.dead = false;
     this.bob = randomRange(0, Math.PI * 2);
+    this.spriteScale = 0.5; // visual only; tune to match the flask art
+    this.animFrame = 0;
+    this.animTimer = 0;
   }
 
   update(dt) {
     this.bob += dt * 4;
+    if (FLASK_FRAMES > 1) {
+      const frameDur = 1 / FLASK_FPS;
+      this.animTimer += dt;
+      while (this.animTimer >= frameDur) {
+        this.animTimer -= frameDur;
+        this.animFrame = (this.animFrame + 1) % FLASK_FRAMES;
+      }
+    }
   }
 
   draw(ctx) {
     const yOff = Math.sin(this.bob) * 2;
     const cy = this.y + yOff;
-    ctx.save();
+    const img = getImage("flask_idle");
 
-    ctx.shadowColor = "#5ad17a";
-    ctx.shadowBlur = 12;
-    ctx.fillStyle = "#5ad17a";
-    ctx.beginPath();
-    ctx.arc(this.x, cy, this.radius, 0, Math.PI * 2);
-    ctx.fill();
+    if (img && img.width > 0) {
+      // --- Sprite path (single static frame, or a strip if FLASK_FRAMES > 1) ---
+      const fw = img.width / FLASK_FRAMES;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = Math.floor(this.animFrame) * fw;
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, cy - dh / 2, dw, dh);
+    } else {
+      // --- Fallback: green orb + white "+" cross (unchanged) ---
+      ctx.save();
+      ctx.shadowColor = "#5ad17a";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#5ad17a";
+      ctx.beginPath();
+      ctx.arc(this.x, cy, this.radius, 0, Math.PI * 2);
+      ctx.fill();
 
-    // White health "+" cross.
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = "#ffffff";
-    const arm = 6;  // length from center
-    const thick = 2; // half-thickness
-    ctx.fillRect(this.x - thick, cy - arm, thick * 2, arm * 2); // vertical
-    ctx.fillRect(this.x - arm, cy - thick, arm * 2, thick * 2); // horizontal
+      // White health "+" cross.
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#ffffff";
+      const arm = 6;  // length from center
+      const thick = 2; // half-thickness
+      ctx.fillRect(this.x - thick, cy - arm, thick * 2, arm * 2); // vertical
+      ctx.fillRect(this.x - arm, cy - thick, arm * 2, thick * 2); // horizontal
 
-    ctx.restore();
+      ctx.restore();
+    }
   }
 }

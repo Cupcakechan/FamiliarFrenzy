@@ -88,6 +88,17 @@ const WORLD_H = 1344; // 42 tiles tall (multiple of 32 so the wall row lands flu
 // How many normal wisps the boss summons each time.
 const SUMMON_COUNT = 3;
 
+// --- Frenzy Spirit Link (visual only) ------------------------------------
+const LINK_COLOR = "#F2A540";
+const LINK_BASE_ALPHA = 0.26;   // base ribbon opacity
+const LINK_PULSE_ALPHA = 0.06;  // +/- opacity pulse on top of base
+const LINK_AMPLITUDE = 9;       // max perpendicular wave offset (px)
+const LINK_WAVES = 2.2;         // number of wave humps along the link
+const LINK_SEGMENTS = 24;       // points sampled along the link (smoothness)
+const LINK_FADE_IN = 0.30;      // seconds to fade in when frenzy starts
+const LINK_FADE_OUT = 0.50;     // seconds to fade out as frenzy ends
+const LINK_ATTACK_BOOST = 1.7;  // opacity multiplier while the cat is attacking
+
 // Deterministic 0..1 value for a tile + seed (stable every frame, no flicker).
 function tileRand(x, y, seed) {
   let h = (x * 73856093) ^ (y * 19349663) ^ (seed * 83492791);
@@ -621,11 +632,67 @@ export class Game {
 
   drawWorld(ctx) {
     this.drawArena(ctx);
+    this.drawSpiritLink(ctx); // Frenzy ribbon: above the floor, below all actors
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
     for (const enemy of this.enemies) enemy.draw(ctx);
     this.familiar.draw(ctx);
     this.player.draw(ctx);
+  }
+
+  // Frenzy Spirit Link (visual only): a wavy, semi-transparent ribbon between
+  // the witch and the familiar while Frenzy is active. Fades in/out cleanly at
+  // the edges of the frenzy window and brightens while the cat is attacking.
+  drawSpiritLink(ctx) {
+    if (this.frenzyTimer <= 0) return;
+
+    const ax = this.player.x, ay = this.player.y;
+    const bx = this.familiar.x, by = this.familiar.y;
+    const dx = bx - ax, dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return; // overlapping — nothing meaningful to draw
+
+    // Perpendicular unit vector (for the side-to-side wave).
+    const px = -dy / len, py = dx / len;
+
+    // Opacity: base + pulse, gated by a clean fade-in/out at the frenzy edges.
+    const fadeIn = clamp((FRENZY_DURATION - this.frenzyTimer) / LINK_FADE_IN, 0, 1);
+    const fadeOut = clamp(this.frenzyTimer / LINK_FADE_OUT, 0, 1);
+    const edge = Math.min(fadeIn, fadeOut);
+    const pulse = LINK_PULSE_ALPHA * Math.sin(performance.now() / 180);
+    let alpha = (LINK_BASE_ALPHA + pulse) * edge;
+    if (this.familiar.animState === "attack") alpha *= LINK_ATTACK_BOOST;
+    if (alpha <= 0.01) return;
+
+    // Build an animated, end-tapered wave path from witch to cat.
+    const phase = performance.now() / 130;
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.beginPath();
+    for (let i = 0; i <= LINK_SEGMENTS; i++) {
+      const u = i / LINK_SEGMENTS;
+      const taper = Math.sin(u * Math.PI); // 0 at both ends → attaches cleanly
+      const off = Math.sin(u * Math.PI * LINK_WAVES + phase) * LINK_AMPLITUDE * taper;
+      const x = ax + dx * u + px * off;
+      const y = ay + dy * u + py * off;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+
+    // Soft outer glow, then a thin inner line (same path, stroked twice).
+    ctx.strokeStyle = LINK_COLOR;
+    ctx.shadowColor = LINK_COLOR;
+    ctx.globalAlpha = alpha * 0.5;
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 5;
+    ctx.stroke();
+
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+    ctx.restore();
   }
 
   drawArena(ctx) {

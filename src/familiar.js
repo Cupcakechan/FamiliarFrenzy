@@ -36,7 +36,7 @@ const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 // --- Ghost imprints (visual only) ----------------------------------------
 // Spaced afterimages: drop one only after travelling IMPRINT_GAP px, then let
 // it fade over IMPRINT_LIFE. Gives "2  2  2  2" spacing, not a packed smear.
-const IMPRINT_GAP = 22;         // px the cat must travel before dropping a new imprint
+const IMPRINT_GAP = 40;         // px the cat must travel before dropping a new imprint
 const IMPRINT_LIFE = 0.45;      // seconds an imprint takes to fade out
 const IMPRINT_MAX = 6;          // safety cap on simultaneous imprints
 const IMPRINT_ALPHA_MAX = 0.40; // opacity of a fresh imprint

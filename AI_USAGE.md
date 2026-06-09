@@ -67,3 +67,5 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-08 | Menu/UI | Mode-select cleanup: removed "capped 10-wave run" and "Endless: coming soon" footer text, leaving only the controls hint | Claude |
 | 2026-06-08 | Art/FX | Ghost trail for familiar: per-frame snapshot buffer (pos/facing/frame), faded afterimages drawn behind the cat via shared drawCat helper; visual-only, bounded, fallback-safe | Claude |
 | 2026-06-08 | Art/FX | Ghost imprints for familiar: distance-spaced afterimages (drop per IMPRINT_GAP px travelled) that fade over a short lifetime; visual-only, bounded, fallback-safe | Claude |
+| 2026-06-08 | Art/FX | Frenzy Spirit Link: visual-only wavy #F2A540 ribbon between witch and familiar during Frenzy, end-tapered animated wave, edge fade-in/out, brightens on cat attack; drawn below all actors | Claude |
+| 2026-06-08 | Art/Sprites | Health flask sprite support via existing loadImage/getImage pattern (flask_idle.png), strip-capable (FLASK_FRAMES default 1), green-orb fallback preserved; collection unchanged | Claude |
