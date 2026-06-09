@@ -381,8 +381,7 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.88)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "FAMILIAR FRENZY", w / 2, 52, { size: 28, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
-  text(ctx, "PAUSED", w / 2, 90, { size: 34, color: CREAM, weight: "700", font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, "PAUSED", w / 2, 64, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
   // Left column: options + basic run stats.
   const leftX = 150;

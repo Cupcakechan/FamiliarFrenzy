@@ -417,7 +417,10 @@ export class Game {
     for (const enemy of this.enemies) {
       if (enemy.dead) {
         this.enemiesDefeated += 1;
-        if (enemy.isBoss) this.bossesDefeated += 1;
+        if (enemy.isBoss) {
+          this.bossesDefeated += 1;
+          this.pendingLevelUps += 1; // boss kill grants a free upgrade choice
+        }
         // Small random scatter so the mote + flask don't land on the same spot,
         // clamped inside the world so drops never land out of reach.
         const j = () => (Math.random() - 0.5) * 24; // ±12px
@@ -612,7 +615,7 @@ export class Game {
           drawEvolutionBanner(ctx, this.width, this.height, this.evoBannerText, this.evoBannerTimer);
         }
         if (this.waveManager.phase === "intermission") {
-          const bossWave = this.waveManager.displayWave >= this.waveManager.maxWaves;
+          const bossWave = this.waveManager.displayWave % 10 === 0;
           drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer, bossWave);
         }
         break;
