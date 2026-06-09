@@ -8,7 +8,8 @@
    - A single "boss" track that interrupts the normal pool during boss fights
      (Wave 10 in Tutorial, and every 10th wave in Endless), then returns to
      the normal pool cleanly when the boss is gone.
-   - Clean hard switches between tracks (no crossfade for now).
+   - Track changes CROSSFADE: the outgoing track fades down while the incoming
+     one fades up over FADE_MS, so transitions are smooth (no abrupt cut).
    - Browser autoplay: nothing plays until the first user gesture. game.js can
      call setMusicContext() any time (even before the gesture); the module just
      remembers the desired context and starts it the moment audio is unlocked.
@@ -30,6 +31,7 @@
 const MUSIC_EXT = "mp3";   // change to "ogg" if your files are .ogg
 const POOL_COUNT = 3;      // familiar_theme_01..0N
 const DEFAULT_VOLUME = 60; // 0..100
+const FADE_MS = 700;       // crossfade length between tracks
 const STORAGE_KEY = "ff_musicVolume";
 
 const POOL_SRCS = [];
@@ -43,8 +45,13 @@ let volume = DEFAULT_VOLUME;  // 0..100
 let unlocked = false;         // true after the first user gesture
 let desiredContext = null;    // what game.js wants: "normal" | "boss" | null
 let currentContext = null;    // what is actually playing
-let audioEl = null;           // the live HTMLAudioElement
-let currentSrc = null;        // its src (to avoid repeats / needless restarts)
+let audioEl = null;           // the incoming / active element (fades up)
+let fadingEl = null;          // the outgoing element during a crossfade (fades down)
+let currentSrc = null;        // active src (to avoid repeats / needless restarts)
+
+// Crossfade animation.
+let fadeRAF = null;
+let fadeStart = 0;
 
 // --- Volume persistence ---------------------------------------------------
 function loadVolume() {
@@ -64,7 +71,9 @@ export function getMusicVolume() {
 
 export function setMusicVolume(v) {
   volume = Math.max(0, Math.min(100, Math.round(v)));
-  if (audioEl) audioEl.volume = volume / 100; // applies live (0 = silent)
+  // While a crossfade runs, its loop reapplies volumes each frame; otherwise
+  // set the active track directly so the change is instant (0 = silent).
+  if (!fadeRAF && audioEl) audioEl.volume = volume / 100;
   saveVolume();
 }
 
@@ -81,25 +90,63 @@ function randomPoolSrc() {
   return pick;
 }
 
-// Clean hard switch to a given src.
+// --- Crossfade ------------------------------------------------------------
+function stopEl(el) {
+  if (!el) return;
+  el.onended = null;
+  el.onerror = null;
+  el.pause();
+}
+
+// Immediately finalize any in-progress fade (stops the outgoing element).
+function cancelFade() {
+  if (fadeRAF) {
+    cancelAnimationFrame(fadeRAF);
+    fadeRAF = null;
+  }
+  if (fadingEl) {
+    stopEl(fadingEl);
+    fadingEl = null;
+  }
+}
+
+function stepFade(now) {
+  const t = Math.min(1, (now - fadeStart) / FADE_MS);
+  const target = volume / 100; // read live, so the slider works mid-fade
+  if (audioEl) audioEl.volume = t * target;
+  if (fadingEl) fadingEl.volume = (1 - t) * target;
+
+  if (t >= 1) {
+    if (fadingEl) { stopEl(fadingEl); fadingEl = null; }
+    fadeRAF = null;
+    return;
+  }
+  fadeRAF = requestAnimationFrame(stepFade);
+}
+
+function startFade() {
+  fadeStart = performance.now();
+  if (fadeRAF) cancelAnimationFrame(fadeRAF);
+  fadeRAF = requestAnimationFrame(stepFade);
+}
+
+// Crossfade to a given src (fades the current one out, the new one in).
 function playSrc(src, loop) {
   if (!src) return;
 
-  // Stop/clear the previous element.
-  if (audioEl) {
-    audioEl.onended = null;
-    audioEl.onerror = null;
-    audioEl.pause();
-    audioEl = null;
-  }
+  // Any previous outgoing element is dropped immediately; the current active
+  // element becomes the new outgoing one to fade down.
+  cancelFade();
+  fadingEl = audioEl;
+  audioEl = null;
 
   const el = new Audio(src);
-  el.volume = volume / 100;
   el.loop = loop;
+  el.volume = 0; // fade in from silence
   el.onerror = () => { console.warn(`[audio] could not load ${src}`); };
 
   // Normal tracks don't loop a single song — when one ends, chain to another
-  // random pool track for variety (boss track loops instead).
+  // random pool track for variety (the boss track loops instead).
   if (!loop) {
     el.onended = () => {
       if (currentContext === "normal") {
@@ -124,6 +171,8 @@ function playSrc(src, loop) {
       currentSrc = null;
     });
   }
+
+  startFade();
 }
 
 // Realize the desired context. Cheap + idempotent: no-ops unless the context
@@ -149,12 +198,9 @@ export function setMusicContext(ctx) {
 }
 
 export function stopMusic() {
-  if (audioEl) {
-    audioEl.onended = null;
-    audioEl.onerror = null;
-    audioEl.pause();
-    audioEl = null;
-  }
+  cancelFade();
+  stopEl(audioEl);
+  audioEl = null;
   currentSrc = null;
   currentContext = null;
 }
