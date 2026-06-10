@@ -451,12 +451,12 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
     text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 96, { size: 14, color: PURPLE, weight: "700" });
   }
 
-  text(ctx, up.description, x + cw / 2, y + 118, { size: 14, color: DIM, weight: "500", maxWidth: cw - 24 });
+  text(ctx, up.description, x + cw / 2, y + 114, { size: 14, color: DIM, weight: "500", maxWidth: cw - 24 });
 
   const prompt = count > 1 ? `Press ${i + 1}` : "Press ENTER";
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, prompt, x + cw / 2, y + ch - 20, { size: 15, color: PURPLE });
+  text(ctx, prompt, x + cw / 2, y + ch - 14, { size: 15, color: PURPLE });
   ctx.globalAlpha = 1;
 }
 
