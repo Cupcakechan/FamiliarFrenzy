@@ -70,7 +70,7 @@ export const UPGRADES = [
     name: "Ghost Pounce",
     description: "Attacks pierce +1 enemy",
     maxedStat: "+3",
-    evolutionNotes: "Helps unlock Phantom Pounce (needs Lv. 2+).",
+    evolutionNotes: "Required for Phantom Pounce (must be maxed).",
     tag: "attack",
     maxLevel: 3,
     apply(game) {
@@ -124,9 +124,9 @@ export const EVOLUTIONS = [
     description: "Bolts pierce +2 enemies and deal +2 damage.",
     tag: "evolution",
     maxLevel: 1,
-    // Unlocks once Sharper Spirit Claws is maxed AND Ghost Pounce is Lv. 2+.
+    // Unlocks once BOTH Sharper Spirit Claws and Ghost Pounce are maxed.
     requires(levels) {
-      return (levels.sharper_spirit_claws || 0) >= 5 && (levels.ghost_pounce || 0) >= 2;
+      return (levels.sharper_spirit_claws || 0) >= 5 && (levels.ghost_pounce || 0) >= 3;
     },
     apply(game) {
       game.familiar.pierce += 2;
