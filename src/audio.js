@@ -33,6 +33,7 @@ const MUSIC_EXT = "mp3";   // change to "ogg" if your files are .ogg
 const POOL_COUNT = 3;      // familiar_theme_01..0N
 const DEFAULT_VOLUME = 60; // 0..100
 const FADE_MS = 700;       // crossfade length between tracks
+const NORMAL_TRACK_MIN_PLAY_SECONDS = 240; // loop one normal track at least this long before rotating to a new random one
 const STORAGE_KEY = "ff_musicVolume";
 
 const POOL_SRCS = [];
@@ -49,6 +50,7 @@ let currentContext = null;    // what is actually playing
 let audioEl = null;           // the incoming / active element (fades up)
 let fadingEl = null;          // the outgoing element during a crossfade (fades down)
 let currentSrc = null;        // active src (to avoid repeats / needless restarts)
+let normalRotateTimer = null; // setTimeout handle for normal-track rotation
 
 // Crossfade animation.
 let fadeRAF = null;
@@ -146,18 +148,6 @@ function playSrc(src, loop) {
   el.volume = 0; // fade in from silence
   el.onerror = () => { console.warn(`[audio] could not load ${src}`); };
 
-  // Normal tracks don't loop a single song — when one ends, chain to another
-  // random pool track for variety (the boss track loops instead).
-  if (!loop) {
-    el.onended = () => {
-      if (currentContext === "normal") {
-        const next = randomPoolSrc();
-        currentSrc = next;
-        playSrc(next, false);
-      }
-    };
-  }
-
   audioEl = el;
   currentSrc = src;
 
@@ -176,6 +166,36 @@ function playSrc(src, loop) {
   startFade();
 }
 
+// --- Normal-track rotation ------------------------------------------------
+// A selected normal track now LOOPS seamlessly; we only rotate to a different
+// random track after NORMAL_TRACK_MIN_PLAY_SECONDS (instead of switching every
+// time a ~1-minute song ends). Driven by a simple one-shot timer.
+function clearNormalRotation() {
+  if (normalRotateTimer) {
+    clearTimeout(normalRotateTimer);
+    normalRotateTimer = null;
+  }
+}
+
+function scheduleNormalRotation() {
+  clearNormalRotation();
+  normalRotateTimer = setTimeout(rotateNormalTrack, NORMAL_TRACK_MIN_PLAY_SECONDS * 1000);
+}
+
+// Start a normal-pool track looping and (re)arm the rotation timer.
+function startNormalTrack(src) {
+  playSrc(src, true);
+  scheduleNormalRotation();
+}
+
+// Timer fired: crossfade to a DIFFERENT random normal track (randomPoolSrc
+// avoids repeating the current one) and re-arm. No-op if we're not in normal
+// context anymore (e.g. a boss fight took over, or music was stopped).
+function rotateNormalTrack() {
+  if (currentContext !== "normal") return;
+  startNormalTrack(randomPoolSrc());
+}
+
 // Realize the desired context. Cheap + idempotent: no-ops unless the context
 // actually changed, so game.js can call setMusicContext() every frame.
 function applyContext() {
@@ -184,9 +204,11 @@ function applyContext() {
 
   currentContext = desiredContext;
   if (desiredContext === "boss") {
+    clearNormalRotation();      // boss interrupts the normal rotation
     playSrc(BOSS_SRC, true);
   } else if (desiredContext === "normal") {
-    playSrc(randomPoolSrc(), false);
+    // Fresh normal rotation (also how we resume cleanly after a boss fight).
+    startNormalTrack(randomPoolSrc());
   } else {
     stopMusic();
   }
@@ -199,6 +221,7 @@ export function setMusicContext(ctx) {
 }
 
 export function stopMusic() {
+  clearNormalRotation();
   cancelFade();
   stopEl(audioEl);
   audioEl = null;
