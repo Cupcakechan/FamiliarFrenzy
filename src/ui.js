@@ -186,6 +186,75 @@ export function drawHowToPlay(ctx, w, h) {
   ctx.globalAlpha = 1;
 }
 
+// --- UPGRADE GRIMOIRE -----------------------------------------------------
+// Read-only glossary. `entries` come from getGrimoireEntries():
+//   { id, name, effect, maxLevel, maxDescription, evolutionNotes, kind }.
+// `selectedIndex` spans the entries PLUS a trailing "Back" row (its index ===
+// entries.length). `expandedId` is the one open entry (accordion), or null.
+// `levels` = { id: ownedLevel } when opened from Pause (shows Current x/y),
+// or null from the Main Menu.
+export function drawGrimoire(ctx, w, h, entries, selectedIndex, expandedId, levels) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "UPGRADE GRIMOIRE", w / 2, 46, { size: 36, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+
+  const leftX = 200;        // row text left edge
+  const rightX = w - 200;   // right-aligned cap/label
+  const rowH = 26;
+  const detailLH = 20;
+  let y = 92;
+
+  entries.forEach((e, i) => {
+    const selected = i === selectedIndex;
+    const open = e.id === expandedId;
+
+    // Row: cursor + name on the left; cap/label on the right.
+    const prefix = open ? "v " : (selected ? "> " : "  ");
+    text(ctx, `${prefix}${e.name}`, leftX, y, {
+      size: 18, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
+    });
+    if (e.kind === "evolution") {
+      text(ctx, "EVOLUTION", rightX, y, { size: 13, color: GOLD, align: "right", weight: "700" });
+    } else if (e.kind === "fallback") {
+      text(ctx, "Fallback", rightX, y, { size: 13, color: DIM, align: "right", weight: "500" });
+    } else if (e.maxLevel !== undefined) {
+      text(ctx, `Max Lv. ${e.maxLevel}`, rightX, y, { size: 13, color: DIM, align: "right", weight: "500" });
+    }
+    y += rowH;
+
+    // Expanded detail block (accordion: only the open entry shows this).
+    if (open) {
+      const dx = leftX + 16;
+      const valX = dx + 96;
+      const valMax = rightX - valX + 60;
+
+      const rows = [["Effect:", e.effect]];
+      if (levels && e.maxLevel !== undefined) {
+        rows.push(["Current:", `Lv. ${levels[e.id] || 0} / ${e.maxLevel}`]);
+      }
+      if (e.maxDescription) rows.push(["At Max:", e.maxDescription]);
+      rows.push(["Evolution:", e.evolutionNotes || "None yet."]);
+
+      rows.forEach(([label, val]) => {
+        text(ctx, label, dx, y, { size: 14, color: GOLD, align: "left", weight: "700" });
+        text(ctx, val, valX, y, { size: 14, color: CREAM, align: "left", weight: "500", maxWidth: valMax });
+        y += detailLH;
+      });
+      y += 6; // small gap after the block
+    }
+  });
+
+  // Trailing "Back" row.
+  const backSelected = selectedIndex === entries.length;
+  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 4, {
+    size: 18, color: backSelected ? GOLD : CREAM, align: "left", weight: backSelected ? "700" : "500",
+  });
+
+  text(ctx, "Up / Down: move      Enter: expand / collapse      Esc / Backspace: back",
+    w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
+}
+
 // --- IN-GAME HUD ----------------------------------------------------------
 export function drawHUD(ctx, w, h, state) {
   // Health bar (top-left).

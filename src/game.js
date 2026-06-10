@@ -21,10 +21,10 @@ import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
-import { getOffers, UPGRADES } from "./upgrades.js";
+import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawSettings } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawSettings, drawGrimoire } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -41,6 +41,7 @@ const STATE = {
   MAIN_MENU: "mainMenu",
   MODE_SELECT: "modeSelect",
   HOW_TO_PLAY: "howToPlay",
+  GRIMOIRE: "grimoire",
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
   SETTINGS_PLACEHOLDER: "settingsPlaceholder",
@@ -53,10 +54,10 @@ const STATE = {
   VICTORY: "victory",
 };
 
-const MAIN_MENU_ITEMS = ["Play", "How to Play", "High Scores", "Settings"];
+const MAIN_MENU_ITEMS = ["Play", "How to Play", "Upgrade Grimoire", "High Scores", "Settings"];
 const MODE_SELECT_ITEMS = ["Tutorial Run", "Endless Mode", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
-const PAUSE_ITEMS = ["Resume", "Settings", "Main Menu"];
+const PAUSE_ITEMS = ["Resume", "Upgrade Grimoire", "Settings", "Main Menu"];
 const CONFIRM_ITEMS = ["Yes", "No"];
 
 const SCORE_PER_PICKUP = 10;
@@ -119,6 +120,12 @@ export class Game {
     this.state = STATE.MAIN_MENU;
     this.menuIndex = 0; // highlighted option in the current menu
     this.settingsReturn = STATE.MAIN_MENU; // where the Settings screen goes "back" to
+
+    // Upgrade Grimoire (read-only glossary) screen state.
+    this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
+    this.grimoireEntries = [];             // cached list while the screen is open
+    this.grimoireIndex = 0;                // highlighted row (entries + a Back row)
+    this.grimoireExpanded = null;          // id of the open entry (accordion), or null
 
     this.player = new Player(WORLD_W / 2, WORLD_H / 2);
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
@@ -222,13 +229,18 @@ export class Game {
         if (this.confirmPressed()) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
           else if (this.menuIndex === 1) this.state = STATE.HOW_TO_PLAY;
-          else if (this.menuIndex === 2) this.state = STATE.HIGHSCORES_PLACEHOLDER;
-          else if (this.menuIndex === 3) { this.settingsReturn = STATE.MAIN_MENU; this.state = STATE.SETTINGS_PLACEHOLDER; }
+          else if (this.menuIndex === 2) this.openGrimoire(STATE.MAIN_MENU);
+          else if (this.menuIndex === 3) this.state = STATE.HIGHSCORES_PLACEHOLDER;
+          else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
         break;
 
       case STATE.HOW_TO_PLAY:
         if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+        break;
+
+      case STATE.GRIMOIRE:
+        this.updateGrimoire();
         break;
 
       case STATE.MODE_SELECT:
@@ -283,6 +295,8 @@ export class Game {
           if (this.menuIndex === 0) {
             this.state = STATE.PLAYING;                 // Resume
           } else if (this.menuIndex === 1) {
+            this.openGrimoire(STATE.PAUSED);            // Upgrade Grimoire (returns to Pause)
+          } else if (this.menuIndex === 2) {
             this.settingsReturn = STATE.PAUSED;         // Settings (returns to Pause)
             this.state = STATE.SETTINGS_PLACEHOLDER;
           } else {
@@ -351,8 +365,10 @@ export class Game {
   // Pick the right music context for the current state/wave. "boss" only while
   // a boss is alive during play; everything else shares the normal pool (Opt A).
   updateMusic() {
+    const grimoireInPlay = this.state === STATE.GRIMOIRE && this.grimoireReturn === STATE.PAUSED;
     const inPlay = this.state === STATE.PLAYING || this.state === STATE.LEVEL_UP
-      || this.state === STATE.PAUSED || this.state === STATE.DYING;
+      || this.state === STATE.PAUSED || this.state === STATE.DYING
+      || grimoireInPlay;
     const bossActive = this.waveManager.boss && !this.waveManager.boss.dead;
     setMusicContext(inPlay && bossActive ? "boss" : "normal");
   }
@@ -373,6 +389,48 @@ export class Game {
 
   backPressed() {
     return Input.wasPressed("Escape") || Input.wasPressed("Backspace");
+  }
+
+  // --- Upgrade Grimoire (read-only glossary) -----------------------------
+  // Opened from the Main Menu or the Pause menu; `returnState` is where Back
+  // goes. The entry list is rebuilt fresh each open so new upgrades appear
+  // automatically. Levels are only shown when opened from Pause.
+  openGrimoire(returnState) {
+    this.grimoireReturn = returnState;
+    this.grimoireEntries = getGrimoireEntries();
+    this.grimoireIndex = 0;
+    this.grimoireExpanded = null;
+    this.state = STATE.GRIMOIRE;
+  }
+
+  closeGrimoire() {
+    this.state = this.grimoireReturn || STATE.MAIN_MENU;
+    if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
+  }
+
+  updateGrimoire() {
+    const n = this.grimoireEntries.length;
+    const count = n + 1;        // entries + a trailing "Back" row
+    const backIndex = n;
+
+    if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+      this.grimoireIndex = (this.grimoireIndex - 1 + count) % count;
+    }
+    if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+      this.grimoireIndex = (this.grimoireIndex + 1) % count;
+    }
+
+    if (this.confirmPressed()) {
+      if (this.grimoireIndex === backIndex) {
+        this.closeGrimoire();
+      } else {
+        // Accordion: toggle the highlighted entry; close any other open one.
+        const id = this.grimoireEntries[this.grimoireIndex].id;
+        this.grimoireExpanded = this.grimoireExpanded === id ? null : id;
+      }
+    } else if (this.backPressed()) {
+      this.closeGrimoire();
+    }
   }
 
   updatePlaying(dt) {
@@ -602,6 +660,11 @@ export class Game {
     }
     if (this.state === STATE.HOW_TO_PLAY) {
       drawHowToPlay(ctx, this.width, this.height);
+      return;
+    }
+    if (this.state === STATE.GRIMOIRE) {
+      const levels = this.grimoireReturn === STATE.PAUSED ? this.upgradeLevels : null;
+      drawGrimoire(ctx, this.width, this.height, this.grimoireEntries, this.grimoireIndex, this.grimoireExpanded, levels);
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {
