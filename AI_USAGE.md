@@ -92,3 +92,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-10 | Gameplay | Lucky Paws reworked to a pure rare-drop upgrade: removed bonus-XP-mote roll, added LUCK_MAGNET_STEP so luck raises Spirit Magnet odds (flask scaling kept) | Claude |
 | 2026-06-10 | Game Feel | Non-overlapping drop placement (findDropSpot): co-dropped pickups spread out instead of stacking | Claude |
 | 2026-06-10 | UI | HP bar label readability: added optional outline to text() helper, HP label now cream + dark outline so it stays legible over the emptied bar track | Claude |
+| 2026-06-10 | Art Integration | Elder Wisp boss sprite integration: 8-dir Float (4f loop) + state-driven Charge (frame 0 wind-up / frame 1 dash) wired into the existing boss phases, placeholder kept as per-direction fallback; dash telegraph line recolored to #D475ED (width 5->4) | Claude |
