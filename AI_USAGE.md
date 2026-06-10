@@ -89,3 +89,6 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-09 | UI/Systems | Endless High Scores: top-10 localStorage leaderboard (ff_highscores, score-desc + wave tie-break) saved once per Endless death; real High Scores screen replacing the placeholder, with empty state + corrupt-data fail-safe; Tutorial runs excluded; best wave/score keys preserved. Level-up polish: smaller title (48->38) and cards (280x188->240x150) | Claude |
 | 2026-06-10 | UI | Level-up card spacing fix: lifted upgrade description (y+118->y+114) and pushed the Press prompt down (y+ch-20->y+ch-14) so they no longer overlap | Claude |
 | 2026-06-10 | Art Integration | Spirit Magnet sprite render path: draw spirit_magnet.png with the existing pulsing gold halo + hover preserved behind it, placeholder kept as fallback; no mechanics changed | Claude |
+| 2026-06-10 | Gameplay | Lucky Paws reworked to a pure rare-drop upgrade: removed bonus-XP-mote roll, added LUCK_MAGNET_STEP so luck raises Spirit Magnet odds (flask scaling kept) | Claude |
+| 2026-06-10 | Game Feel | Non-overlapping drop placement (findDropSpot): co-dropped pickups spread out instead of stacking | Claude |
+| 2026-06-10 | UI | HP bar label readability: added optional outline to text() helper, HP label now cream + dark outline so it stays legible over the emptied bar track | Claude |

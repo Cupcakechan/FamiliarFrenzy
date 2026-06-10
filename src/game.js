@@ -65,15 +65,16 @@ const OFFER_COUNT = 3; // upgrade cards shown per level-up
 const MAX_WAVES = 10;
 
 // Health flask drops (Feature 1) — both easy to tune.
-const FLASK_DROP_CHANCE = 0.12; // 12% base chance per enemy killed
+const FLASK_DROP_CHANCE = 0.1;  // base chance per enemy killed
 const FLASK_HEAL = 25;          // HP restored per flask
 
 // Magnet Charm: pulls nearby pickups toward the witch when in range.
 const MAGNET_PULL_SPEED = 280;  // px/s a pickup is drawn toward the player
 
-// Lucky Paws: per-level drop-chance bonuses.
+// Lucky Paws: per-level RARE-drop chance bonuses. It now ONLY improves the
+// odds of rare drops (flask + magnet) — it no longer spawns bonus XP motes.
 const LUCK_FLASK_STEP = 0.04;   // +4% flask chance per Lucky Paws level
-const LUCK_MOTE_STEP = 0.08;    // chance per level for a bonus mote on a kill
+const LUCK_MAGNET_STEP = 0.006; // +0.6% Spirit Magnet chance per Lucky Paws level
 
 // Spirit Magnet (rare pickup): vacuums all dropped rewards toward the player.
 const SPIRIT_MAGNET_DROP_CHANCE = 0.008; // 0.8% from normal enemies (rare)
@@ -516,26 +517,25 @@ export class Game {
           this.bossesDefeated += 1;
           this.pendingLevelUps += 1; // boss kill grants a free upgrade choice
         }
-        // Small random scatter so the mote + flask don't land on the same spot,
-        // clamped inside the world so drops never land out of reach.
-        const j = () => (Math.random() - 0.5) * 24; // ±12px
-        const cx = (v) => clamp(v, TILE, this.world.width - TILE);
-        const cy = (v) => clamp(v, TILE, this.world.height - TILE);
-        this.pickups.push(new Pickup(cx(enemy.x + j()), cy(enemy.y + j())));
+        // Drops are placed on non-overlapping spots near the kill (see
+        // findDropSpot), so a mote + flask from the same enemy don't stack.
+        let spot = this.findDropSpot(enemy.x, enemy.y, 7);
+        this.pickups.push(new Pickup(spot.x, spot.y));
 
-        // Lucky Paws: chance for a bonus mote, and a higher flask chance.
-        if (this.luckLevel > 0 && Math.random() < this.luckLevel * LUCK_MOTE_STEP) {
-          this.pickups.push(new Pickup(cx(enemy.x + j()), cy(enemy.y + j())));
-        }
+        // Lucky Paws now boosts only the RARE drops (flask + magnet); there is
+        // no longer a bonus-mote roll, so it never doubles up XP.
         const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP;
         if (Math.random() < flaskChance) {
-          this.flasks.push(new HealthFlask(cx(enemy.x + j()), cy(enemy.y + j()), FLASK_HEAL));
+          spot = this.findDropSpot(enemy.x, enemy.y, 9);
+          this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
         }
 
-        // Rare Spirit Magnet drop (independent of Lucky Paws).
-        const magnetChance = enemy.isBoss ? SPIRIT_MAGNET_BOSS_CHANCE : SPIRIT_MAGNET_DROP_CHANCE;
+        // Rare Spirit Magnet — base chance by enemy type, plus a Lucky Paws bonus.
+        const baseMagnet = enemy.isBoss ? SPIRIT_MAGNET_BOSS_CHANCE : SPIRIT_MAGNET_DROP_CHANCE;
+        const magnetChance = baseMagnet + this.luckLevel * LUCK_MAGNET_STEP;
         if (Math.random() < magnetChance) {
-          this.magnets.push(new SpiritMagnet(cx(enemy.x + j()), cy(enemy.y + j())));
+          spot = this.findDropSpot(enemy.x, enemy.y, 10);
+          this.magnets.push(new SpiritMagnet(spot.x, spot.y));
         }
       }
     }
@@ -624,6 +624,38 @@ export class Game {
       this.offers = [];
       this.state = STATE.PLAYING;
     }
+  }
+
+  // Find a spawn spot near (baseX, baseY) that doesn't overlap items already
+  // on the ground (motes, flasks, magnets), so co-dropped pickups don't stack.
+  // Tries the kill point first, then a few points on growing rings; if every
+  // nearby spot is crowded it accepts a small random jitter. Always clamped to
+  // the world floor so a drop can never land out of reach. Runs only on a kill
+  // (not per frame), and `radius` is the new item's radius for the spacing test.
+  findDropSpot(baseX, baseY, radius) {
+    const cx = (v) => clamp(v, TILE, this.world.width - TILE);
+    const cy = (v) => clamp(v, TILE, this.world.height - TILE);
+    const clear = (x, y) => {
+      const far = (arr) => arr.every((o) => Math.hypot(x - o.x, y - o.y) >= radius + o.radius);
+      return far(this.pickups) && far(this.flasks) && far(this.magnets);
+    };
+
+    let x = cx(baseX), y = cy(baseY);
+    if (clear(x, y)) return { x, y };
+
+    const STEP = 16;
+    for (let ring = 1; ring <= 4; ring++) {
+      const r = ring * STEP;
+      for (let a = 0; a < 8; a++) {
+        const ang = (a / 8) * Math.PI * 2 + ring; // offset each ring so points don't line up
+        const tx = cx(baseX + Math.cos(ang) * r);
+        const ty = cy(baseY + Math.sin(ang) * r);
+        if (clear(tx, ty)) return { x: tx, y: ty };
+      }
+    }
+
+    // Everything nearby is crowded — fall back to a small random jitter.
+    return { x: cx(baseX + (Math.random() - 0.5) * 24), y: cy(baseY + (Math.random() - 0.5) * 24) };
   }
 
   // Magnet Charm: ease an item toward the witch when within attraction range.

@@ -21,7 +21,7 @@ const BODY_FONT = "'Neatpixels Standard', Georgia, serif";
 // --- Shared helpers -------------------------------------------------------
 // Pass `maxWidth` to auto-shrink the font (proportionally, never squished) so
 // long titles always fit the canvas instead of clipping off the edges.
-function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font = BODY_FONT, weight = "700", maxWidth } = {}) {
+function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font = BODY_FONT, weight = "700", maxWidth, stroke = null, strokeWidth = 3 } = {}) {
   ctx.fillStyle = color;
   let fontSize = size;
   ctx.font = `${weight} ${fontSize}px ${font}`;
@@ -34,6 +34,14 @@ function text(ctx, str, x, y, { size = 24, color = GOLD, align = "center", font 
   }
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
+  // Optional contrasting outline (drawn under the fill) so text stays legible
+  // over any background — e.g. the HP label sitting over the emptied bar track.
+  if (stroke) {
+    ctx.lineWidth = strokeWidth;
+    ctx.strokeStyle = stroke;
+    ctx.lineJoin = "round"; // rounded corners instead of spikes on the outline
+    ctx.strokeText(str, x, y);
+  }
   ctx.fillText(str, x, y);
 }
 
@@ -338,7 +346,7 @@ export function drawHUD(ctx, w, h, state) {
   ctx.lineWidth = 1;
   ctx.strokeRect(barX, barY, barW, barH);
 
-  text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 14, color: "#0d0b1c", weight: "700" });
+  text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 14, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 3 });
 
   // Score (top-right).
   text(ctx, `Score: ${state.score}`, w - 16, 27, { size: 20, color: GOLD, align: "right" });
