@@ -61,7 +61,7 @@ export class Enemy {
     this.animState = "float"; // "float" | "attack"
     this.animFrame = randomInt(0, WISP_ANIMS.float - 1);
     this.animTimer = 0;
-    this.spriteScale = 1; // tune once the art is in (native px * this)
+    this.spriteScale = .8; // tune once the art is in (native px * this)
   }
 
   update(dt, player) {

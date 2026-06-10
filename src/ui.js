@@ -156,10 +156,7 @@ export function drawHowToPlay(ctx, w, h) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "HOW TO PLAY", w / 2, 50, { size: 40, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
-
-  const headX = 150;  // left margin for section headings
-  const bodyX = 172;  // slight indent for body lines
+  text(ctx, "HOW TO PLAY", w / 2, h * 0.20, { size: 40, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
   const controls = [
     "Move:  WASD / Arrow Keys",
@@ -169,29 +166,23 @@ export function drawHowToPlay(ctx, w, h) {
     "Restart:  R  (after Game Over or Victory)",
   ];
 
-  const survive = [
-    "Your ghost cat familiar attacks automatically — no aiming needed.",
-    "Dodge enemies and position yourself so the cat can hit them.",
-    "Defeated enemies drop EXP motes — collect them to level up.",
-    "Leveling up lets you pick an upgrade (maxed ones stop appearing).",
-    "Touching enemies hurts you; grab health flasks to recover.",
-    "Spirit Imbued makes the cat fire faster — save it for swarms or the boss.",
-    "Tutorial Run is 10 waves; clear them and defeat the Wave 10 boss to win.",
-  ];
+  // Center the CONTROLS block (heading + lines) vertically, nudged slightly
+  // below middle to balance the title up top. Lines are center-aligned.
+  const lineH = 36;
+  const headingGap = 16;
+  const blockH = lineH + headingGap + controls.length * lineH;
+  let y = (h - blockH) / 2 + 40;
 
-  text(ctx, "CONTROLS", headX, 92, { size: 20, color: GOLD, align: "left" });
-  controls.forEach((line, i) => {
-    text(ctx, line, bodyX, 120 + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });
-  });
-
-  text(ctx, "HOW TO SURVIVE", headX, 264, { size: 20, color: GOLD, align: "left" });
-  survive.forEach((line, i) => {
-    text(ctx, line, bodyX, 292 + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });
+  text(ctx, "CONTROLS", w / 2, y, { size: 22, color: GOLD });
+  y += lineH + headingGap;
+  controls.forEach((line) => {
+    text(ctx, line, w / 2, y, { size: 18, color: CREAM, weight: "500" });
+    y += lineH;
   });
 
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, "Press Esc or Backspace to return", w / 2, h - 30, { size: 16, color: PURPLE, weight: "500" });
+  text(ctx, "Press Esc or Backspace to return", w / 2, h - 40, { size: 16, color: PURPLE, weight: "500" });
   ctx.globalAlpha = 1;
 }
 
