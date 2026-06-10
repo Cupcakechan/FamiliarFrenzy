@@ -351,9 +351,6 @@ export function drawHUD(ctx, w, h, state) {
   // Score (top-right).
   text(ctx, `Score: ${state.score}`, w - 16, 27, { size: 20, color: GOLD, align: "right" });
 
-  // Wave label (top-center) — placeholder until Phase 6.
-  text(ctx, `Wave ${state.wave}`, w / 2, 27, { size: 20, color: DIM });
-
   // XP bar (bottom center) + level.
   const xpW = 600, xpH = 14;
   const xpX = (w - xpW) / 2, xpY = h - 30;

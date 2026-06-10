@@ -254,7 +254,7 @@ export class Boss {
     this.facing = "s";
     this.animFrame = randomInt(0, BOSS_FLOAT_FRAMES - 1); // randomized float start
     this.animTimer = 0;
-    this.spriteScale = 1.5; // tune once art is in (boss radius 30; native px * this)
+    this.spriteScale = 1.0; // tune once art is in (boss radius 30; native px * this)
 
     this.summonTimer = BOSS_SUMMON_COOLDOWN;
     this.summonReady = false;    // game.js reads this to spawn adds
@@ -376,15 +376,19 @@ export class Boss {
       const dw = fw * this.spriteScale;
       const dh = fh * this.spriteScale;
       const sx = frameIndex * fw;
+      // Snap the destination to whole pixels so the 116x116 art stays crisp —
+      // sub-pixel positions soften pixel art even with image smoothing off.
+      const dx = Math.round(this.x - dw / 2);
+      const dy = Math.round(this.y - dh / 2);
 
-      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+      ctx.drawImage(img, sx, 0, fw, fh, dx, dy, dw, dh);
 
       // Brief white hit flash: additive redraw of the same frame (matches the
       // Wisp), so damage reads on the sprite without offscreen tinting.
       if (flash) {
         ctx.globalAlpha = 0.55;
         ctx.globalCompositeOperation = "lighter";
-        ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+        ctx.drawImage(img, sx, 0, fw, fh, dx, dy, dw, dh);
       }
       ctx.restore();
       return;
@@ -422,6 +426,11 @@ const ENEMY_HP_PER_TIER = 1;       // +HP to wisps per tier
 const COUNT_PER_TIER = 3;          // extra wisps in the wave budget per tier
 const SPAWN_DELAY_PER_TIER = 0.05; // spawn interval shaved per tier...
 const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
+
+// DEBUG: when true, EVERY wave spawns the boss (handy for testing boss art /
+// behavior without grinding to wave 10). Set to false for normal play and
+// before committing a release build.
+const DEBUG_FORCE_BOSS = true;
 
 export class WaveManager {
   constructor(maxWaves = 10) {
@@ -502,7 +511,7 @@ export class WaveManager {
     this.wave += 1;
 
     // Boss every 10th wave (Tutorial: wave 10; Endless: 10, 20, 30, ...).
-    if (this.wave % 10 === 0) {
+    if (DEBUG_FORCE_BOSS || this.wave % 10 === 0) {
       this.phase = "boss";
       // Boss strength rises each block: wave 10 = x1, wave 20 = x2, wave 30 = x3.
       const bossTier = this.endlessTier() + 1;
