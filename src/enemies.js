@@ -203,6 +203,26 @@ const BOSS_DASH_SPEED = 440;     // dash velocity
 const BOSS_SUMMON_COOLDOWN = 9;  // seconds between summons
 const BOSS_WOBBLE_DRIFT = 55;    // px/s side-to-side amplitude
 
+// --- Elder Wisp boss sprites (visual only) -------------------------------
+// 8-direction FLOAT (4 frames, loops) used during normal movement, plus a
+// 2-frame CHARGE that is STATE-DRIVEN, not looped: frame 0 plays during the
+// dash wind-up (telegraph) and frame 1 during the release (dashing). Single-
+// row strips in assets/sprites/enemies/, sliced at draw time. Missing/loading
+// strips fall back to the placeholder boss draw, per direction — no crashes,
+// no per-frame console spam.
+const BOSS_FLOAT_FRAMES = 4;
+const BOSS_CHARGE_FRAMES = 2;
+const BOSS_FLOAT_FPS = 6;               // float loop speed
+const BOSS_DASH_LINE_COLOR = "#D475ED"; // dash/charge telegraph line color
+
+// Register 8 dirs x (float 4f + charge 2f) = 16 strips (graceful fallback).
+for (const anim of ["float", "charge"]) {
+  for (const d of WISP_DIRS) {
+    const key = `elder_wisp_${anim}_${d}`;
+    loadImage(key, `assets/sprites/enemies/${key}.png`);
+  }
+}
+
 export class Boss {
   constructor(x, y, tier = 1) {
     this.x = x;
@@ -229,6 +249,12 @@ export class Boss {
     this.dashVY = 0;
     this.aimX = 0;
     this.aimY = 1;
+
+    // Animation (visual only). Float loops; the charge frame is chosen by phase.
+    this.facing = "s";
+    this.animFrame = randomInt(0, BOSS_FLOAT_FRAMES - 1); // randomized float start
+    this.animTimer = 0;
+    this.spriteScale = 1.0; // tune once art is in (boss radius 30; native px * this)
 
     this.summonTimer = BOSS_SUMMON_COOLDOWN;
     this.summonReady = false;    // game.js reads this to spawn adds
@@ -275,6 +301,22 @@ export class Boss {
         this.dashCooldownTimer = BOSS_DASH_COOLDOWN;
       }
     }
+
+    // --- Animation (visual only) ---
+    // Normal: face the player and loop the Float strip. Telegraph/dashing:
+    // face the locked dash vector (the charge frame is picked from the phase
+    // at draw time, so it isn't stepped here).
+    if (this.phase === "normal") {
+      this.facing = dirFromVector(player.x - this.x, player.y - this.y);
+      const frameDur = 1 / BOSS_FLOAT_FPS;
+      this.animTimer += dt;
+      while (this.animTimer >= frameDur) {
+        this.animTimer -= frameDur;
+        this.animFrame = (this.animFrame + 1) % BOSS_FLOAT_FRAMES;
+      }
+    } else {
+      this.facing = dirFromVector(this.aimX, this.aimY);
+    }
   }
 
   moveToward(player, dt, speed, wobble) {
@@ -308,8 +350,8 @@ export class Boss {
       const L = 150;
       const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 70);
       ctx.globalAlpha = 0.45 + 0.45 * pulse;
-      ctx.strokeStyle = "#ffd27a";
-      ctx.lineWidth = 5;
+      ctx.strokeStyle = BOSS_DASH_LINE_COLOR;
+      ctx.lineWidth = 4;
       ctx.beginPath();
       ctx.moveTo(this.x, this.y);
       ctx.lineTo(this.x + this.aimX * L, this.y + this.aimY * L);
@@ -317,6 +359,38 @@ export class Boss {
       ctx.globalAlpha = 1;
     }
 
+    // --- Sprite path: directional Float (normal) or state-driven Charge ---
+    // The charge frame comes from the phase: telegraph = frame 0 (wind-up),
+    // dashing = frame 1 (release). Float uses the looping frame from update().
+    const charging = this.phase === "telegraph" || this.phase === "dashing";
+    const anim = charging ? "charge" : "float";
+    const frames = charging ? BOSS_CHARGE_FRAMES : BOSS_FLOAT_FRAMES;
+    const img = getImage(`elder_wisp_${anim}_${this.facing}`);
+
+    if (img && img.width > 0) {
+      const frameIndex = charging
+        ? (this.phase === "dashing" ? 1 : 0)
+        : Math.floor(this.animFrame) % frames;
+      const fw = img.width / frames;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = frameIndex * fw;
+
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+
+      // Brief white hit flash: additive redraw of the same frame (matches the
+      // Wisp), so damage reads on the sprite without offscreen tinting.
+      if (flash) {
+        ctx.globalAlpha = 0.55;
+        ctx.globalCompositeOperation = "lighter";
+        ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+      }
+      ctx.restore();
+      return;
+    }
+
+    // --- Fallback placeholder boss (used if a strip is missing/loading) ---
     // Body.
     ctx.shadowColor = "#e2536b";
     ctx.shadowBlur = 24;

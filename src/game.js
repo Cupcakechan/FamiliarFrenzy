@@ -65,8 +65,8 @@ const OFFER_COUNT = 3; // upgrade cards shown per level-up
 const MAX_WAVES = 10;
 
 // Health flask drops (Feature 1) — both easy to tune.
-const FLASK_DROP_CHANCE = 0.1;  // base chance per enemy killed
-const FLASK_HEAL = 25;          // HP restored per flask
+const FLASK_DROP_CHANCE = 0.015;  // base chance per enemy killed
+const FLASK_HEAL = 15;          // HP restored per flask
 
 // Magnet Charm: pulls nearby pickups toward the witch when in range.
 const MAGNET_PULL_SPEED = 280;  // px/s a pickup is drawn toward the player
