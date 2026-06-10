@@ -94,3 +94,5 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-10 | UI | HP bar label readability: added optional outline to text() helper, HP label now cream + dark outline so it stays legible over the emptied bar track | Claude |
 | 2026-06-10 | Art Integration | Elder Wisp boss sprite integration: 8-dir Float (4f loop) + state-driven Charge (frame 0 wind-up / frame 1 dash) wired into the existing boss phases, placeholder kept as per-direction fallback; dash telegraph line recolored to #D475ED (width 5->4) | Claude |
 | 2026-06-10 | Audio | Normal music rotation: loop the selected normal track and only rotate to a new random track after NORMAL_TRACK_MIN_PLAY_SECONDS (240s) via a timer + existing crossfade; removed the on-ended per-minute reshuffle; boss music override + clean resume preserved | Claude |
+| 2026-06-10 | UI | Removed always-on HUD wave label (kept wave-start pop-up + pause display) so the Elder Wisp boss bar name isn't crowded | Claude |
+| 2026-06-10 | Game Feel | Boss sprite drawn on whole-pixel coordinates for crisp 116x116 art; added DEBUG_FORCE_BOSS flag for testing the boss without reaching wave 10 | Claude |

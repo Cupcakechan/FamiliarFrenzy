@@ -198,8 +198,8 @@ const BOSS_DAMAGE = 20;
 const BOSS_SPEED = 60;           // slightly slower than normal wisps (75)
 const BOSS_DASH_COOLDOWN = 5;    // seconds between dashes
 const BOSS_DASH_TELEGRAPH = 0.6; // wind-up warning before the dash
-const BOSS_DASH_DURATION = 0.35; // length of the dash burst
-const BOSS_DASH_SPEED = 440;     // dash velocity
+const BOSS_DASH_DURATION = 0.40; // length of the dash burst (reach = SPEED * DURATION)
+const BOSS_DASH_SPEED = 720;     // dash velocity (720 * 0.40 = ~288px reach, was ~154)
 const BOSS_SUMMON_COOLDOWN = 9;  // seconds between summons
 const BOSS_WOBBLE_DRIFT = 55;    // px/s side-to-side amplitude
 
@@ -345,18 +345,38 @@ export class Boss {
     ctx.save();
     const flash = this.hitFlash > 0;
 
-    // Telegraph warning line in the dash direction.
+    // Telegraph: scrolling chevrons marching along the exact dash path, so the
+    // warning length always matches the real reach (SPEED * DURATION).
     if (this.phase === "telegraph") {
-      const L = 150;
+      const reach = BOSS_DASH_SPEED * BOSS_DASH_DURATION;
       const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 70);
-      ctx.globalAlpha = 0.45 + 0.45 * pulse;
+
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(Math.atan2(this.aimY, this.aimX));
       ctx.strokeStyle = BOSS_DASH_LINE_COLOR;
-      ctx.lineWidth = 4;
-      ctx.beginPath();
-      ctx.moveTo(this.x, this.y);
-      ctx.lineTo(this.x + this.aimX * L, this.y + this.aimY * L);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
+      ctx.lineWidth = 3;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+
+      const spacing = 26;  // px between chevrons
+      const size = 9;      // arm length of each ">"
+      const start = 22;    // first chevron sits just past the boss body
+      const scroll = ((performance.now() / 1000) * 80) % spacing; // marches outward
+
+      for (let x = start; x <= reach; x += spacing) {
+        const cx = x + scroll;
+        if (cx > reach) continue;
+        // Fade in just past the boss and out near the tip so the march has no pop.
+        const fade = Math.min(1, (cx - start) / spacing) * Math.min(1, (reach - cx) / spacing);
+        ctx.globalAlpha = (0.4 + 0.45 * pulse) * fade;
+        ctx.beginPath();
+        ctx.moveTo(cx - size, -size);
+        ctx.lineTo(cx, 0);
+        ctx.lineTo(cx - size, size);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
 
     // --- Sprite path: directional Float (normal) or state-driven Charge ---
