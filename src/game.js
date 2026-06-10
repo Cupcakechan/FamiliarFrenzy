@@ -24,7 +24,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawSettings, drawGrimoire } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawSettings, drawGrimoire } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -702,7 +702,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.HIGHSCORES_PLACEHOLDER) {
-      drawPlaceholder(ctx, this.width, this.height, "High Scores");
+      drawHighScores(ctx, this.width, this.height, this.getHighScores());
       return;
     }
     if (this.state === STATE.SETTINGS_PLACEHOLDER) {
@@ -924,8 +924,33 @@ export class Game {
       const bs = parseInt(localStorage.getItem("ff_bestEndlessScore") || "0", 10);
       if (wave > bw) localStorage.setItem("ff_bestEndlessWave", String(wave));
       if (this.score > bs) localStorage.setItem("ff_bestEndlessScore", String(this.score));
+
+      // Multi-entry Endless leaderboard (top 10). Sorted score-desc, tie-break
+      // wave-desc. Called once per run (on the DYING -> GAME_OVER transition),
+      // so no per-frame duplicate guard is needed.
+      const entry = { score: this.score, wave, date: new Date().toISOString().slice(0, 10) };
+      const scores = this.getHighScores();
+      scores.push(entry);
+      scores.sort((a, b) => (b.score - a.score) || (b.wave - a.wave));
+      localStorage.setItem("ff_highscores", JSON.stringify(scores.slice(0, 10)));
     } catch (e) {
       /* localStorage unavailable — skip persistent bests */
+    }
+  }
+
+  // Read the Endless leaderboard, failing safely to an empty list if the
+  // stored value is missing or corrupt. Sorted best-first for display.
+  getHighScores() {
+    try {
+      const raw = localStorage.getItem("ff_highscores");
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter((e) => e && typeof e.score === "number" && typeof e.wave === "number")
+        .sort((a, b) => (b.score - a.score) || (b.wave - a.wave));
+    } catch (e) {
+      return [];
     }
   }
 

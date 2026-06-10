@@ -108,6 +108,63 @@ export function drawPlaceholder(ctx, w, h, title) {
   ctx.globalAlpha = 1;
 }
 
+// --- HIGH SCORES (Endless only) ------------------------------------------
+// entries = array of { score, wave, date }, already sorted best-first.
+export function drawHighScores(ctx, w, h, entries) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "High Scores", w / 2, 58, { size: 42, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, "Endless Mode", w / 2, 92, { size: 16, color: DIM, weight: "500" });
+
+  // Friendly empty state when no Endless run has been recorded yet.
+  if (!entries || entries.length === 0) {
+    text(ctx, "No runs yet.", w / 2, h / 2 - 12, { size: 24, color: CREAM, weight: "500" });
+    text(ctx, "Survive Endless Mode to record a score.", w / 2, h / 2 + 22, { size: 16, color: DIM, weight: "500" });
+    const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+    ctx.globalAlpha = pulse;
+    text(ctx, "Press Esc or Backspace to return", w / 2, h - 40, { size: 16, color: PURPLE, weight: "500" });
+    ctx.globalAlpha = 1;
+    return;
+  }
+
+  // Table layout (4 columns: rank / score / wave / date).
+  const tableX = (w - 660) / 2;
+  const rankX = tableX + 18;
+  const scoreX = tableX + 110;
+  const waveX = tableX + 360;
+  const dateX = tableX + 500;
+  const headerY = 132;
+  const rowH = 30;
+
+  text(ctx, "#",     rankX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
+  text(ctx, "Score", scoreX, headerY, { size: 14, color: DIM, align: "left", weight: "700" });
+  text(ctx, "Wave",  waveX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
+  text(ctx, "Date",  dateX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
+
+  ctx.strokeStyle = "rgba(244, 213, 141, 0.3)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(tableX, headerY + 14);
+  ctx.lineTo(tableX + 660, headerY + 14);
+  ctx.stroke();
+
+  entries.slice(0, 10).forEach((e, i) => {
+    const y = headerY + 34 + i * rowH;
+    const color = i === 0 ? GOLD : CREAM;     // rank 1 highlighted gold
+    const weight = i === 0 ? "700" : "500";
+    text(ctx, `${i + 1}`,         rankX,  y, { size: 16, color, align: "left", weight });
+    text(ctx, `${e.score}`,       scoreX, y, { size: 16, color, align: "left", weight });
+    text(ctx, `${e.wave}`,        waveX,  y, { size: 16, color, align: "left", weight });
+    text(ctx, `${e.date || "—"}`, dateX,  y, { size: 16, color, align: "left", weight });
+  });
+
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
+  ctx.globalAlpha = pulse;
+  text(ctx, "Press Esc or Backspace to return", w / 2, h - 32, { size: 16, color: PURPLE, weight: "500" });
+  ctx.globalAlpha = 1;
+}
+
 // --- SETTINGS -------------------------------------------------------------
 // Music volume slider. Left/Right adjusts; Esc/Backspace returns.
 export function drawSettings(ctx, w, h, musicVolume) {
@@ -350,11 +407,11 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.86)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "LEVEL UP!", w / 2, h * 0.22, { size: 48, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, "LEVEL UP!", w / 2, h * 0.20, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   const subtitle = offers.length > 1 ? "Choose an upgrade" : "New power gained";
-  text(ctx, subtitle, w / 2, h * 0.22 + 42, { size: 20, color: DIM, weight: "500" });
+  text(ctx, subtitle, w / 2, h * 0.20 + 34, { size: 18, color: DIM, weight: "500" });
 
-  const cardW = 280, cardH = 188, gap = 28;
+  const cardW = 240, cardH = 150, gap = 24;
   const totalW = offers.length * cardW + (offers.length - 1) * gap;
   let x = (w - totalW) / 2;
   const y = h / 2 - cardH / 2 + 16;
@@ -381,25 +438,25 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
   ctx.shadowBlur = 16;
   ctx.fillStyle = PURPLE;
   ctx.beginPath();
-  ctx.arc(x + cw / 2, y + 46, 18, 0, Math.PI * 2);
+  ctx.arc(x + cw / 2, y + 38, 16, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 
-  text(ctx, up.name, x + cw / 2, y + 88, { size: 22, color: GOLD, maxWidth: cw - 24 });
+  text(ctx, up.name, x + cw / 2, y + 72, { size: 20, color: GOLD, maxWidth: cw - 24 });
 
   // Level indicator — or an "EVOLUTION" tag for one-time evolution upgrades.
   if (up.tag === "evolution") {
-    text(ctx, "EVOLUTION", x + cw / 2, y + 114, { size: 15, color: GOLD, weight: "700" });
+    text(ctx, "EVOLUTION", x + cw / 2, y + 96, { size: 14, color: GOLD, weight: "700" });
   } else if (up.maxLevel !== undefined) {
-    text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 114, { size: 15, color: PURPLE, weight: "700" });
+    text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 96, { size: 14, color: PURPLE, weight: "700" });
   }
 
-  text(ctx, up.description, x + cw / 2, y + 138, { size: 16, color: DIM, weight: "500", maxWidth: cw - 24 });
+  text(ctx, up.description, x + cw / 2, y + 118, { size: 14, color: DIM, weight: "500", maxWidth: cw - 24 });
 
   const prompt = count > 1 ? `Press ${i + 1}` : "Press ENTER";
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, prompt, x + cw / 2, y + ch - 22, { size: 16, color: PURPLE });
+  text(ctx, prompt, x + cw / 2, y + ch - 20, { size: 15, color: PURPLE });
   ctx.globalAlpha = 1;
 }
 
