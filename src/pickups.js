@@ -196,17 +196,31 @@ export class SpiritMagnet {
   draw(ctx) {
     const yOff = Math.sin(this.bob) * 2;
     const cy = this.y + yOff;
+    const pulse = 0.5 + 0.5 * Math.sin(this.glow);
     const img = getImage("spirit_magnet");
 
     if (img && img.width > 0) {
+      // --- Sprite path: keep the pulsing gold halo + hover behind the real
+      // art so the magnet still reads as a rare beacon. The ring + inner core
+      // were placeholder stand-ins for the art itself, so they're dropped. ---
+      ctx.save();
+      const haloR = this.radius * (2.0 + pulse * 0.5);
+      const g = ctx.createRadialGradient(this.x, cy, 0, this.x, cy, haloR);
+      g.addColorStop(0, `rgba(242, 165, 64, ${0.35 + pulse * 0.25})`);
+      g.addColorStop(1, "rgba(242, 165, 64, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, cy, haloR, 0, Math.PI * 2);
+      ctx.fill();
+
       const dw = img.width * this.spriteScale;
       const dh = img.height * this.spriteScale;
       ctx.drawImage(img, this.x - dw / 2, cy - dh / 2, dw, dh);
+      ctx.restore();
       return;
     }
 
     // --- Placeholder: pulsing golden-orange charm ---
-    const pulse = 0.5 + 0.5 * Math.sin(this.glow);
     ctx.save();
 
     // Soft halo (cheap radial gradient, like the EXP mote glow).
