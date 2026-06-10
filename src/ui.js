@@ -187,68 +187,78 @@ export function drawHowToPlay(ctx, w, h) {
 }
 
 // --- UPGRADE GRIMOIRE -----------------------------------------------------
-// Read-only glossary. `entries` come from getGrimoireEntries():
-//   { id, name, effect, maxLevel, maxDescription, evolutionNotes, kind }.
-// `selectedIndex` spans the entries PLUS a trailing "Back" row (its index ===
-// entries.length). `expandedId` is the one open entry (accordion), or null.
-// `levels` = { id: ownedLevel } when opened from Pause (shows Current x/y),
-// or null from the Main Menu.
-export function drawGrimoire(ctx, w, h, entries, selectedIndex, expandedId, levels) {
+// Read-only glossary, organized as two collapsible categories. `rows` comes
+// from game.grimoireRows() — a flat list of navigable rows:
+//   { type: "category", key, label, open, count }
+//   { type: "entry", entry, open }        // only when its category is open
+//   { type: "back" }
+// `selectedIndex` is the highlighted row. `levels` = { id: ownedLevel } when
+// opened from Pause (adds a "Current" line for upgrades), else null.
+export function drawGrimoire(ctx, w, h, rows, selectedIndex, levels) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "UPGRADE GRIMOIRE", w / 2, 46, { size: 36, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, "GRIMOIRE", w / 2, 46, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
-  const leftX = 200;        // row text left edge
-  const rightX = w - 200;   // right-aligned cap/label
-  const rowH = 26;
-  const detailLH = 20;
-  let y = 92;
+  const catX = 180;          // category header left edge
+  const entryX = 212;        // entry name (indented under a category)
+  const detailX = 240;       // detail label (indented under an entry)
+  const valX = detailX + 124; // detail value column (wide gap → no overlap)
+  const rightX = w - 180;    // right-aligned cap / tag
+  let y = 100;
 
-  entries.forEach((e, i) => {
+  rows.forEach((row, i) => {
     const selected = i === selectedIndex;
-    const open = e.id === expandedId;
 
-    // Row: cursor + name on the left; cap/label on the right.
-    const prefix = open ? "v " : (selected ? "> " : "  ");
-    text(ctx, `${prefix}${e.name}`, leftX, y, {
+    if (row.type === "category") {
+      const arrow = row.open ? "v " : "> ";
+      text(ctx, `${arrow}${row.label}`, catX, y, {
+        size: 22, color: selected ? GOLD : CREAM, align: "left", weight: "700",
+      });
+      text(ctx, `${row.count}`, rightX, y, { size: 14, color: DIM, align: "right", weight: "500" });
+      y += 34;
+      return;
+    }
+
+    if (row.type === "back") {
+      text(ctx, `${selected ? "> " : "  "}Back`, catX, y + 6, {
+        size: 20, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
+      });
+      y += 30;
+      return;
+    }
+
+    // Entry row (indented under its open category).
+    const e = row.entry;
+    const prefix = row.open ? "v " : (selected ? "> " : "  ");
+    text(ctx, `${prefix}${e.name}`, entryX, y, {
       size: 18, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
     });
     if (e.kind === "evolution") {
-      text(ctx, "EVOLUTION", rightX, y, { size: 13, color: GOLD, align: "right", weight: "700" });
-    } else if (e.kind === "fallback") {
-      text(ctx, "Fallback", rightX, y, { size: 13, color: DIM, align: "right", weight: "500" });
+      text(ctx, "EVOLUTION", rightX, y, { size: 12, color: GOLD, align: "right", weight: "700" });
     } else if (e.maxLevel !== undefined) {
-      text(ctx, `Max Lv. ${e.maxLevel}`, rightX, y, { size: 13, color: DIM, align: "right", weight: "500" });
+      text(ctx, `Max Lv. ${e.maxLevel}`, rightX, y, { size: 12, color: DIM, align: "right", weight: "500" });
     }
-    y += rowH;
+    y += 26;
 
-    // Expanded detail block (accordion: only the open entry shows this).
-    if (open) {
-      const dx = leftX + 16;
-      const valX = dx + 96;
-      const valMax = rightX - valX + 60;
-
-      const rows = [["Effect:", e.effect]];
-      if (levels && e.maxLevel !== undefined) {
-        rows.push(["Current:", `Lv. ${levels[e.id] || 0} / ${e.maxLevel}`]);
+    // Expanded detail block (display-only; one open entry per category).
+    if (row.open) {
+      const effectVal = e.maxedStat ? `${e.effect}  (MAXED ${e.maxedStat})` : e.effect;
+      const detail = [["Effect:", effectVal]];
+      // Evolutions show effect only; upgrades also show current level + note.
+      if (e.kind !== "evolution") {
+        if (levels && e.maxLevel !== undefined) {
+          detail.push(["Current:", `Lv. ${levels[e.id] || 0} / ${e.maxLevel}`]);
+        }
+        if (e.evolutionNotes) detail.push(["Evolution:", e.evolutionNotes]);
       }
-      if (e.maxDescription) rows.push(["At Max:", e.maxDescription]);
-      rows.push(["Evolution:", e.evolutionNotes || "None yet."]);
-
-      rows.forEach(([label, val]) => {
-        text(ctx, label, dx, y, { size: 14, color: GOLD, align: "left", weight: "700" });
-        text(ctx, val, valX, y, { size: 14, color: CREAM, align: "left", weight: "500", maxWidth: valMax });
-        y += detailLH;
+      detail.forEach(([label, val]) => {
+        text(ctx, label, detailX, y, { size: 14, color: GOLD, align: "left", weight: "700" });
+        text(ctx, val, valX, y, { size: 14, color: CREAM, align: "left", weight: "500", maxWidth: rightX - valX });
+        y += 20;
       });
-      y += 6; // small gap after the block
+      y += 6;
     }
-  });
-
-  // Trailing "Back" row.
-  const backSelected = selectedIndex === entries.length;
-  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 4, {
-    size: 18, color: backSelected ? GOLD : CREAM, align: "left", weight: backSelected ? "700" : "500",
   });
 
   text(ctx, "Up / Down: move      Enter: expand / collapse      Esc / Backspace: back",
@@ -443,21 +453,14 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.88)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "PAUSED", w / 2, 64, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, "PAUSED", w / 2, 60, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
-  // Left column: options + basic run stats.
+  // --- Run info: two columns, top-aligned ---
+  const colTop = 150;
   const leftX = 150;
-  items.forEach((item, i) => {
-    const selected = i === selectedIndex;
-    const y = 162 + i * 44;
-    text(ctx, `${selected ? "> " : "  "}${item}`, leftX, y, {
-      size: 26,
-      color: selected ? GOLD : CREAM,
-      align: "left",
-      weight: selected ? "700" : "500",
-    });
-  });
+  const rightX = 540;
 
+  // Left column: run stats (Mode lines up with "Upgrades:" on the right).
   const stats = [
     `Mode: ${info.mode}`,
     `Wave: ${info.wave}`,
@@ -467,24 +470,36 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
     `Spirit Imbued: ${info.frenzy}`,
   ];
   stats.forEach((line, i) => {
-    text(ctx, line, leftX, 318 + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });
+    text(ctx, line, leftX, colTop + i * 24, { size: 16, color: CREAM, align: "left", weight: "500" });
   });
 
   // Right column: upgrades taken + evolution.
-  const rightX = 540;
-  text(ctx, "Upgrades:", rightX, 162, { size: 18, color: GOLD, align: "left" });
+  text(ctx, "Upgrades:", rightX, colTop, { size: 18, color: GOLD, align: "left" });
   if (info.upgrades.length === 0) {
-    text(ctx, "- none yet", rightX, 190, { size: 15, color: DIM, align: "left", weight: "500" });
+    text(ctx, "- none yet", rightX, colTop + 28, { size: 15, color: DIM, align: "left", weight: "500" });
   } else {
     info.upgrades.forEach((u, i) => {
-      text(ctx, `- ${u.name}  Lv. ${u.level} / ${u.maxLevel}`, rightX, 190 + i * 24, {
+      text(ctx, `- ${u.name}  Lv. ${u.level} / ${u.maxLevel}`, rightX, colTop + 28 + i * 24, {
         size: 15, color: CREAM, align: "left", weight: "500",
       });
     });
   }
-  const evoY = 190 + Math.max(1, info.upgrades.length) * 24 + 14;
+  const evoY = colTop + 28 + Math.max(1, info.upgrades.length) * 24 + 14;
   text(ctx, `Evolution: ${info.evolution}`, rightX, evoY, {
     size: 16, color: info.evolution === "None" ? DIM : GOLD, align: "left", weight: "700",
+  });
+
+  // --- Menu options: centered near the bottom ---
+  const startY = h - 196;
+  const lineH = 40;
+  items.forEach((item, i) => {
+    const selected = i === selectedIndex;
+    const y = startY + i * lineH;
+    text(ctx, `${selected ? "> " : "  "}${item}`, w / 2, y, {
+      size: 26,
+      color: selected ? GOLD : CREAM,
+      weight: selected ? "700" : "500",
+    });
   });
 
   text(ctx, "Esc / P: Resume      Enter: select", w / 2, h - 28, { size: 15, color: DIM, weight: "500" });

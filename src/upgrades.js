@@ -22,7 +22,7 @@ export const UPGRADES = [
     id: "sharper_spirit_claws",
     name: "Sharper Spirit Claws",
     description: "Familiar damage +1",
-    maxDescription: "Maxed: your familiar's bolts hit much harder (+5 damage).",
+    maxedStat: "+5",
     evolutionNotes: "Required for Phantom Pounce (must be maxed).",
     tag: "attack",
     maxLevel: 5,
@@ -34,8 +34,7 @@ export const UPGRADES = [
     id: "restless_wisp",
     name: "Restless Wisp",
     description: "Attack cooldown -15%",
-    maxDescription: "Maxed: the familiar fires noticeably faster.",
-    evolutionNotes: "None yet.",
+    maxedStat: "-56%",
     tag: "speed",
     maxLevel: 5,
     apply(game) {
@@ -47,8 +46,7 @@ export const UPGRADES = [
     id: "spirit_heart",
     name: "Spirit Heart",
     description: "Max health +20",
-    maxDescription: "Maxed: +60 max health, healed as you take it.",
-    evolutionNotes: "None yet.",
+    maxedStat: "+60",
     tag: "survival",
     maxLevel: 3,
     apply(game) {
@@ -60,8 +58,7 @@ export const UPGRADES = [
     id: "magnet_charm",
     name: "Magnet Charm",
     description: "Pulls pickups from farther",
-    maxDescription: "Maxed: pickups are pulled in from a wide radius.",
-    evolutionNotes: "None yet.",
+    maxedStat: "+220 range",
     tag: "utility",
     maxLevel: 4,
     apply(game) {
@@ -72,7 +69,7 @@ export const UPGRADES = [
     id: "ghost_pounce",
     name: "Ghost Pounce",
     description: "Attacks pierce +1 enemy",
-    maxDescription: "Maxed: bolts pierce up to 3 extra enemies.",
+    maxedStat: "+3",
     evolutionNotes: "Helps unlock Phantom Pounce (needs Lv. 2+).",
     tag: "attack",
     maxLevel: 3,
@@ -84,8 +81,7 @@ export const UPGRADES = [
     id: "frenzy_focus",
     name: "Spirit Focus",
     description: "Spirit Imbued charges faster",
-    maxDescription: "Maxed: the Spirit Imbued meter fills much faster.",
-    evolutionNotes: "None yet.",
+    maxedStat: "+3 per mote",
     tag: "frenzy",
     maxLevel: 3,
     apply(game) {
@@ -96,8 +92,7 @@ export const UPGRADES = [
     id: "lucky_paws",
     name: "Lucky Paws",
     description: "Better enemy drop chances",
-    maxDescription: "Maxed: noticeably better mote and flask drops.",
-    evolutionNotes: "None yet.",
+    maxedStat: "+3 luck",
     tag: "utility",
     maxLevel: 3,
     apply(game) {
@@ -112,8 +107,6 @@ export const SPIRIT_RECOVERY = {
   id: "spirit_recovery",
   name: "Spirit Recovery",
   description: "Restore 25 health",
-  maxDescription: "Offered only when every other upgrade is maxed.",
-  evolutionNotes: "None yet.",
   tag: "survival",
   apply(game) {
     game.player.heal(25);
@@ -129,8 +122,6 @@ export const EVOLUTIONS = [
     id: "phantom_pounce",
     name: "Phantom Pounce",
     description: "Bolts pierce +2 enemies and deal +2 damage.",
-    maxDescription: "A one-time evolution; the familiar's bolts turn gold.",
-    evolutionNotes: "Requires Sharper Spirit Claws maxed and Ghost Pounce Lv. 2+.",
     tag: "evolution",
     maxLevel: 1,
     // Unlocks once Sharper Spirit Claws is maxed AND Ghost Pounce is Lv. 2+.
@@ -192,26 +183,26 @@ export function getOffers(count = 1, levels = {}) {
 
 // --- Upgrade Grimoire (read-only glossary) -------------------------------
 // Single source of truth: the grimoire reads the SAME upgrade objects above,
-// normalized into a flat list the UI can render. Adding a new upgrade to
-// UPGRADES/EVOLUTIONS (with maxDescription + evolutionNotes) makes it show up
-// here automatically — no second list to maintain.
+// normalized into a flat list the UI groups into Upgrades + Evolutions. Adding
+// a new upgrade to UPGRADES/EVOLUTIONS (with maxedStat, and evolutionNotes only
+// if it feeds an evolution) makes it show up here automatically.
 //   kind: "upgrade"  = a levelled upgrade
-//         "fallback" = Spirit Recovery (offered only when all are maxed)
-//         "evolution"= a one-time familiar evolution
+//         "evolution"= a one-time familiar evolution (shows effect only)
+// Spirit Recovery is intentionally excluded — it's a fallback reward, not an
+// upgrade the player chooses to build toward.
 export function getGrimoireEntries() {
   const norm = (u, kind) => ({
     id: u.id,
     name: u.name,
     effect: u.description,
-    maxLevel: u.maxLevel,                       // undefined for the fallback
-    maxDescription: u.maxDescription || "",
-    evolutionNotes: u.evolutionNotes || "None yet.",
+    maxLevel: u.maxLevel,
+    maxedStat: u.maxedStat || "",
+    evolutionNotes: u.evolutionNotes || "",
     kind,
   });
 
   return [
     ...UPGRADES.map((u) => norm(u, "upgrade")),
-    norm(SPIRIT_RECOVERY, "fallback"),
     ...EVOLUTIONS.map((e) => norm(e, "evolution")),
   ];
 }

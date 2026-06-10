@@ -54,10 +54,10 @@ const STATE = {
   VICTORY: "victory",
 };
 
-const MAIN_MENU_ITEMS = ["Play", "How to Play", "Upgrade Grimoire", "High Scores", "Settings"];
+const MAIN_MENU_ITEMS = ["Play", "How to Play", "Grimoire", "High Scores", "Settings"];
 const MODE_SELECT_ITEMS = ["Tutorial Run", "Endless Mode", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
-const PAUSE_ITEMS = ["Resume", "Upgrade Grimoire", "Settings", "Main Menu"];
+const PAUSE_ITEMS = ["Resume", "Grimoire", "Settings", "Main Menu"];
 const CONFIRM_ITEMS = ["Yes", "No"];
 
 const SCORE_PER_PICKUP = 10;
@@ -124,8 +124,9 @@ export class Game {
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
     this.grimoireEntries = [];             // cached list while the screen is open
-    this.grimoireIndex = 0;                // highlighted row (entries + a Back row)
-    this.grimoireExpanded = null;          // id of the open entry (accordion), or null
+    this.grimoireIndex = 0;                // highlighted navigable row
+    this.grimoireCategory = null;          // open category: null | "upgrades" | "evolutions"
+    this.grimoireExpanded = null;          // open entry id within the category, or null
 
     this.player = new Player(WORLD_W / 2, WORLD_H / 2);
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
@@ -392,13 +393,14 @@ export class Game {
   }
 
   // --- Upgrade Grimoire (read-only glossary) -----------------------------
-  // Opened from the Main Menu or the Pause menu; `returnState` is where Back
-  // goes. The entry list is rebuilt fresh each open so new upgrades appear
-  // automatically. Levels are only shown when opened from Pause.
+  // Two collapsible categories (Upgrades, Evolutions); opening one closes the
+  // other. Inside the open category, one entry's detail expands at a time.
+  // `returnState` is where Back goes. Levels show only when opened from Pause.
   openGrimoire(returnState) {
     this.grimoireReturn = returnState;
     this.grimoireEntries = getGrimoireEntries();
     this.grimoireIndex = 0;
+    this.grimoireCategory = null;
     this.grimoireExpanded = null;
     this.state = STATE.GRIMOIRE;
   }
@@ -408,10 +410,29 @@ export class Game {
     if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
   }
 
+  // Build the flat list of NAVIGABLE rows from the current expansion state.
+  // (Entry detail blocks are display-only and are NOT rows.) Shared by the
+  // input handler and the renderer so indexing stays in lock-step.
+  grimoireRows() {
+    const upgrades = this.grimoireEntries.filter((e) => e.kind === "upgrade");
+    const evolutions = this.grimoireEntries.filter((e) => e.kind === "evolution");
+    const rows = [];
+
+    rows.push({ type: "category", key: "upgrades", label: "Upgrades", open: this.grimoireCategory === "upgrades", count: upgrades.length });
+    if (this.grimoireCategory === "upgrades") {
+      for (const e of upgrades) rows.push({ type: "entry", entry: e, open: this.grimoireExpanded === e.id });
+    }
+    rows.push({ type: "category", key: "evolutions", label: "Evolutions", open: this.grimoireCategory === "evolutions", count: evolutions.length });
+    if (this.grimoireCategory === "evolutions") {
+      for (const e of evolutions) rows.push({ type: "entry", entry: e, open: this.grimoireExpanded === e.id });
+    }
+    rows.push({ type: "back" });
+    return rows;
+  }
+
   updateGrimoire() {
-    const n = this.grimoireEntries.length;
-    const count = n + 1;        // entries + a trailing "Back" row
-    const backIndex = n;
+    const rows = this.grimoireRows();
+    const count = rows.length;
 
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.grimoireIndex = (this.grimoireIndex - 1 + count) % count;
@@ -419,13 +440,22 @@ export class Game {
     if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
       this.grimoireIndex = (this.grimoireIndex + 1) % count;
     }
+    if (this.grimoireIndex >= count) this.grimoireIndex = count - 1;
 
     if (this.confirmPressed()) {
-      if (this.grimoireIndex === backIndex) {
+      const row = rows[this.grimoireIndex];
+      if (row.type === "back") {
         this.closeGrimoire();
-      } else {
-        // Accordion: toggle the highlighted entry; close any other open one.
-        const id = this.grimoireEntries[this.grimoireIndex].id;
+      } else if (row.type === "category") {
+        // Accordion: toggle this category, close the other + any open entry,
+        // then keep the cursor on the category we just acted on.
+        this.grimoireCategory = this.grimoireCategory === row.key ? null : row.key;
+        this.grimoireExpanded = null;
+        const rebuilt = this.grimoireRows();
+        this.grimoireIndex = rebuilt.findIndex((r) => r.type === "category" && r.key === row.key);
+      } else if (row.type === "entry") {
+        // Accordion within the category: one entry detail open at a time.
+        const id = row.entry.id;
         this.grimoireExpanded = this.grimoireExpanded === id ? null : id;
       }
     } else if (this.backPressed()) {
@@ -664,7 +694,7 @@ export class Game {
     }
     if (this.state === STATE.GRIMOIRE) {
       const levels = this.grimoireReturn === STATE.PAUSED ? this.upgradeLevels : null;
-      drawGrimoire(ctx, this.width, this.height, this.grimoireEntries, this.grimoireIndex, this.grimoireExpanded, levels);
+      drawGrimoire(ctx, this.width, this.height, this.grimoireRows(), this.grimoireIndex, levels);
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {
