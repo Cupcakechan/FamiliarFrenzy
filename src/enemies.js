@@ -197,10 +197,13 @@ const BOSS_HEALTH = 50;
 const BOSS_DAMAGE = 20;
 const BOSS_SPEED = 60;           // slightly slower than normal wisps (75)
 const BOSS_DASH_COOLDOWN = 5;    // seconds between dashes
-const BOSS_DASH_TELEGRAPH = 0.6; // wind-up warning before the dash
-const BOSS_DASH_DURATION = 0.40; // length of the dash burst (reach = SPEED * DURATION)
-const BOSS_DASH_SPEED = 720;     // dash velocity (720 * 0.40 = ~288px reach, was ~154)
-const BOSS_SUMMON_COOLDOWN = 9;  // seconds between summons
+const BOSS_DASH_TELEGRAPH = 0.85; // wind-up warning before the dash (more time to dodge)
+const BOSS_DASH_DURATION = 0.45; // length of the dash burst (reach = SPEED * DURATION)
+const BOSS_DASH_SPEED = 640;     // dash velocity (640 * 0.45 = ~288px reach; slower charge than 720)
+const BOSS_SUMMON_COOLDOWN = 13;     // base seconds between summon waves (was 9)
+const BOSS_SUMMON_JITTER = 4;        // + up to this many seconds, so summons aren't clockwork
+const BOSS_SUMMON_BATCH = 3;         // wisps queued per summon wave
+const BOSS_SUMMON_RELEASE_GAP = 0.7; // seconds between each staggered add (so they don't pop at once)
 const BOSS_WOBBLE_DRIFT = 55;    // px/s side-to-side amplitude
 
 // --- Elder Wisp boss sprites (visual only) -------------------------------
@@ -257,19 +260,22 @@ export class Boss {
     this.spriteScale = 1.0; // tune once art is in (boss radius 30; native px * this)
 
     this.summonTimer = BOSS_SUMMON_COOLDOWN;
-    this.summonReady = false;    // game.js reads this to spawn adds
+    this.summonPending = 0;      // adds queued by a summon wave, released one at a time
+    this.summonReleaseTimer = 0; // gap between staggered releases
   }
 
   update(dt, player) {
     this.wobble += dt * 3;
     if (this.hitFlash > 0) this.hitFlash -= dt;
 
-    // Summon timer always ticks.
+    // Summon timer: when it fires, QUEUE a batch of adds (released one at a
+    // time below) and re-arm with a little jitter so summons aren't clockwork.
     this.summonTimer -= dt;
     if (this.summonTimer <= 0) {
-      this.summonReady = true;
-      this.summonTimer = BOSS_SUMMON_COOLDOWN;
+      this.summonPending += BOSS_SUMMON_BATCH;
+      this.summonTimer = BOSS_SUMMON_COOLDOWN + Math.random() * BOSS_SUMMON_JITTER;
     }
+    if (this.summonPending > 0) this.summonReleaseTimer -= dt;
 
     if (this.phase === "normal") {
       this.moveToward(player, dt, this.speed, true);
@@ -317,6 +323,17 @@ export class Boss {
     } else {
       this.facing = dirFromVector(this.aimX, this.aimY);
     }
+  }
+
+  // Returns true at most once per release gap while adds are queued, so game.js
+  // can spawn ONE summoned wisp at a time (staggered) instead of a burst.
+  consumeSummon() {
+    if (this.summonPending > 0 && this.summonReleaseTimer <= 0) {
+      this.summonPending -= 1;
+      this.summonReleaseTimer = BOSS_SUMMON_RELEASE_GAP;
+      return true;
+    }
+    return false;
   }
 
   moveToward(player, dt, speed, wobble) {

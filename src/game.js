@@ -65,7 +65,7 @@ const OFFER_COUNT = 3; // upgrade cards shown per level-up
 const MAX_WAVES = 10;
 
 // Health flask drops (Feature 1) — both easy to tune.
-const FLASK_DROP_CHANCE = 0.015;  // base chance per enemy killed
+const FLASK_DROP_CHANCE = 0.015; // base chance per enemy killed
 const FLASK_HEAL = 15;          // HP restored per flask
 
 // Magnet Charm: pulls nearby pickups toward the witch when in range.
@@ -89,9 +89,6 @@ const FRENZY_DURATION = 6;  // seconds the frenzy lasts
 // World size (larger than the 960x540 viewport; the camera follows the player).
 const WORLD_W = 2400; // 75 tiles wide
 const WORLD_H = 1344; // 42 tiles tall (multiple of 32 so the wall row lands flush)
-
-// How many normal wisps the boss summons each time.
-const SUMMON_COUNT = 3;
 
 // --- Frenzy Spirit Link (visual only) ------------------------------------
 const LINK_COLOR = "#F2A540";
@@ -497,17 +494,14 @@ export class Game {
 
     this.familiar.update(dt, this.player, this.enemies, this.frenzyTimer > 0);
 
-    // Boss summons: drop a few normal wisps next to the boss when it's ready.
+    // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
     const boss = this.waveManager.boss;
-    if (boss && !boss.dead && boss.summonReady) {
-      for (let i = 0; i < SUMMON_COUNT; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const r = 36 + Math.random() * 28;
-        const ex = clamp(boss.x + Math.cos(a) * r, TILE, this.world.width - TILE);
-        const ey = clamp(boss.y + Math.sin(a) * r, TILE, this.world.height - TILE);
-        this.enemies.push(new Enemy(ex, ey));
-      }
-      boss.summonReady = false;
+    if (boss && !boss.dead && boss.consumeSummon()) {
+      const a = Math.random() * Math.PI * 2;
+      const r = 36 + Math.random() * 28;
+      const ex = clamp(boss.x + Math.cos(a) * r, TILE, this.world.width - TILE);
+      const ey = clamp(boss.y + Math.sin(a) * r, TILE, this.world.height - TILE);
+      this.enemies.push(new Enemy(ex, ey));
     }
 
     for (const enemy of this.enemies) {
