@@ -98,15 +98,11 @@ The game is playable end-to-end in both modes.
 
 ## Build / upload to itch.io
 
-This game ships as static files. To publish:
+## Publishing / Itch.io Build
 
-1. Zip the **contents** of the project folder (so `index.html` is at the top
-   level of the zip — not inside a nested folder).
-2. On itch.io, create the project and set **Kind of project: HTML**.
-3. Upload the zip and tick **"This file will be played in the browser"**.
-4. Set the viewport to roughly **960 x 540** (the canvas internal resolution;
-   CSS scales how big it looks).
-
+Run **`package_itch.bat`** (project root) — it validates, stages, and zips the game
+with `index.html` at the ZIP root, outputting `builds/familiar-frenzy-itch.zip`.
+Then follow **`ITCH_RELEASE_CHECKLIST.md`** for upload settings and retest steps.
 ---
 
 ## Project structure
