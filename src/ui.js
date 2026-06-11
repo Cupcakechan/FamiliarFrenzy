@@ -179,16 +179,18 @@ export function drawHighScores(ctx, w, h, entries) {
     return;
   }
 
-  // Table layout (4 columns: rank / score / wave / date).
+  // Table layout (5 columns: rank / name / score / wave / date).
   const tableX = (w - 660) / 2;
   const rankX = tableX + 18;
-  const scoreX = tableX + 110;
-  const waveX = tableX + 360;
+  const nameX = tableX + 70;
+  const scoreX = tableX + 190;
+  const waveX = tableX + 380;
   const dateX = tableX + 500;
   const headerY = 132;
   const rowH = 30;
 
   text(ctx, "#",     rankX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
+  text(ctx, "Name",  nameX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
   text(ctx, "Score", scoreX, headerY, { size: 14, color: DIM, align: "left", weight: "700" });
   text(ctx, "Wave",  waveX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
   text(ctx, "Date",  dateX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
@@ -205,6 +207,7 @@ export function drawHighScores(ctx, w, h, entries) {
     const color = i === 0 ? GOLD : CREAM;     // rank 1 highlighted gold
     const weight = i === 0 ? "700" : "500";
     text(ctx, `${i + 1}`,         rankX,  y, { size: 16, color, align: "left", weight });
+    text(ctx, `${e.name || "—"}`, nameX,  y, { size: 16, color, align: "left", weight });
     text(ctx, `${e.score}`,       scoreX, y, { size: 16, color, align: "left", weight });
     text(ctx, `${e.wave}`,        waveX,  y, { size: 16, color, align: "left", weight });
     text(ctx, `${e.date || "—"}`, dateX,  y, { size: 16, color, align: "left", weight });
@@ -456,7 +459,7 @@ export function drawHUD(ctx, w, h, state) {
   if (!state.frenzyActive && frPct >= 1) {
     const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 250);
     ctx.globalAlpha = pulse;
-    text(ctx, "SPACE: SPIRIT IMBUED!", 16, fr.y + fr.h + 14, { size: 15, color: PURPLE, align: "left" });
+    text(ctx, "SPACE: SPIRIT IMBUED!", fr.x + fr.w / 2, fr.y + fr.h + 14, { size: 15, color: PURPLE });
     ctx.globalAlpha = 1;
   }
 
@@ -750,6 +753,65 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
 }
 
 // --- GAME OVER ------------------------------------------------------------
+// --- NAME ENTRY (arcade initials) ------------------------------------------
+// Shown when an Endless run makes the top 10, before the Game Over screen.
+// info = { score, wave, letters: ["A","A","A"], slot: 0..2 }.
+const INITIAL_BOX = 64;   // size of each letter box
+const INITIAL_GAP = 18;   // gap between boxes
+
+export function drawNameEntry(ctx, w, h, info) {
+  ctx.fillStyle = "rgba(8, 7, 18, 0.86)";
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "NEW HIGH SCORE!", w / 2, h / 2 - 130, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, `Score: ${info.score}      Wave: ${info.wave}`, w / 2, h / 2 - 76, { size: 20, color: CREAM, weight: "500" });
+  text(ctx, "Enter your initials", w / 2, h / 2 - 44, { size: 16, color: DIM, weight: "500" });
+
+  // Three letter boxes, the active one highlighted with up/down arrows.
+  const totalW = 3 * INITIAL_BOX + 2 * INITIAL_GAP;
+  const startX = (w - totalW) / 2;
+  const boxY = h / 2 - INITIAL_BOX / 2 + 16;
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 250);
+
+  for (let i = 0; i < 3; i++) {
+    const x = startX + i * (INITIAL_BOX + INITIAL_GAP);
+    const active = i === info.slot;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(x, boxY, INITIAL_BOX, INITIAL_BOX);
+    ctx.strokeStyle = active ? GOLD : "rgba(244, 213, 141, 0.35)";
+    ctx.lineWidth = active ? 2 : 1;
+    ctx.strokeRect(x, boxY, INITIAL_BOX, INITIAL_BOX);
+
+    text(ctx, info.letters[i], x + INITIAL_BOX / 2, boxY + INITIAL_BOX / 2 + 2, { size: 40, color: active ? GOLD : CREAM });
+
+    if (active) {
+      // Code-drawn triangles (the pixel font has no arrow glyphs).
+      const cx = x + INITIAL_BOX / 2;
+      ctx.save();
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = PURPLE;
+      ctx.beginPath(); // up arrow above the box
+      ctx.moveTo(cx, boxY - 18);
+      ctx.lineTo(cx - 7, boxY - 8);
+      ctx.lineTo(cx + 7, boxY - 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath(); // down arrow below the box
+      ctx.moveTo(cx, boxY + INITIAL_BOX + 18);
+      ctx.lineTo(cx - 7, boxY + INITIAL_BOX + 8);
+      ctx.lineTo(cx + 7, boxY + INITIAL_BOX + 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  ctx.globalAlpha = pulse;
+  text(ctx, "Up/Down: letter      Left/Right: slot      Enter: confirm", w / 2, boxY + INITIAL_BOX + 52, { size: 16, color: PURPLE, weight: "500" });
+  ctx.globalAlpha = 1;
+}
+
 export function drawGameOver(ctx, w, h, info) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.82)";
   ctx.fillRect(0, 0, w, h);

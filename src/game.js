@@ -24,7 +24,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawSettings, drawGrimoire } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawSettings, drawGrimoire } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -50,6 +50,7 @@ const STATE = {
   CONFIRM_QUIT: "confirmQuit", // confirm Main Menu from the Pause menu
   LEVEL_UP: "levelUp",
   DYING: "dying",      // brief: play the witch's death animation, then Game Over
+  NAME_ENTRY: "nameEntry", // arcade 3-letter initials for a qualifying Endless score
   GAME_OVER: "gameOver",
   VICTORY: "victory",
 };
@@ -163,6 +164,10 @@ export class Game {
     this.runTime = 0; // seconds spent in the PLAYING state this run
 
     this.gameMode = "tutorial"; // "tutorial" | "endless"
+
+    // Arcade initials entry (shown only for a qualifying Endless score).
+    this.nameLetters = ["A", "A", "A"];
+    this.nameSlot = 0;
 
     // Familiar Frenzy meter.
     this.frenzyCharge = 0;  // motes banked toward FRENZY_MOTES
@@ -328,10 +333,47 @@ export class Game {
       case STATE.DYING:
         this.player.updateDying(dt);
         if (this.player.deathDone) {
-          if (this.gameMode === "endless") this.recordEndlessResult();
+          if (this.gameMode === "endless") {
+            // Personal bests always update immediately on death.
+            this.updateEndlessBests();
+            if (this.qualifiesForTop10()) {
+              // Made the top 10 → enter initials before the Game Over screen.
+              this.nameLetters = ["A", "A", "A"];
+              this.nameSlot = 0;
+              this.state = STATE.NAME_ENTRY;
+              break;
+            }
+          }
           this.state = STATE.GAME_OVER;
         }
         break;
+
+      case STATE.NAME_ENTRY: {
+        // Classic arcade entry: Up/Down cycles the letter in the active slot,
+        // Left/Right moves between the three slots.
+        const ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const idx = ALPHABET.indexOf(this.nameLetters[this.nameSlot]);
+        if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+          this.nameLetters[this.nameSlot] = ALPHABET[(idx + 1) % 26];
+        }
+        if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+          this.nameLetters[this.nameSlot] = ALPHABET[(idx + 25) % 26];
+        }
+        if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA")) {
+          this.nameSlot = (this.nameSlot + 2) % 3;
+        }
+        if (Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
+          this.nameSlot = (this.nameSlot + 1) % 3;
+        }
+        // Enter (not Space — players are often still mashing it when they die)
+        // confirms; Esc also confirms with whatever is shown, so the run can
+        // never be lost.
+        if (Input.wasPressed("Enter") || Input.wasPressed("NumpadEnter") || Input.wasPressed("Escape")) {
+          this.saveHighScore(this.nameLetters.join(""));
+          this.state = STATE.GAME_OVER;
+        }
+        break;
+      }
 
       case STATE.VICTORY:
         this.navMenu(VICTORY_ITEMS.length);
@@ -780,6 +822,15 @@ export class Game {
         drawVictory(ctx, this.width, this.height, this.runSummary(), VICTORY_ITEMS, this.menuIndex);
         break;
 
+      case STATE.NAME_ENTRY:
+        drawNameEntry(ctx, this.width, this.height, {
+          score: this.score,
+          wave: this.waveManager.wave,
+          letters: this.nameLetters,
+          slot: this.nameSlot,
+        });
+        break;
+
       case STATE.GAME_OVER:
         drawGameOver(ctx, this.width, this.height, this.gameOverSummary());
         break;
@@ -941,26 +992,49 @@ export class Game {
     }
   }
 
-  // Persist endless bests (best wave + best score) in the browser. Wrapped in
-  // try/catch so a storage-blocked browser simply skips it instead of erroring.
-  recordEndlessResult() {
+  // Persist endless personal bests (best wave + best score) in the browser.
+  // Runs immediately on every Endless death, independent of the initials step.
+  // Wrapped in try/catch so a storage-blocked browser simply skips it.
+  updateEndlessBests() {
     try {
       const wave = this.waveManager.wave;
       const bw = parseInt(localStorage.getItem("ff_bestEndlessWave") || "0", 10);
       const bs = parseInt(localStorage.getItem("ff_bestEndlessScore") || "0", 10);
       if (wave > bw) localStorage.setItem("ff_bestEndlessWave", String(wave));
       if (this.score > bs) localStorage.setItem("ff_bestEndlessScore", String(this.score));
+    } catch (e) {
+      /* localStorage unavailable — skip persistent bests */
+    }
+  }
 
-      // Multi-entry Endless leaderboard (top 10). Sorted score-desc, tie-break
-      // wave-desc. Called once per run (on the DYING -> GAME_OVER transition),
-      // so no per-frame duplicate guard is needed.
-      const entry = { score: this.score, wave, date: new Date().toISOString().slice(0, 10) };
+  // Would this run land in the top 10? Simulates the insert with the SAME
+  // comparator used everywhere (score-desc, tie-break wave-desc). The
+  // candidate is pushed last, so at an exact tie on the bubble the existing
+  // entry keeps its place (Array.sort is stable).
+  qualifiesForTop10() {
+    const candidate = { score: this.score, wave: this.waveManager.wave };
+    const scores = this.getHighScores();
+    scores.push(candidate);
+    scores.sort((a, b) => (b.score - a.score) || (b.wave - a.wave));
+    return scores.indexOf(candidate) < 10;
+  }
+
+  // Write this run into the top-10 Endless leaderboard under `name` (the
+  // 3-letter arcade initials). Called once, when initials are confirmed.
+  saveHighScore(name) {
+    try {
+      const entry = {
+        name,
+        score: this.score,
+        wave: this.waveManager.wave,
+        date: new Date().toISOString().slice(0, 10),
+      };
       const scores = this.getHighScores();
       scores.push(entry);
       scores.sort((a, b) => (b.score - a.score) || (b.wave - a.wave));
       localStorage.setItem("ff_highscores", JSON.stringify(scores.slice(0, 10)));
     } catch (e) {
-      /* localStorage unavailable — skip persistent bests */
+      /* localStorage unavailable — skip the leaderboard write */
     }
   }
 
