@@ -945,7 +945,7 @@ export class Game {
         if (this.evoBannerTimer > 0) {
           drawEvolutionBanner(ctx, this.width, this.height, this.evoBannerText, this.evoBannerTimer);
         }
-        if (this.waveManager.phase === "intermission") {
+        if (this.tutorialWavesStarted && this.waveManager.phase === "intermission") {
           const bossWave = this.waveManager.displayWave % 10 === 0;
           drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer, bossWave);
         }
