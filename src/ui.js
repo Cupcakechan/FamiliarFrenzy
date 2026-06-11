@@ -377,7 +377,7 @@ export function drawHUD(ctx, w, h, state) {
 
   if (frame && frame.width > 0) {
     const barX = 16, barY = 16, barW = frame.width, barH = frame.height; // 263x16
-    const inX = 3, inY = 3; // inset from the gold border to the inner well (tunable)
+    const inX = 3, inY = 4; // inner well is 257x8 inside the 263x16 frame
     ctx.drawImage(frame, barX, barY, barW, barH);
     ctx.fillStyle = hpFillColor;
     ctx.fillRect(barX + inX, barY + inY, (barW - inX * 2) * pct, barH - inY * 2);

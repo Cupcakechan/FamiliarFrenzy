@@ -50,6 +50,7 @@ let currentContext = null;    // what is actually playing
 let audioEl = null;           // the incoming / active element (fades up)
 let fadingEl = null;          // the outgoing element during a crossfade (fades down)
 let currentSrc = null;        // active src (to avoid repeats / needless restarts)
+let retryOnGesture = false;   // a play() was rejected; wait for the next gesture to retry
 let normalRotateTimer = null; // setTimeout handle for normal-track rotation
 
 // Crossfade animation.
@@ -153,10 +154,16 @@ function playSrc(src, loop) {
 
   const p = el.play();
   if (p && typeof p.catch === "function") {
-    p.catch(() => {
-      // Autoplay blocked (or load failed). Roll back so the next user gesture
-      // re-attempts cleanly instead of thinking music is already playing.
-      unlocked = false;
+    p.then(() => { console.log(`[audio] now playing ${src}`); });
+    p.catch((err) => {
+      // Play was rejected (autoplay policy or load problem). IMPORTANT: do NOT
+      // revoke `unlocked` — a rejected play isn't lost permission, and zeroing
+      // it poisoned the whole audio system (music never recovered while SFX,
+      // which doesn't touch this state, kept working). Instead: log it loudly,
+      // clear the current track, and retry on the NEXT user gesture (gating on
+      // retryOnGesture keeps the per-frame setMusicContext from spamming).
+      console.warn(`[audio] play() rejected for ${src}: ${err && err.name ? err.name : err}`);
+      retryOnGesture = true;
       if (audioEl === el) audioEl = null;
       currentContext = null;
       currentSrc = null;
@@ -199,7 +206,7 @@ function rotateNormalTrack() {
 // Realize the desired context. Cheap + idempotent: no-ops unless the context
 // actually changed, so game.js can call setMusicContext() every frame.
 function applyContext() {
-  if (!unlocked) return;
+  if (!unlocked || retryOnGesture) return;
   if (desiredContext === currentContext && audioEl) return;
 
   currentContext = desiredContext;
@@ -274,9 +281,12 @@ export function playFamiliarProjectileSfx() {
 }
 
 // First user gesture unlocks audio (browsers block it until then). Stays
-// attached so a still-blocked browser retries on the next gesture.
+// attached so a still-blocked browser retries on the next gesture, and so a
+// rejected play() (retryOnGesture) gets re-attempted on the next gesture too.
 function onUserGesture() {
-  if (!unlocked) {
+  const retry = retryOnGesture;
+  retryOnGesture = false;
+  if (!unlocked || retry) {
     unlocked = true;
     applyContext();
   }
