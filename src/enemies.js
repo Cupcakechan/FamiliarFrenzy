@@ -467,7 +467,7 @@ const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 // DEBUG: when true, EVERY wave spawns the boss (handy for testing boss art /
 // behavior without grinding to wave 10). Set to false for normal play and
 // before committing a release build.
-const DEBUG_FORCE_BOSS = true;
+const DEBUG_FORCE_BOSS = false;
 
 export class WaveManager {
   constructor(maxWaves = 10) {

@@ -6,6 +6,8 @@
    No game logic lives here — just drawing.
    ========================================================================= */
 
+import { loadImage, getImage } from "./assets.js";
+
 const GOLD = "#f4d58d";
 const PURPLE = "#9b6cff";
 const RED = "#e2536b";
@@ -17,6 +19,10 @@ const MENU_BG = "#140d24"; // dark purple
 // font for everything else (menus, HUD, descriptions, prompts, stats).
 const TITLE_FONT = "'Darkrunes Arcanum', Georgia, serif";
 const BODY_FONT = "'Neatpixels Standard', Georgia, serif";
+
+// Menu button container sprite (175x37). Missing/loading -> the menu falls back
+// to the original code-drawn highlight box, so removing the PNG reverts cleanly.
+loadImage("menu_button", "assets/sprites/ui/menu_button.png");
 
 // --- Shared helpers -------------------------------------------------------
 // Pass `maxWidth` to auto-shrink the font (proportionally, never squished) so
@@ -74,26 +80,49 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
 
   const startY = h * 0.46;
   const lineH = 50;
-  const boxW = 380, boxH = 42;
+
+  // Button container sprite, drawn 1:1 for crisp pixels. Falls back to the
+  // original code-drawn highlight box if the sprite isn't present.
+  const btn = getImage("menu_button");
+  const hasBtn = btn && btn.width > 0;
+  const bw = hasBtn ? btn.width : 380;
+  const bh = hasBtn ? btn.height : 42;
 
   items.forEach((item, i) => {
     const y = startY + i * lineH;
     const selected = i === selectedIndex;
+    const bx = Math.round(w / 2 - bw / 2);
+    const by = Math.round(y - bh / 2);
 
-    if (selected) {
+    if (hasBtn) {
+      // Same container for every item; the selected one gets a gold glow halo.
+      ctx.save();
+      if (selected) {
+        ctx.shadowColor = GOLD;
+        ctx.shadowBlur = 14;
+      }
+      ctx.drawImage(btn, bx, by, bw, bh);
+      ctx.restore();
+    } else if (selected) {
+      // Fallback: the original highlight box on the selected item.
       ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
-      roundRect(ctx, w / 2 - boxW / 2, y - boxH / 2, boxW, boxH, 8);
+      roundRect(ctx, bx, by, bw, bh, 8);
       ctx.fill();
       ctx.strokeStyle = GOLD;
       ctx.lineWidth = 1.5;
-      roundRect(ctx, w / 2 - boxW / 2, y - boxH / 2, boxW, boxH, 8);
+      roundRect(ctx, bx, by, bw, bh, 8);
       ctx.stroke();
     }
 
+    // Smaller label, high-contrast over the purple fill (cream/gold + a dark
+    // outline), auto-shrunk so it always stays inside the button frame.
     text(ctx, item, w / 2, y, {
-      size: 28,
+      size: 20,
       color: selected ? GOLD : CREAM,
-      weight: selected ? "700" : "500",
+      weight: "700",
+      stroke: "#0d0b1c",
+      strokeWidth: 3,
+      maxWidth: bw - 30,
     });
   });
 
