@@ -78,8 +78,10 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
 
   text(ctx, title, w / 2, h * 0.24, { size: 52, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
-  const startY = h * 0.46;
-  const lineH = 50;
+  // Vertically center the whole button block in the space below the title, so
+  // menus with different item counts stay balanced instead of crammed low.
+  const lineH = 54;
+  const startY = h * 0.58 - ((items.length - 1) * lineH) / 2;
 
   // Button container sprite, drawn 1:1 for crisp pixels. Falls back to the
   // original code-drawn highlight box if the sprite isn't present.
@@ -126,8 +128,11 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
     });
   });
 
+  // Footer hints pinned near the bottom center (last line ~h-40, earlier lines
+  // stacked above) so they don't crowd the buttons.
   footerLines.forEach((line, i) => {
-    text(ctx, line, w / 2, h - 64 + i * 22, { size: 15, color: DIM, weight: "500" });
+    const fy = h - 40 - (footerLines.length - 1 - i) * 22;
+    text(ctx, line, w / 2, fy, { size: 15, color: DIM, weight: "500" });
   });
 }
 
