@@ -30,8 +30,7 @@ loadImage("upgrade_card", "assets/sprites/ui/upgrade_card.png"); // 240x150 leve
 // border always stays crisp over the fill. Sizes are read from each image at
 // draw time, so re-authoring a bar at a new width needs no code change.
 loadImage("health_bar", "assets/sprites/ui/health_bar.png"); // 263x24 HP bar frame
-loadImage("xp_bar", "assets/sprites/ui/xp_bar.png");         // 600x24 XP bar frame
-loadImage("spirit_bar", "assets/sprites/ui/spirit_bar.png"); // 600x24 Spirit Imbued frame
+loadImage("spirit_bar", "assets/sprites/ui/spirit_bar.png"); // 263x24 Spirit Imbued frame (docked under HP)
 
 // --- Shared helpers -------------------------------------------------------
 // Pass `maxWidth` to auto-shrink the font (proportionally, never squished) so
@@ -377,14 +376,19 @@ export function drawGrimoire(ctx, w, h, rows, selectedIndex, levels) {
 
 // --- IN-GAME HUD ----------------------------------------------------------
 
-// --- Skinned-bar tunables (shared by HP / XP / Spirit Imbued) -------------
+// --- Skinned-bar tunables (shared by HP / Spirit Imbued) -------------------
 const BAR_WELL_X = 3;            // transparent well inset from left/right edges
 const BAR_WELL_Y = 4;            // transparent well inset from top/bottom edges
 const BAR_WELL_BG = "#0d0b1c";   // dark backing drawn behind the transparent well
-const BAR_FALLBACK_W = 600;      // code-drawn fallback size for XP/Spirit bars
-const BAR_FALLBACK_H = 24;       //   (matches the sprites so layout never shifts)
-const HP_FALLBACK_W = 263;       // code-drawn fallback size for the HP bar
-const HP_LABEL_SIZE = 12;        // "HP x / y" font size inside the 16px-tall well
+const BAR_FALLBACK_W = 263;      // code-drawn fallback size matching the sprites
+const BAR_FALLBACK_H = 24;       //   (so missing art never shifts the layout)
+const HP_LABEL_SIZE = 12;        // in-well label font size (16px-tall well)
+const BAR_STACK_GAP = 6;         // vertical gap between HP and Spirit bars
+
+// XP strip (Vampire Survivors-style): a thin frameless bar flush against the
+// very top edge of the screen, full canvas width. Reads as screen chrome
+// instead of a floating element, so it costs zero play-area readability.
+const XP_STRIP_H = 6;            // strip thickness in px
 
 // Draw one HUD bar using a frame sprite (gold border, TRANSPARENT well):
 // dark well backing -> colored fill -> frame ON TOP, so the pixel border stays
@@ -418,48 +422,47 @@ function drawSkinnedBar(ctx, spriteKey, x, y, pct, fillColor, fallbackW, fallbac
 }
 
 export function drawHUD(ctx, w, h, state) {
-  // Health bar (top-left).
+  // XP strip: thin, frameless, flush along the very top edge (VS-style).
+  const xpPct = state.xpToNext > 0 ? Math.max(0, Math.min(1, state.xp / state.xpToNext)) : 0;
+  ctx.fillStyle = BAR_WELL_BG;
+  ctx.fillRect(0, 0, w, XP_STRIP_H);
+  ctx.fillStyle = PURPLE;
+  ctx.fillRect(0, 0, Math.round(w * xpPct), XP_STRIP_H);
+
+  // Health bar (top-left), below the XP strip.
   const pct = Math.max(0, state.health / state.maxHealth);
   const hpFillColor = pct > 0.5 ? "#5ad17a" : pct > 0.25 ? "#e6c34a" : RED;
-  const hp = drawSkinnedBar(ctx, "health_bar", 16, 16, pct, hpFillColor, HP_FALLBACK_W, BAR_FALLBACK_H);
+  const hp = drawSkinnedBar(ctx, "health_bar", 16, 16, pct, hpFillColor, BAR_FALLBACK_W, BAR_FALLBACK_H);
   text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, hp.x + hp.w / 2, hp.y + hp.h / 2, { size: HP_LABEL_SIZE, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 2 });
 
-  // Score (top-right).
-  text(ctx, `Score: ${state.score}`, w - 16, 27, { size: 20, color: GOLD, align: "right" });
-
-  // XP bar (bottom center) + level. Positioned by the sprite's known 600x24
-  // size (the fallback matches it, so missing art doesn't shift the layout).
-  const xpX = (w - BAR_FALLBACK_W) / 2, xpY = h - 40;
-  const xpPct = state.xpToNext > 0 ? Math.max(0, Math.min(1, state.xp / state.xpToNext)) : 0;
-  const xp = drawSkinnedBar(ctx, "xp_bar", xpX, xpY, xpPct, PURPLE, BAR_FALLBACK_W, BAR_FALLBACK_H);
-  text(ctx, `Lv ${state.level}`, xp.x - 12, xp.y + xp.h / 2, { size: 16, color: GOLD, align: "right" });
-
-  // Spirit Imbued meter (just above the XP bar).
-  const frX = (w - BAR_FALLBACK_W) / 2, frY = xpY - BAR_FALLBACK_H - 8;
-
-  let frPct, fillColor, leftLabel, leftColor;
+  // Spirit Imbued meter, docked directly under the HP bar (corner cluster).
+  let frPct, fillColor, frLabel, frLabelColor;
   if (state.frenzyActive) {
     frPct = Math.max(0, state.frenzyTimer / state.frenzyDuration); // drains
     fillColor = GOLD;
-    leftLabel = "SPIRIT IMBUED!";
-    leftColor = GOLD;
+    frLabel = "SPIRIT IMBUED!";
+    frLabelColor = "#0d0b1c"; // dark text over the bright gold fill
   } else {
     frPct = Math.min(1, state.frenzyCharge / state.frenzyMax);
     fillColor = "#c77dff";
-    leftLabel = "Spirit Imbued";
-    leftColor = DIM;
+    frLabel = "Spirit Imbued";
+    frLabelColor = CREAM;
   }
 
-  const fr = drawSkinnedBar(ctx, "spirit_bar", frX, frY, frPct, fillColor, BAR_FALLBACK_W, BAR_FALLBACK_H);
-  text(ctx, leftLabel, fr.x - 12, fr.y + fr.h / 2, { size: 13, color: leftColor, align: "right" });
+  const fr = drawSkinnedBar(ctx, "spirit_bar", 16, hp.y + hp.h + BAR_STACK_GAP, frPct, fillColor, BAR_FALLBACK_W, BAR_FALLBACK_H);
+  text(ctx, frLabel, fr.x + fr.w / 2, fr.y + fr.h / 2, { size: HP_LABEL_SIZE, color: frLabelColor, weight: "700", stroke: state.frenzyActive ? null : "#0d0b1c", strokeWidth: 2 });
 
-  // Pulsing "ready" prompt when the meter is full and not yet active.
+  // Pulsing "ready" prompt just below the corner cluster.
   if (!state.frenzyActive && frPct >= 1) {
     const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 250);
     ctx.globalAlpha = pulse;
-    text(ctx, "SPACE: SPIRIT IMBUED!", w / 2, fr.y - 14, { size: 15, color: PURPLE });
+    text(ctx, "SPACE: SPIRIT IMBUED!", 16, fr.y + fr.h + 14, { size: 15, color: PURPLE, align: "left" });
     ctx.globalAlpha = 1;
   }
+
+  // Score + level (top-right, stacked).
+  text(ctx, `Score: ${state.score}`, w - 16, 27, { size: 20, color: GOLD, align: "right" });
+  text(ctx, `Lv ${state.level}`, w - 16, 49, { size: 16, color: DIM, align: "right" });
 }
 
 // --- LEVEL-UP / UPGRADE SCREEN -------------------------------------------
@@ -600,7 +603,8 @@ export function drawEvolutionBanner(ctx, w, h, text_, timer) {
 // --- BOSS HEALTH BAR ------------------------------------------------------
 export function drawBossBar(ctx, w, h, boss) {
   const barW = 520, barH = 16;
-  const x = (w - barW) / 2, y = 58;
+  // y 84 clears the top-left HP + Spirit cluster (which ends at y 70).
+  const x = (w - barW) / 2, y = 84;
   const pct = Math.max(0, boss.health / boss.maxHealth);
 
   text(ctx, boss.name.toUpperCase(), w / 2, y - 14, { size: 16, color: GOLD });
