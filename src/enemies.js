@@ -257,7 +257,7 @@ export class Boss {
     this.facing = "s";
     this.animFrame = randomInt(0, BOSS_FLOAT_FRAMES - 1); // randomized float start
     this.animTimer = 0;
-    this.spriteScale = 1.0; // tune once art is in (boss radius 30; native px * this)
+    this.spriteScale = 2.0; // tune once art is in (boss radius 30; native px * this)
 
     this.summonTimer = BOSS_SUMMON_COOLDOWN;
     this.summonPending = 0;      // adds queued by a summon wave, released one at a time

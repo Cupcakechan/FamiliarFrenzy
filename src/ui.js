@@ -23,6 +23,8 @@ const BODY_FONT = "'Neatpixels Standard', Georgia, serif";
 // Menu button container sprite (175x37). Missing/loading -> the menu falls back
 // to the original code-drawn highlight box, so removing the PNG reverts cleanly.
 loadImage("menu_button", "assets/sprites/ui/menu_button.png");
+loadImage("background_main", "assets/backgrounds/background_main.png"); // 960x540 main-menu backdrop, drawn 1:1
+loadImage("title_main", "assets/sprites/ui/title_main.png");            // title banner, drawn 1:1 centered (native size read at draw time)
 loadImage("upgrade_card", "assets/sprites/ui/upgrade_card.png"); // 240x150 level-up card container
 // HUD bar frames. All three share one construction: a gold pixel border with a
 // TRANSPARENT inner well (well inset = 3px left/right, 4px top/bottom). The
@@ -72,19 +74,36 @@ function roundRect(ctx, x, y, w, h, r) {
 
 // --- MENUS ----------------------------------------------------------------
 // Generic vertical menu: title + highlighted option list + footer hints.
-export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = []) {
-  ctx.fillStyle = MENU_BG;
-  ctx.fillRect(0, 0, w, h);
+export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [], useArt = false) {
+  // Background: the main menu (useArt) draws the full-canvas backdrop sprite;
+  // other menus — or a missing file — keep the flat fill + faint moon.
+  const bg = useArt ? getImage("background_main") : null;
+  if (bg && bg.width > 0) {
+    ctx.drawImage(bg, 0, 0, w, h);
+  } else {
+    ctx.fillStyle = MENU_BG;
+    ctx.fillRect(0, 0, w, h);
 
-  // Faint moon backdrop for flavor.
-  ctx.save();
-  ctx.fillStyle = "rgba(244, 213, 141, 0.08)";
-  ctx.beginPath();
-  ctx.arc(w / 2, h * 0.40, 150, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+    // Faint moon backdrop for flavor.
+    ctx.save();
+    ctx.fillStyle = "rgba(244, 213, 141, 0.08)";
+    ctx.beginPath();
+    ctx.arc(w / 2, h * 0.40, 150, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
 
-  text(ctx, title, w / 2, h * 0.24, { size: 52, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  // Title: the main menu draws the banner sprite at native size, centered with
+  // its midpoint at y 100 (the band above the button block). Falls back to the
+  // drawn text title — also used by every other menu.
+  const card = useArt ? getImage("title_main") : null;
+  if (card && card.width > 0) {
+    const tx = Math.round((w - card.width) / 2);
+    const ty = Math.round(100 - card.height / 2);
+    ctx.drawImage(card, tx, ty, card.width, card.height);
+  } else {
+    text(ctx, title, w / 2, h * 0.24, { size: 52, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  }
 
   // Vertically center the whole button block in the space below the title, so
   // menus with different item counts stay balanced instead of crammed low.

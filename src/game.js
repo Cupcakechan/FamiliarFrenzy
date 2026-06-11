@@ -748,7 +748,7 @@ export class Game {
 
     if (this.state === STATE.MAIN_MENU) {
       drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
-        ["Up / Down: move      Enter: select"]);
+        ["Up / Down: move      Enter: select"], true); // true = use background + title-card art
       return;
     }
     if (this.state === STATE.MODE_SELECT) {
