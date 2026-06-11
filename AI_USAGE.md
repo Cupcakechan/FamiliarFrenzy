@@ -100,4 +100,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-10 | Game Feel | Boss tuning: slower dash charge with longer telegraph (speed 720->640, telegraph 0.6->0.85, duration ->0.45, reach kept ~288px); summons less frequent (cooldown 9->13 +jitter) and staggered one-at-a-time instead of a burst of 3 | Claude |
 | 2026-06-10 | UI | Menu button container sprite wired into drawMenu (175x37, drawn 1:1) with selected-item gold glow; menu font reduced 28->20 with dark outline for contrast on the purple fill; code-drawn box kept as fallback | Claude |
 | 2026-06-10 | UI | Main menu layout: vertically centered the button block by item count, increased row spacing (50->54), and pinned footer hints to the bottom center | Claude |
-| 2026-06-10 | UI | Menu label vertical centering: nudged button labels down (labelDY) to optically center caps within the button frame | Claude |
+| 2026-06-10 | UI | Wired upgrade card container sprite (240x150, drawn 1:1) and health bar frame sprite (263x16) with colored fill drawn inside the well and HP label resized to fit; both keep code-drawn fallbacks | Claude |

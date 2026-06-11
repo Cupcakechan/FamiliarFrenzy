@@ -372,21 +372,21 @@ export function drawHUD(ctx, w, h, state) {
   // Health bar (top-left): frame sprite (gold border + dark well) with the
   // colored fill drawn inside the well; falls back to a fully code-drawn bar.
   const pct = Math.max(0, state.health / state.maxHealth);
-  const fillColor = pct > 0.5 ? "#5ad17a" : pct > 0.25 ? "#e6c34a" : RED;
+  const hpFillColor = pct > 0.5 ? "#5ad17a" : pct > 0.25 ? "#e6c34a" : RED;
   const frame = getImage("health_bar");
 
   if (frame && frame.width > 0) {
     const barX = 16, barY = 16, barW = frame.width, barH = frame.height; // 263x16
     const inX = 3, inY = 3; // inset from the gold border to the inner well (tunable)
     ctx.drawImage(frame, barX, barY, barW, barH);
-    ctx.fillStyle = fillColor;
+    ctx.fillStyle = hpFillColor;
     ctx.fillRect(barX + inX, barY + inY, (barW - inX * 2) * pct, barH - inY * 2);
     text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 12, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 3 });
   } else {
     const barX = 16, barY = 16, barW = 260, barH = 22;
     ctx.fillStyle = "rgba(0,0,0,0.45)";
     ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
-    ctx.fillStyle = fillColor;
+    ctx.fillStyle = hpFillColor;
     ctx.fillRect(barX, barY, barW * pct, barH);
     ctx.strokeStyle = GOLD;
     ctx.lineWidth = 1;
