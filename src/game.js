@@ -24,7 +24,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawSettings, drawGrimoire } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -67,6 +67,34 @@ const MAX_WAVES = 10;
 
 // Health flask drops (Feature 1) — both easy to tune.
 const FLASK_DROP_CHANCE = 0.015; // base chance per enemy killed
+
+// --- Tutorial script + familiar hints (tutorial mode ONLY; Endless and the
+// Tutorial→Endless carryover are never affected) ------------------------------
+const TUTORIAL_HINTS_ENABLED = true; // master switch for the cat's dialogue
+const TUTORIAL_SCRIPT = {
+  holdWavesUntilMove: true, // wave 1 won't start until the player first moves
+  graceSeconds: 5,          // shadowed free-walk time after the first move
+  motesOnlyWave: 1,         // no flask/magnet rolls during this wave
+  guaranteedFlaskWave: 2,   // first kill of this wave always drops a flask
+};
+const HINT_DURATION = 5;          // seconds a hint stays up
+const HINT_FADE = 0.25;           // hint fade in/out seconds
+const SHADOW_ALPHA = 0.78;        // darkness of the intro shadow veil
+const SHADOW_RADIUS = 230;        // clear "spotlight" radius around the witch
+const SHADOW_FADE_SECONDS = 1.2;  // how long the shadow takes to lift
+
+// One line per lesson; each shows at most once per run, one at a time
+// (later triggers queue behind the active hint instead of interrupting).
+const TUTORIAL_HINTS = {
+  move:        "Move with WASD or the arrows! I'll handle the spooky stuff.",
+  wisps:       "Careful — touching wisps hurts. Keep your distance!",
+  mote_drop:   "Ooh! Grab the glowy motes — they make us stronger.",
+  mote_pickup: "See the purple strip up top? Fill it and we level up!",
+  level_up:    "Good pick! Every upgrade makes me scarier.",
+  flask:       "A flask! Snag it if you're hurt.",
+  spirit:      "I'm all charged — press SPACE for Spirit Imbued!",
+  boss:        "B-big wisp incoming! Dodge when it lines up a charge!",
+};
 const FLASK_HEAL = 15;          // HP restored per flask
 
 // Magnet Charm: pulls nearby pickups toward the witch when in range.
@@ -165,6 +193,16 @@ export class Game {
 
     this.gameMode = "tutorial"; // "tutorial" | "endless"
 
+    // Tutorial script + familiar-hint state (reset per run in startGame).
+    this.hintsShown = {};
+    this.hintQueue = [];
+    this.activeHint = null;            // { id, text, timer, sticky }
+    this.tutorialHasMoved = false;
+    this.tutorialGraceTimer = 0;
+    this.tutorialWavesStarted = true;  // only flips false for scripted tutorial runs
+    this.tutorialFlaskGiven = false;
+    this.shadowAlpha = 0;              // intro shadow veil opacity
+
     // Arcade initials entry (shown only for a qualifying Endless score).
     this.nameLetters = ["A", "A", "A"];
     this.nameSlot = 0;
@@ -208,6 +246,19 @@ export class Game {
     this.frenzyCharge = 0;
     this.frenzyTimer = 0;
 
+    // Tutorial script + hints reset. A scripted tutorial begins with waves
+    // held, the shadow veil up, and the (sticky) movement hint showing.
+    this.hintsShown = {};
+    this.hintQueue = [];
+    this.activeHint = null;
+    this.tutorialHasMoved = false;
+    this.tutorialGraceTimer = 0;
+    this.tutorialFlaskGiven = false;
+    const scripted = this.gameMode === "tutorial" && TUTORIAL_SCRIPT.holdWavesUntilMove;
+    this.tutorialWavesStarted = !scripted;
+    this.shadowAlpha = scripted ? SHADOW_ALPHA : 0;
+    if (scripted) this.showHint("move", { sticky: true });
+
     this.state = STATE.PLAYING;
   }
 
@@ -222,6 +273,8 @@ export class Game {
     this.waveManager.phase = "intermission";
     this.waveManager.timer = this.waveManager.intermissionLength;
     this.enemies = [];
+    this.activeHint = null; // tutorial dialogue ends with the tutorial
+    this.hintQueue = [];
     this.state = STATE.PLAYING;
   }
 
@@ -503,6 +556,40 @@ export class Game {
     }
   }
 
+  // --- Tutorial hints (the familiar's dialogue) -----------------------------
+  // Each id shows at most once per run. One hint at a time; later triggers
+  // queue behind the active one. Sticky hints (the movement lesson) ignore the
+  // timer and are cleared by their condition via advanceHint().
+  showHint(id, opts = {}) {
+    if (!TUTORIAL_HINTS_ENABLED || this.gameMode !== "tutorial") return;
+    if (this.hintsShown[id]) return;
+    this.hintsShown[id] = true;
+    const hint = { id, text: TUTORIAL_HINTS[id], timer: HINT_DURATION, sticky: !!opts.sticky };
+    if (this.activeHint) this.hintQueue.push(hint);
+    else this.activeHint = hint;
+  }
+
+  advanceHint() {
+    this.activeHint = this.hintQueue.shift() || null;
+  }
+
+  updateHints(dt) {
+    const h = this.activeHint;
+    if (!h) return;
+    h.timer -= dt; // sticky hints go negative harmlessly (used for fade-in only)
+    if (!h.sticky && h.timer <= 0) this.advanceHint();
+  }
+
+  // 0..1 draw opacity for the active hint (fade in; fade out near expiry).
+  hintAlpha() {
+    const h = this.activeHint;
+    if (!h) return 0;
+    const fadeIn = Math.min(1, (HINT_DURATION - h.timer) / HINT_FADE);
+    if (h.sticky) return fadeIn;
+    const fadeOut = Math.max(0, Math.min(1, h.timer / HINT_FADE));
+    return Math.min(fadeIn, fadeOut);
+  }
+
   updatePlaying(dt) {
     this.runTime += dt;
     if (this.evoBannerTimer > 0) this.evoBannerTimer -= dt;
@@ -517,6 +604,31 @@ export class Game {
       this.frenzyCharge = 0;
     }
 
+    // --- Tutorial script: hold the waves until the player first moves, then
+    // grant a short shadowed free-walk before the first spawns. ---
+    if (!this.tutorialWavesStarted) {
+      if (!this.tutorialHasMoved) {
+        const mv = Input.getMoveAxis();
+        if (mv.x !== 0 || mv.y !== 0) {
+          this.tutorialHasMoved = true;
+          this.tutorialGraceTimer = TUTORIAL_SCRIPT.graceSeconds;
+          if (this.activeHint && this.activeHint.id === "move") this.advanceHint();
+        }
+      } else {
+        this.tutorialGraceTimer -= dt;
+        if (this.tutorialGraceTimer <= 0) this.tutorialWavesStarted = true; // shadow lifts, waves begin
+      }
+    }
+
+    // Intro shadow eases toward its target (dark during the scripted intro,
+    // lifting over SHADOW_FADE_SECONDS once the waves begin).
+    const shadowTarget = this.tutorialWavesStarted ? 0 : SHADOW_ALPHA;
+    const fadeStep = (SHADOW_ALPHA / SHADOW_FADE_SECONDS) * dt;
+    if (this.shadowAlpha > shadowTarget) this.shadowAlpha = Math.max(shadowTarget, this.shadowAlpha - fadeStep);
+    else if (this.shadowAlpha < shadowTarget) this.shadowAlpha = Math.min(shadowTarget, this.shadowAlpha + fadeStep);
+
+    this.updateHints(dt);
+
     // Waves: spawn just outside the current view so enemies always approach
     // from the screen edges, wherever you are in the world.
     const cam = this.getCamera();
@@ -525,7 +637,9 @@ export class Game {
       viewW: this.width, viewH: this.height,
       worldW: this.world.width, worldH: this.world.height,
     };
-    this.waveManager.update(dt, this.enemies, view);
+    if (this.tutorialWavesStarted) this.waveManager.update(dt, this.enemies, view);
+    if (this.enemies.length > 0) this.showHint("wisps");
+    if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");
 
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player);
@@ -538,6 +652,7 @@ export class Game {
 
     // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
     const boss = this.waveManager.boss;
+    if (boss && !boss.dead) this.showHint("boss");
     if (boss && !boss.dead && boss.consumeSummon()) {
       const a = Math.random() * Math.PI * 2;
       const r = 36 + Math.random() * 28;
@@ -557,21 +672,38 @@ export class Game {
         // findDropSpot), so a mote + flask from the same enemy don't stack.
         let spot = this.findDropSpot(enemy.x, enemy.y, 7);
         this.pickups.push(new Pickup(spot.x, spot.y));
+        this.showHint("mote_drop");
 
-        // Lucky Paws now boosts only the RARE drops (flask + magnet); there is
-        // no longer a bonus-mote roll, so it never doubles up XP.
-        const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP;
-        if (Math.random() < flaskChance) {
-          spot = this.findDropSpot(enemy.x, enemy.y, 9);
-          this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
-        }
+        // Tutorial staging: wave 1 drops motes ONLY (so the mote lesson lands
+        // alone); wave 2's first kill always drops a flask (so the flask
+        // lesson lands alone). Endless is untouched (tutWave stays 0).
+        const tutWave = this.gameMode === "tutorial" ? this.waveManager.wave : 0;
+        const suppressRares = tutWave > 0 && tutWave <= TUTORIAL_SCRIPT.motesOnlyWave;
 
-        // Rare Spirit Magnet — base chance by enemy type, plus a Lucky Paws bonus.
-        const baseMagnet = enemy.isBoss ? SPIRIT_MAGNET_BOSS_CHANCE : SPIRIT_MAGNET_DROP_CHANCE;
-        const magnetChance = baseMagnet + this.luckLevel * LUCK_MAGNET_STEP;
-        if (Math.random() < magnetChance) {
-          spot = this.findDropSpot(enemy.x, enemy.y, 10);
-          this.magnets.push(new SpiritMagnet(spot.x, spot.y));
+        if (!suppressRares) {
+          if (tutWave === TUTORIAL_SCRIPT.guaranteedFlaskWave && !this.tutorialFlaskGiven) {
+            this.tutorialFlaskGiven = true;
+            spot = this.findDropSpot(enemy.x, enemy.y, 9);
+            this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
+            this.showHint("flask");
+          } else {
+            // Lucky Paws now boosts only the RARE drops (flask + magnet); there is
+            // no longer a bonus-mote roll, so it never doubles up XP.
+            const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP;
+            if (Math.random() < flaskChance) {
+              spot = this.findDropSpot(enemy.x, enemy.y, 9);
+              this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
+              this.showHint("flask");
+            }
+          }
+
+          // Rare Spirit Magnet — base chance by enemy type, plus a Lucky Paws bonus.
+          const baseMagnet = enemy.isBoss ? SPIRIT_MAGNET_BOSS_CHANCE : SPIRIT_MAGNET_DROP_CHANCE;
+          const magnetChance = baseMagnet + this.luckLevel * LUCK_MAGNET_STEP;
+          if (Math.random() < magnetChance) {
+            spot = this.findDropSpot(enemy.x, enemy.y, 10);
+            this.magnets.push(new SpiritMagnet(spot.x, spot.y));
+          }
         }
       }
     }
@@ -659,6 +791,7 @@ export class Game {
     } else {
       this.offers = [];
       this.state = STATE.PLAYING;
+      this.showHint("level_up");
     }
   }
 
@@ -727,6 +860,7 @@ export class Game {
   collectPickup(pickup) {
     this.xp += pickup.value;
     this.score += SCORE_PER_PICKUP;
+    this.showHint("mote_pickup");
 
     // Charge the frenzy meter (only while not already frenzied / not full).
     // Frenzy Focus raises how much each mote adds (this.frenzyPerMote).
@@ -789,6 +923,19 @@ export class Game {
     this.drawWorld(ctx);
     ctx.restore();
 
+    // Tutorial intro shadow: a dark veil with a clear spotlight around the
+    // witch (screen space, over the world, under all UI). Beyond the outer
+    // radius the gradient clamps to its last stop, covering the whole screen.
+    if (this.shadowAlpha > 0.01) {
+      const px = this.player.x - cam.x;
+      const py = this.player.y - cam.y;
+      const g = ctx.createRadialGradient(px, py, SHADOW_RADIUS * 0.45, px, py, SHADOW_RADIUS);
+      g.addColorStop(0, "rgba(8, 7, 18, 0)");
+      g.addColorStop(1, `rgba(8, 7, 18, ${this.shadowAlpha.toFixed(3)})`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, this.width, this.height);
+    }
+
     switch (this.state) {
       case STATE.PLAYING:
         drawHUD(ctx, this.width, this.height, this.hudState());
@@ -801,6 +948,9 @@ export class Game {
         if (this.waveManager.phase === "intermission") {
           const bossWave = this.waveManager.displayWave % 10 === 0;
           drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer, bossWave);
+        }
+        if (this.activeHint) {
+          drawFamiliarHint(ctx, this.width, this.height, { text: this.activeHint.text, alpha: this.hintAlpha() });
         }
         break;
 

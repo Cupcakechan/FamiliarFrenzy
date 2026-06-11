@@ -786,6 +786,57 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
 const INITIAL_BOX = 64;   // size of each letter box
 const INITIAL_GAP = 18;   // gap between boxes
 
+// --- FAMILIAR TUTORIAL HINT BAR ---------------------------------------------
+// Bottom-center dialogue bar for the ghost cat's tutorial lines (tutorial mode
+// only). hint = { text, alpha }. Screen space; the HUD rework keeps this
+// bottom strip free. The portrait reuses the familiar's idle sprite (frame 0,
+// facing south), with the placeholder cat head as fallback.
+export function drawFamiliarHint(ctx, w, h, hint) {
+  if (!hint || hint.alpha <= 0) return;
+
+  const panelW = 560, panelH = 64;
+  const x = (w - panelW) / 2;
+  const y = h - panelH - 16;
+  const portrait = 44;
+
+  ctx.save();
+  ctx.globalAlpha = hint.alpha;
+
+  ctx.fillStyle = "rgba(13, 11, 28, 0.88)";
+  ctx.fillRect(x, y, panelW, panelH);
+  ctx.strokeStyle = "rgba(244, 213, 141, 0.65)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, panelW, panelH);
+
+  // Portrait (familiar idle strip, frame 0).
+  const px = x + 12, py = y + (panelH - portrait) / 2;
+  const img = getImage("familiar_idle_s");
+  if (img && img.width > 0) {
+    const fw = img.width / 4; // idle strips are 4 frames
+    const fh = img.height;
+    const s = Math.min(portrait / fw, portrait / fh);
+    const dw = fw * s, dh = fh * s;
+    ctx.drawImage(img, 0, 0, fw, fh, px + (portrait - dw) / 2, py + (portrait - dh) / 2, dw, dh);
+  } else {
+    // Placeholder cat head (matches the familiar's fallback look).
+    const cx = px + portrait / 2, cy = py + portrait / 2 + 3;
+    ctx.fillStyle = "#1c1a26";
+    ctx.beginPath(); ctx.arc(cx, cy, 13, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx - 10, cy - 6); ctx.lineTo(cx - 6, cy - 17); ctx.lineTo(cx - 2, cy - 8); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(cx + 2, cy - 8); ctx.lineTo(cx + 6, cy - 17); ctx.lineTo(cx + 10, cy - 6); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = GOLD;
+    ctx.beginPath(); ctx.arc(cx - 4, cy - 1, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 4, cy - 1, 2, 0, Math.PI * 2); ctx.fill();
+  }
+
+  // Speaker label + line.
+  const tx = x + 12 + portrait + 12;
+  text(ctx, "Familiar", tx, y + 18, { size: 12, color: PURPLE, align: "left", weight: "700" });
+  text(ctx, hint.text, tx, y + 42, { size: 16, color: CREAM, align: "left", maxWidth: panelW - (tx - x) - 14 });
+
+  ctx.restore();
+}
+
 export function drawNameEntry(ctx, w, h, info) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.86)";
   ctx.fillRect(0, 0, w, h);
