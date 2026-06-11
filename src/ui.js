@@ -82,6 +82,7 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
   // menus with different item counts stay balanced instead of crammed low.
   const lineH = 54;
   const startY = h * 0.58 - ((items.length - 1) * lineH) / 2;
+  const labelDY = 2; // caps with "middle" baseline read slightly high; nudge down
 
   // Button container sprite, drawn 1:1 for crisp pixels. Falls back to the
   // original code-drawn highlight box if the sprite isn't present.
@@ -118,7 +119,7 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
 
     // Smaller label, high-contrast over the purple fill (cream/gold + a dark
     // outline), auto-shrunk so it always stays inside the button frame.
-    text(ctx, item, w / 2, y, {
+    text(ctx, item, w / 2, y + labelDY, {
       size: 20,
       color: selected ? GOLD : CREAM,
       weight: "700",

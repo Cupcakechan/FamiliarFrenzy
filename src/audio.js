@@ -30,7 +30,7 @@
 
 // --- Asset config (all easy to change) -----------------------------------
 const MUSIC_EXT = "mp3";   // change to "ogg" if your files are .ogg
-const POOL_COUNT = 3;      // familiar_theme_01..0N
+const POOL_COUNT = 9;      // familiar_theme_01..0N
 const DEFAULT_VOLUME = 60; // 0..100
 const FADE_MS = 700;       // crossfade length between tracks
 const NORMAL_TRACK_MIN_PLAY_SECONDS = 240; // loop one normal track at least this long before rotating to a new random one
