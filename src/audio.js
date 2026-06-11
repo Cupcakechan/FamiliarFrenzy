@@ -1,28 +1,41 @@
 /* =========================================================================
    audio.js — all background music for Familiar Frenzy.
 
-   Design (kept deliberately small):
-   - ONE shared "normal" pool used by both the menus and regular gameplay.
-     A random pool track plays; when it ends, another random one follows, so
-     moving menu <-> gameplay never restarts the song (Option A).
-   - A single "boss" track that interrupts the normal pool during boss fights
-     (Wave 10 in Tutorial, and every 10th wave in Endless), then returns to
-     the normal pool cleanly when the boss is gone.
-   - Track changes CROSSFADE: the outgoing track fades down while the incoming
-     one fades up over FADE_MS, so transitions are smooth (no abrupt cut).
-   - Browser autoplay: nothing plays until the first user gesture. game.js can
-     call setMusicContext() any time (even before the gesture); the module just
-     remembers the desired context and starts it the moment audio is unlocked.
+   REBUILT around two persistent "decks" (like DJ decks) to eliminate the
+   AbortError failure mode of the old design. The old version created a new
+   Audio element per track and pause()d outgoing ones; if a pause landed while
+   an element's play() promise was still pending (slow mp3 load), the browser
+   rejected with AbortError — and the old handler treated EVERY rejection as
+   an autoplay block, poisoning the state and silencing the music.
+
+   New design rules (the whole fix):
+   1. TWO persistent Audio elements, reused forever. A transition swaps which
+      deck is "active": the incoming deck gets the new src + play(), the
+      outgoing deck fades down.
+   2. Every transition gets a GENERATION number. All async callbacks (play
+      promises, fade frames, deferred pauses) capture their gen and self-
+      discard if a newer transition has started. No stale callback can ever
+      mutate current state.
+   3. pause() on a deck only happens AFTER its play() promise settles, and
+      only if the deck wasn't reactivated meanwhile. We never interrupt our
+      own pending play() with a pause().
+   4. Error triage: only a genuine NotAllowedError (real autoplay block) arms
+      retry-on-gesture. Anything else (AbortError, load hiccups) is logged
+      and otherwise ignored — the generation system already guarantees the
+      newest requested track wins.
+
+   Behavior kept from before:
+   - ONE shared "normal" pool for menus + gameplay (no restart moving between
+     them), a single boss track that interrupts and returns cleanly.
+   - Crossfades over FADE_MS; a normal track loops and rotates to a different
+     random one after NORMAL_TRACK_MIN_PLAY_SECONDS.
+   - Nothing plays until the first user gesture; setMusicContext() can be
+     called any time (even per-frame) and is cheap + idempotent.
    - Music volume (0..100) persists in localStorage and applies live.
 
-   Public API:
-     initAudio()            - load saved volume + arm the unlock-on-gesture
-     setMusicContext(ctx)   - ctx = "normal" | "boss" | null  (call freely; it
-                              no-ops unless the context actually changed)
-     setMusicVolume(v)      - 0..100, applies immediately + saves
-     getMusicVolume()       - current 0..100
-     stopMusic()            - stop everything
-     playFamiliarProjectileSfx() - one-shot sfx on familiar fire (autoplay-gated)
+   Public API (unchanged):
+     initAudio(), setMusicContext(ctx), setMusicVolume(v), getMusicVolume(),
+     stopMusic(), playFamiliarProjectileSfx()
 
    Fails safe: a missing music file logs a console warning and the game keeps
    running with no music.
@@ -47,15 +60,29 @@ let volume = DEFAULT_VOLUME;  // 0..100
 let unlocked = false;         // true after the first user gesture
 let desiredContext = null;    // what game.js wants: "normal" | "boss" | null
 let currentContext = null;    // what is actually playing
-let audioEl = null;           // the incoming / active element (fades up)
-let fadingEl = null;          // the outgoing element during a crossfade (fades down)
 let currentSrc = null;        // active src (to avoid repeats / needless restarts)
-let retryOnGesture = false;   // a play() was rejected; wait for the next gesture to retry
+let retryOnGesture = false;   // a play() hit a REAL autoplay block; retry on next gesture
 let normalRotateTimer = null; // setTimeout handle for normal-track rotation
+
+// --- The two persistent decks ----------------------------------------------
+// decks[active] is the incoming/playing deck; decks[1 - active] is outgoing.
+function makeDeck() {
+  const el = new Audio();
+  el.preload = "auto";
+  el.onerror = () => { console.warn(`[audio] could not load ${el.src}`); };
+  return { el, playPromise: null };
+}
+const decks = [makeDeck(), makeDeck()];
+let active = 0;
+
+// Generation counter: bumped by every transition (playSrc / stopMusic). Any
+// async callback that captured an older gen discards itself.
+let transitionGen = 0;
 
 // Crossfade animation.
 let fadeRAF = null;
 let fadeStart = 0;
+let fadeGen = 0; // which transition this fade belongs to
 
 // --- Volume persistence ---------------------------------------------------
 function loadVolume() {
@@ -76,8 +103,8 @@ export function getMusicVolume() {
 export function setMusicVolume(v) {
   volume = Math.max(0, Math.min(100, Math.round(v)));
   // While a crossfade runs, its loop reapplies volumes each frame; otherwise
-  // set the active track directly so the change is instant (0 = silent).
-  if (!fadeRAF && audioEl) audioEl.volume = volume / 100;
+  // set the active deck directly so the change is instant (0 = silent).
+  if (!fadeRAF) decks[active].el.volume = volume / 100;
   saveVolume();
 }
 
@@ -94,89 +121,95 @@ function randomPoolSrc() {
   return pick;
 }
 
+// --- Deferred, ownership-checked pause -------------------------------------
+// Pause a deck WITHOUT ever interrupting a pending play(): wait for its play
+// promise to settle first, and skip entirely if the deck has been reactivated
+// (became the active deck again) in the meantime.
+function safePause(deck) {
+  const doPause = () => {
+    if (decks[active] === deck && currentSrc) return; // reactivated — leave it alone
+    deck.el.pause();
+  };
+  const p = deck.playPromise;
+  if (p && typeof p.finally === "function") {
+    p.catch(() => {}).finally(doPause);
+  } else {
+    doPause();
+  }
+}
+
 // --- Crossfade ------------------------------------------------------------
-function stopEl(el) {
-  if (!el) return;
-  el.onended = null;
-  el.onerror = null;
-  el.pause();
-}
-
-// Immediately finalize any in-progress fade (stops the outgoing element).
-function cancelFade() {
-  if (fadeRAF) {
-    cancelAnimationFrame(fadeRAF);
-    fadeRAF = null;
-  }
-  if (fadingEl) {
-    stopEl(fadingEl);
-    fadingEl = null;
-  }
-}
-
 function stepFade(now) {
+  // A newer transition owns the fade now — this frame is stale.
+  if (fadeGen !== transitionGen) { fadeRAF = null; return; }
+
   const t = Math.min(1, (now - fadeStart) / FADE_MS);
   const target = volume / 100; // read live, so the slider works mid-fade
-  if (audioEl) audioEl.volume = t * target;
-  if (fadingEl) fadingEl.volume = (1 - t) * target;
+  decks[active].el.volume = t * target;
+  decks[1 - active].el.volume = (1 - t) * target;
 
   if (t >= 1) {
-    if (fadingEl) { stopEl(fadingEl); fadingEl = null; }
+    safePause(decks[1 - active]); // outgoing deck done fading — stop it safely
     fadeRAF = null;
     return;
   }
   fadeRAF = requestAnimationFrame(stepFade);
 }
 
-function startFade() {
+function startFade(gen) {
+  fadeGen = gen;
   fadeStart = performance.now();
   if (fadeRAF) cancelAnimationFrame(fadeRAF);
   fadeRAF = requestAnimationFrame(stepFade);
 }
 
-// Crossfade to a given src (fades the current one out, the new one in).
+// Crossfade to a given src: swap decks, start the incoming one, fade.
 function playSrc(src, loop) {
   if (!src) return;
+  const gen = ++transitionGen;
 
-  // Any previous outgoing element is dropped immediately; the current active
-  // element becomes the new outgoing one to fade down.
-  cancelFade();
-  fadingEl = audioEl;
-  audioEl = null;
+  // Swap roles: current active becomes outgoing, the other becomes incoming.
+  active = 1 - active;
+  const inc = decks[active];
 
-  const el = new Audio(src);
+  const el = inc.el;
   el.loop = loop;
   el.volume = 0; // fade in from silence
-  el.onerror = () => { console.warn(`[audio] could not load ${src}`); };
-
-  audioEl = el;
+  el.src = src;  // implicitly aborts any stale pending play on this element
+                 // (its rejection is gen-guarded below, so it's harmless)
   currentSrc = src;
 
   const p = el.play();
-  if (p && typeof p.catch === "function") {
-    p.then(() => { console.log(`[audio] now playing ${src}`); });
-    p.catch((err) => {
-      // Play was rejected (autoplay policy or load problem). IMPORTANT: do NOT
-      // revoke `unlocked` — a rejected play isn't lost permission, and zeroing
-      // it poisoned the whole audio system (music never recovered while SFX,
-      // which doesn't touch this state, kept working). Instead: log it loudly,
-      // clear the current track, and retry on the NEXT user gesture (gating on
-      // retryOnGesture keeps the per-frame setMusicContext from spamming).
-      console.warn(`[audio] play() rejected for ${src}: ${err && err.name ? err.name : err}`);
-      retryOnGesture = true;
-      if (audioEl === el) audioEl = null;
-      currentContext = null;
-      currentSrc = null;
+  inc.playPromise = p;
+  if (p && typeof p.then === "function") {
+    p.then(() => {
+      if (gen !== transitionGen) return; // superseded — ignore
+      console.log(`[audio] now playing ${src}`);
+    }).catch((err) => {
+      if (gen !== transitionGen) return; // we superseded it ourselves — benign
+      const name = err && err.name ? err.name : String(err);
+      if (name === "NotAllowedError") {
+        // GENUINE autoplay block: arm a retry on the next user gesture.
+        // desiredContext stays set, so applyContext() will replay then.
+        console.warn(`[audio] play() blocked for ${src} (autoplay) — retrying on next gesture`);
+        retryOnGesture = true;
+        currentContext = null;
+        currentSrc = null;
+      } else {
+        // AbortError / load hiccup on the CURRENT transition: log only. The
+        // generation system guarantees the newest request wins, and treating
+        // this as an autoplay block is exactly what used to poison the music.
+        console.warn(`[audio] play() interrupted for ${src}: ${name}`);
+      }
     });
   }
 
-  startFade();
+  startFade(gen);
 }
 
 // --- Normal-track rotation ------------------------------------------------
-// A selected normal track now LOOPS seamlessly; we only rotate to a different
-// random track after NORMAL_TRACK_MIN_PLAY_SECONDS (instead of switching every
-// time a ~1-minute song ends). Driven by a simple one-shot timer.
+// A selected normal track LOOPS seamlessly; we only rotate to a different
+// random track after NORMAL_TRACK_MIN_PLAY_SECONDS. Driven by a one-shot timer.
 function clearNormalRotation() {
   if (normalRotateTimer) {
     clearTimeout(normalRotateTimer);
@@ -195,9 +228,8 @@ function startNormalTrack(src) {
   scheduleNormalRotation();
 }
 
-// Timer fired: crossfade to a DIFFERENT random normal track (randomPoolSrc
-// avoids repeating the current one) and re-arm. No-op if we're not in normal
-// context anymore (e.g. a boss fight took over, or music was stopped).
+// Timer fired: crossfade to a DIFFERENT random normal track and re-arm.
+// No-op if we're not in normal context anymore (boss took over / stopped).
 function rotateNormalTrack() {
   if (currentContext !== "normal") return;
   startNormalTrack(randomPoolSrc());
@@ -207,7 +239,7 @@ function rotateNormalTrack() {
 // actually changed, so game.js can call setMusicContext() every frame.
 function applyContext() {
   if (!unlocked || retryOnGesture) return;
-  if (desiredContext === currentContext && audioEl) return;
+  if (desiredContext === currentContext && currentSrc) return;
 
   currentContext = desiredContext;
   if (desiredContext === "boss") {
@@ -229,11 +261,20 @@ export function setMusicContext(ctx) {
 
 export function stopMusic() {
   clearNormalRotation();
-  cancelFade();
-  stopEl(audioEl);
-  audioEl = null;
+  const gen = ++transitionGen; // invalidates all pending callbacks + fades
+  if (fadeRAF) { cancelAnimationFrame(fadeRAF); fadeRAF = null; }
   currentSrc = null;
   currentContext = null;
+  for (const deck of decks) {
+    const el = deck.el;
+    const doPause = () => {
+      if (transitionGen !== gen) return; // a new track started since — leave it
+      el.pause();
+    };
+    const p = deck.playPromise;
+    if (p && typeof p.finally === "function") p.catch(() => {}).finally(doPause);
+    else doPause();
+  }
 }
 
 // --- Sound effects --------------------------------------------------------
@@ -282,7 +323,7 @@ export function playFamiliarProjectileSfx() {
 
 // First user gesture unlocks audio (browsers block it until then). Stays
 // attached so a still-blocked browser retries on the next gesture, and so a
-// rejected play() (retryOnGesture) gets re-attempted on the next gesture too.
+// genuine autoplay rejection (retryOnGesture) gets re-attempted too.
 function onUserGesture() {
   const retry = retryOnGesture;
   retryOnGesture = false;

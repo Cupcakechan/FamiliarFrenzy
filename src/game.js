@@ -748,12 +748,12 @@ export class Game {
 
     if (this.state === STATE.MAIN_MENU) {
       drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
-        ["Up / Down: move      Enter: select"], true); // true = use background + title-card art
+        ["Up / Down: move      Enter: select"], { bg: true, title: true });
       return;
     }
     if (this.state === STATE.MODE_SELECT) {
       drawMenu(ctx, this.width, this.height, "Choose Mode", MODE_SELECT_ITEMS, this.menuIndex,
-        ["Up/Down move • Enter select • Esc back"]);
+        ["Up/Down move • Enter select • Esc back"], { bg: true });
       return;
     }
     if (this.state === STATE.HOW_TO_PLAY) {

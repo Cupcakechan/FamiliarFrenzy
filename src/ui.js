@@ -74,10 +74,11 @@ function roundRect(ctx, x, y, w, h, r) {
 
 // --- MENUS ----------------------------------------------------------------
 // Generic vertical menu: title + highlighted option list + footer hints.
-export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [], useArt = false) {
-  // Background: the main menu (useArt) draws the full-canvas backdrop sprite;
-  // other menus — or a missing file — keep the flat fill + faint moon.
-  const bg = useArt ? getImage("background_main") : null;
+export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [], art = {}) {
+  // art = { bg: bool, title: bool } — which menu-art pieces to use. The main
+  // menu uses both; Mode Select uses only the background (keeps its text
+  // title). Missing files always fall back to the code-drawn versions.
+  const bg = art.bg ? getImage("background_main") : null;
   if (bg && bg.width > 0) {
     ctx.drawImage(bg, 0, 0, w, h);
   } else {
@@ -101,7 +102,7 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
   // by every other menu.
   const TITLE_SCALE = 1;
   const TITLE_OFFSET_X = -13;
-  const card = useArt ? getImage("title_main") : null;
+  const card = art.title ? getImage("title_main") : null;
   if (card && card.width > 0) {
     const dw = card.width * TITLE_SCALE;
     const dh = card.height * TITLE_SCALE;
