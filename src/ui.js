@@ -24,7 +24,14 @@ const BODY_FONT = "'Neatpixels Standard', Georgia, serif";
 // to the original code-drawn highlight box, so removing the PNG reverts cleanly.
 loadImage("menu_button", "assets/sprites/ui/menu_button.png");
 loadImage("upgrade_card", "assets/sprites/ui/upgrade_card.png"); // 240x150 level-up card container
-loadImage("health_bar", "assets/sprites/ui/health_bar.png");     // 263x16 HP bar frame (fill drawn in code)
+// HUD bar frames. All three share one construction: a gold pixel border with a
+// TRANSPARENT inner well (well inset = 3px left/right, 4px top/bottom). The
+// code draws a dark well backing + colored fill, then the frame ON TOP, so the
+// border always stays crisp over the fill. Sizes are read from each image at
+// draw time, so re-authoring a bar at a new width needs no code change.
+loadImage("health_bar", "assets/sprites/ui/health_bar.png"); // 263x24 HP bar frame
+loadImage("xp_bar", "assets/sprites/ui/xp_bar.png");         // 600x24 XP bar frame
+loadImage("spirit_bar", "assets/sprites/ui/spirit_bar.png"); // 600x24 Spirit Imbued frame
 
 // --- Shared helpers -------------------------------------------------------
 // Pass `maxWidth` to auto-shrink the font (proportionally, never squished) so
@@ -369,55 +376,66 @@ export function drawGrimoire(ctx, w, h, rows, selectedIndex, levels) {
 }
 
 // --- IN-GAME HUD ----------------------------------------------------------
-export function drawHUD(ctx, w, h, state) {
-  // Health bar (top-left): frame sprite (gold border + dark well) with the
-  // colored fill drawn inside the well; falls back to a fully code-drawn bar.
-  const pct = Math.max(0, state.health / state.maxHealth);
-  const hpFillColor = pct > 0.5 ? "#5ad17a" : pct > 0.25 ? "#e6c34a" : RED;
-  const frame = getImage("health_bar");
+
+// --- Skinned-bar tunables (shared by HP / XP / Spirit Imbued) -------------
+const BAR_WELL_X = 3;            // transparent well inset from left/right edges
+const BAR_WELL_Y = 4;            // transparent well inset from top/bottom edges
+const BAR_WELL_BG = "#0d0b1c";   // dark backing drawn behind the transparent well
+const BAR_FALLBACK_W = 600;      // code-drawn fallback size for XP/Spirit bars
+const BAR_FALLBACK_H = 24;       //   (matches the sprites so layout never shifts)
+const HP_FALLBACK_W = 263;       // code-drawn fallback size for the HP bar
+const HP_LABEL_SIZE = 12;        // "HP x / y" font size inside the 16px-tall well
+
+// Draw one HUD bar using a frame sprite (gold border, TRANSPARENT well):
+// dark well backing -> colored fill -> frame ON TOP, so the pixel border stays
+// crisp over the fill. Missing/loading sprite -> the original code-drawn bar
+// at the same size, so the layout never shifts. Returns the rect actually
+// drawn so callers can position labels against it.
+function drawSkinnedBar(ctx, spriteKey, x, y, pct, fillColor, fallbackW, fallbackH) {
+  const frame = getImage(spriteKey);
 
   if (frame && frame.width > 0) {
-    const barX = 16, barY = 16, barW = frame.width, barH = frame.height; // 263x16
-    const inX = 3, inY = 4; // inner well is 257x8 inside the 263x16 frame
-    ctx.drawImage(frame, barX, barY, barW, barH);
-    ctx.fillStyle = hpFillColor;
-    ctx.fillRect(barX + inX, barY + inY, (barW - inX * 2) * pct, barH - inY * 2);
-    text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 10, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 2 });
-  } else {
-    const barX = 16, barY = 16, barW = 260, barH = 22;
-    ctx.fillStyle = "rgba(0,0,0,0.45)";
-    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
-    ctx.fillStyle = hpFillColor;
-    ctx.fillRect(barX, barY, barW * pct, barH);
-    ctx.strokeStyle = GOLD;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barW, barH);
-    text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 14, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 3 });
+    const barW = frame.width, barH = frame.height;
+    const wellX = x + BAR_WELL_X, wellY = y + BAR_WELL_Y;
+    const wellW = barW - BAR_WELL_X * 2, wellH = barH - BAR_WELL_Y * 2;
+    ctx.fillStyle = BAR_WELL_BG;
+    ctx.fillRect(wellX, wellY, wellW, wellH);
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(wellX, wellY, Math.round(wellW * pct), wellH);
+    ctx.drawImage(frame, x, y, barW, barH);
+    return { x, y, w: barW, h: barH };
   }
+
+  // --- Fallback: the original code-drawn bar ---
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillRect(x - 2, y - 2, fallbackW + 4, fallbackH + 4);
+  ctx.fillStyle = fillColor;
+  ctx.fillRect(x, y, fallbackW * pct, fallbackH);
+  ctx.strokeStyle = GOLD;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, fallbackW, fallbackH);
+  return { x, y, w: fallbackW, h: fallbackH };
+}
+
+export function drawHUD(ctx, w, h, state) {
+  // Health bar (top-left).
+  const pct = Math.max(0, state.health / state.maxHealth);
+  const hpFillColor = pct > 0.5 ? "#5ad17a" : pct > 0.25 ? "#e6c34a" : RED;
+  const hp = drawSkinnedBar(ctx, "health_bar", 16, 16, pct, hpFillColor, HP_FALLBACK_W, BAR_FALLBACK_H);
+  text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, hp.x + hp.w / 2, hp.y + hp.h / 2, { size: HP_LABEL_SIZE, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 2 });
 
   // Score (top-right).
   text(ctx, `Score: ${state.score}`, w - 16, 27, { size: 20, color: GOLD, align: "right" });
 
-  // XP bar (bottom center) + level.
-  const xpW = 600, xpH = 14;
-  const xpX = (w - xpW) / 2, xpY = h - 30;
+  // XP bar (bottom center) + level. Positioned by the sprite's known 600x24
+  // size (the fallback matches it, so missing art doesn't shift the layout).
+  const xpX = (w - BAR_FALLBACK_W) / 2, xpY = h - 40;
   const xpPct = state.xpToNext > 0 ? Math.max(0, Math.min(1, state.xp / state.xpToNext)) : 0;
+  const xp = drawSkinnedBar(ctx, "xp_bar", xpX, xpY, xpPct, PURPLE, BAR_FALLBACK_W, BAR_FALLBACK_H);
+  text(ctx, `Lv ${state.level}`, xp.x - 12, xp.y + xp.h / 2, { size: 16, color: GOLD, align: "right" });
 
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
-  ctx.fillRect(xpX - 2, xpY - 2, xpW + 4, xpH + 4);
-
-  ctx.fillStyle = PURPLE;
-  ctx.fillRect(xpX, xpY, xpW * xpPct, xpH);
-
-  ctx.strokeStyle = GOLD;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(xpX, xpY, xpW, xpH);
-
-  text(ctx, `Lv ${state.level}`, xpX - 12, xpY + xpH / 2, { size: 16, color: GOLD, align: "right" });
-
-  // Familiar Frenzy meter (just above the XP bar).
-  const frW = 300, frH = 12;
-  const frX = (w - frW) / 2, frY = h - 52;
+  // Spirit Imbued meter (just above the XP bar).
+  const frX = (w - BAR_FALLBACK_W) / 2, frY = xpY - BAR_FALLBACK_H - 8;
 
   let frPct, fillColor, leftLabel, leftColor;
   if (state.frenzyActive) {
@@ -432,21 +450,14 @@ export function drawHUD(ctx, w, h, state) {
     leftColor = DIM;
   }
 
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
-  ctx.fillRect(frX - 2, frY - 2, frW + 4, frH + 4);
-  ctx.fillStyle = fillColor;
-  ctx.fillRect(frX, frY, frW * frPct, frH);
-  ctx.strokeStyle = GOLD;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(frX, frY, frW, frH);
-
-  text(ctx, leftLabel, frX - 12, frY + frH / 2, { size: 13, color: leftColor, align: "right" });
+  const fr = drawSkinnedBar(ctx, "spirit_bar", frX, frY, frPct, fillColor, BAR_FALLBACK_W, BAR_FALLBACK_H);
+  text(ctx, leftLabel, fr.x - 12, fr.y + fr.h / 2, { size: 13, color: leftColor, align: "right" });
 
   // Pulsing "ready" prompt when the meter is full and not yet active.
   if (!state.frenzyActive && frPct >= 1) {
     const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 250);
     ctx.globalAlpha = pulse;
-    text(ctx, "SPACE: SPIRIT IMBUED!", w / 2, frY - 14, { size: 15, color: PURPLE });
+    text(ctx, "SPACE: SPIRIT IMBUED!", w / 2, fr.y - 14, { size: 15, color: PURPLE });
     ctx.globalAlpha = 1;
   }
 }
@@ -461,7 +472,7 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
 
   text(ctx, "LEVEL UP!", w / 2, h * 0.20, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   const subtitle = offers.length > 1 ? "Choose an upgrade" : "New power gained";
-  text(ctx, subtitle, w / 2, h * 0.20 + 34, { size: 18, color: DIM, weight: "500" });
+  text(ctx, subtitle, w / 2, h * 0.20 + 48, { size: 18, color: DIM, weight: "500" });
 
   const cardW = 240, cardH = 180, gap = 24;
   const totalW = offers.length * cardW + (offers.length - 1) * gap;
