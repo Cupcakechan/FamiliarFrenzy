@@ -93,14 +93,21 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
     ctx.restore();
   }
 
-  // Title: the main menu draws the banner sprite at native size, centered with
-  // its midpoint at y 100 (the band above the button block). Falls back to the
-  // drawn text title — also used by every other menu.
+  // Title: the main menu draws the banner sprite centered with its midpoint at
+  // y 100 (the band above the button block). TITLE_SCALE must stay an INTEGER
+  // (1, 2, 3...) or the pixels blur. TITLE_OFFSET_X optically centers the
+  // lettering: in the current art the text mass sits 13px right of the file's
+  // center, so we nudge left. Falls back to the drawn text title — also used
+  // by every other menu.
+  const TITLE_SCALE = 1;
+  const TITLE_OFFSET_X = -13;
   const card = useArt ? getImage("title_main") : null;
   if (card && card.width > 0) {
-    const tx = Math.round((w - card.width) / 2);
-    const ty = Math.round(100 - card.height / 2);
-    ctx.drawImage(card, tx, ty, card.width, card.height);
+    const dw = card.width * TITLE_SCALE;
+    const dh = card.height * TITLE_SCALE;
+    const tx = Math.round((w - dw) / 2 + TITLE_OFFSET_X);
+    const ty = Math.round(100 - dh / 2);
+    ctx.drawImage(card, tx, ty, dw, dh);
   } else {
     text(ctx, title, w / 2, h * 0.24, { size: 52, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   }
