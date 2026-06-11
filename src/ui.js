@@ -23,6 +23,8 @@ const BODY_FONT = "'Neatpixels Standard', Georgia, serif";
 // Menu button container sprite (175x37). Missing/loading -> the menu falls back
 // to the original code-drawn highlight box, so removing the PNG reverts cleanly.
 loadImage("menu_button", "assets/sprites/ui/menu_button.png");
+loadImage("upgrade_card", "assets/sprites/ui/upgrade_card.png"); // 240x150 level-up card container
+loadImage("health_bar", "assets/sprites/ui/health_bar.png");     // 263x16 HP bar frame (fill drawn in code)
 
 // --- Shared helpers -------------------------------------------------------
 // Pass `maxWidth` to auto-shrink the font (proportionally, never squished) so
@@ -367,21 +369,30 @@ export function drawGrimoire(ctx, w, h, rows, selectedIndex, levels) {
 
 // --- IN-GAME HUD ----------------------------------------------------------
 export function drawHUD(ctx, w, h, state) {
-  // Health bar (top-left).
-  const barX = 16, barY = 16, barW = 260, barH = 22;
+  // Health bar (top-left): frame sprite (gold border + dark well) with the
+  // colored fill drawn inside the well; falls back to a fully code-drawn bar.
   const pct = Math.max(0, state.health / state.maxHealth);
+  const fillColor = pct > 0.5 ? "#5ad17a" : pct > 0.25 ? "#e6c34a" : RED;
+  const frame = getImage("health_bar");
 
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
-  ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
-
-  ctx.fillStyle = pct > 0.5 ? "#5ad17a" : pct > 0.25 ? "#e6c34a" : RED;
-  ctx.fillRect(barX, barY, barW * pct, barH);
-
-  ctx.strokeStyle = GOLD;
-  ctx.lineWidth = 1;
-  ctx.strokeRect(barX, barY, barW, barH);
-
-  text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 14, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 3 });
+  if (frame && frame.width > 0) {
+    const barX = 16, barY = 16, barW = frame.width, barH = frame.height; // 263x16
+    const inX = 3, inY = 3; // inset from the gold border to the inner well (tunable)
+    ctx.drawImage(frame, barX, barY, barW, barH);
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(barX + inX, barY + inY, (barW - inX * 2) * pct, barH - inY * 2);
+    text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 12, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 3 });
+  } else {
+    const barX = 16, barY = 16, barW = 260, barH = 22;
+    ctx.fillStyle = "rgba(0,0,0,0.45)";
+    ctx.fillRect(barX - 2, barY - 2, barW + 4, barH + 4);
+    ctx.fillStyle = fillColor;
+    ctx.fillRect(barX, barY, barW * pct, barH);
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(barX, barY, barW, barH);
+    text(ctx, `HP ${Math.ceil(state.health)} / ${state.maxHealth}`, barX + barW / 2, barY + barH / 2, { size: 14, color: CREAM, weight: "700", stroke: "#0d0b1c", strokeWidth: 3 });
+  }
 
   // Score (top-right).
   text(ctx, `Score: ${state.score}`, w - 16, 27, { size: 20, color: GOLD, align: "right" });
@@ -463,14 +474,20 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
 }
 
 function drawCard(ctx, x, y, cw, ch, up, i, count) {
-  // Card body + border.
-  ctx.fillStyle = "#1b1830";
-  roundRect(ctx, x, y, cw, ch, 10);
-  ctx.fill();
-  ctx.strokeStyle = GOLD;
-  ctx.lineWidth = 2;
-  roundRect(ctx, x, y, cw, ch, 10);
-  ctx.stroke();
+  // Card body: sprite container if present (drawn 1:1, crisp), otherwise the
+  // original code-drawn rounded rect as fallback.
+  const card = getImage("upgrade_card");
+  if (card && card.width > 0) {
+    ctx.drawImage(card, Math.round(x), Math.round(y), cw, ch);
+  } else {
+    ctx.fillStyle = "#1b1830";
+    roundRect(ctx, x, y, cw, ch, 10);
+    ctx.fill();
+    ctx.strokeStyle = GOLD;
+    ctx.lineWidth = 2;
+    roundRect(ctx, x, y, cw, ch, 10);
+    ctx.stroke();
+  }
 
   // Simple icon: a glowing purple orb (placeholder for an upgrade sprite).
   ctx.save();
