@@ -102,3 +102,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-10 | UI | Main menu layout: vertically centered the button block by item count, increased row spacing (50->54), and pinned footer hints to the bottom center | Claude |
 | 2026-06-10 | UI | Wired upgrade card container sprite (240x150, drawn 1:1) and health bar frame sprite (263x16) with colored fill drawn inside the well and HP label resized to fit; both keep code-drawn fallbacks | Claude |
 | 2026-06-10 | UI | Wired upgrade card (240x150) and health bar frame (263x16) sprites with code-drawn fallbacks; fixed fillColor redeclaration that black-screened boot | Claude |
+| 2026-06-10 | Audio | Fixed silent music: rejected play() no longer revokes audio unlock (state poisoning); rejections/successes now logged; clean retry-on-next-gesture flag added | Claude |

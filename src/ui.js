@@ -462,7 +462,7 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
   const subtitle = offers.length > 1 ? "Choose an upgrade" : "New power gained";
   text(ctx, subtitle, w / 2, h * 0.20 + 34, { size: 18, color: DIM, weight: "500" });
 
-  const cardW = 240, cardH = 150, gap = 24;
+  const cardW = 240, cardH = 180, gap = 24;
   const totalW = offers.length * cardW + (offers.length - 1) * gap;
   let x = (w - totalW) / 2;
   const y = h / 2 - cardH / 2 + 16;
@@ -471,6 +471,47 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
     drawCard(ctx, x, y, cardW, cardH, up, i, offers.length);
     x += cardW + gap;
   });
+}
+
+// Registered-once guard so each icon's loadImage() runs a single time (never
+// per-frame, which would recreate the Image and spam the network/console).
+const registeredIcons = new Set();
+
+// Draws an upgrade's icon: a single soft afterglow, then the 32x32 PNG centered
+// and crisp. Falls back to the original glowing purple orb if the icon is
+// missing or still loading. Icon path is derived from the upgrade id, so the
+// upgrade data owns it with no extra fields and no scattered paths.
+function drawUpgradeIcon(ctx, cx, cy, up) {
+  const key = "upgrade_icon_" + up.id;
+  if (!registeredIcons.has(key)) {
+    registeredIcons.add(key);
+    loadImage(key, "assets/sprites/upgrades/" + up.id + ".png");
+  }
+  const icon = getImage(key);
+
+  // Single soft afterglow (magical, subtle — sits behind icon or orb alike).
+  ctx.save();
+  ctx.shadowColor = PURPLE;
+  ctx.shadowBlur = 18;
+  ctx.fillStyle = "rgba(155, 108, 255, 0.30)";
+  ctx.beginPath();
+  ctx.arc(cx, cy, 17, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  if (icon && icon.width > 0) {
+    const prevSmooth = ctx.imageSmoothingEnabled;
+    ctx.imageSmoothingEnabled = false; // keep pixel art crisp
+    const s = 32;
+    ctx.drawImage(icon, Math.round(cx - s / 2), Math.round(cy - s / 2), s, s);
+    ctx.imageSmoothingEnabled = prevSmooth;
+  } else {
+    // Fallback placeholder orb.
+    ctx.fillStyle = PURPLE;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 16, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawCard(ctx, x, y, cw, ch, up, i, count) {
@@ -489,31 +530,24 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
     ctx.stroke();
   }
 
-  // Simple icon: a glowing purple orb (placeholder for an upgrade sprite).
-  ctx.save();
-  ctx.shadowColor = PURPLE;
-  ctx.shadowBlur = 16;
-  ctx.fillStyle = PURPLE;
-  ctx.beginPath();
-  ctx.arc(x + cw / 2, y + 38, 16, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
+  // Upgrade icon (with afterglow), centered near the top.
+  drawUpgradeIcon(ctx, x + cw / 2, y + 40, up);
 
-  text(ctx, up.name, x + cw / 2, y + 72, { size: 20, color: GOLD, maxWidth: cw - 24 });
+  text(ctx, up.name, x + cw / 2, y + 82, { size: 20, color: GOLD, maxWidth: cw - 24 });
 
   // Level indicator — or an "EVOLUTION" tag for one-time evolution upgrades.
   if (up.tag === "evolution") {
-    text(ctx, "EVOLUTION", x + cw / 2, y + 96, { size: 14, color: GOLD, weight: "700" });
+    text(ctx, "EVOLUTION", x + cw / 2, y + 108, { size: 14, color: GOLD, weight: "700" });
   } else if (up.maxLevel !== undefined) {
-    text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 96, { size: 14, color: PURPLE, weight: "700" });
+    text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 108, { size: 14, color: PURPLE, weight: "700" });
   }
 
-  text(ctx, up.description, x + cw / 2, y + 114, { size: 14, color: DIM, weight: "500", maxWidth: cw - 24 });
+  text(ctx, up.description, x + cw / 2, y + 134, { size: 14, color: DIM, weight: "500", maxWidth: cw - 24 });
 
   const prompt = count > 1 ? `Press ${i + 1}` : "Press ENTER";
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, prompt, x + cw / 2, y + ch - 14, { size: 15, color: PURPLE });
+  text(ctx, prompt, x + cw / 2, y + ch - 18, { size: 15, color: PURPLE });
   ctx.globalAlpha = 1;
 }
 
