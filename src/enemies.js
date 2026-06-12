@@ -40,50 +40,199 @@ for (const anim of ["float", "attack"]) {
 // Attack animation. VISUAL ONLY — does not change when contact damage occurs.
 const WISP_ATTACK_VISUAL_GAP = 6;
 
+// --- Enemy type table -------------------------------------------------------
+// Data-driven per-type tuning (per the handoff guardrail: a new enemy is a
+// table row, not a subclass). Wisp stats reproduce the original formula
+// exactly. Multipliers apply on top of the wave/tier-scaled wisp baseline.
+//   ranged: null = melee chaser; otherwise the skirmisher config:
+//     preferredRange — distance it tries to hold from the witch
+//     slack          — dead zone around preferredRange (no jitter dancing)
+//     cooldown       — seconds between flings (with a little jitter)
+//     projSpeed/projDamage/projLife — the flung ball
+//     fireRange      — max distance it will fling from
+const ENEMY_TYPES = {
+  wisp: {
+    spritePrefix: "wisp",
+    speedMult: 1,
+    healthMult: 1,
+    damage: 8,
+    fallbackOuter: "#e2536b",
+    fallbackInner: "#7d1f2e",
+    ranged: null,
+  },
+  gutter_gecko: {
+    spritePrefix: "gecko",
+    speedMult: 0.6,   // slower than a wisp — it fights from range
+    healthMult: 0.75, // squishier — reach is its armor
+    damage: 8,        // contact damage if you do touch it
+    fallbackOuter: "#5ad1d1",
+    fallbackInner: "#1f6b6b",
+    ranged: {
+      preferredRange: 280,
+      slack: 40,
+      cooldown: 2.5,
+      projSpeed: 220,
+      projDamage: 8,
+      projLife: 3,
+      fireRange: 420,
+    },
+  },
+};
+
+// Gutter Gecko sprite strips (anthropomorphic lizard with a pouch; art
+// pending). Registered now so the files slot in with zero code changes:
+// assets/sprites/enemies/gecko_<anim>_<dir>.png, same float/attack model as
+// the wisp (attack = the fling). Adjust frame counts in ENEMY_ANIMS below if
+// the final strips differ. Missing strips fall back to the teal placeholder.
+for (const anim of ["float", "attack"]) {
+  for (const d of WISP_DIRS) {
+    const key = `gecko_${anim}_${d}`;
+    loadImage(key, `assets/sprites/enemies/${key}.png`);
+  }
+}
+
+// Per-prefix animation tables (gecko mirrors the wisp's until its art lands).
+const ENEMY_ANIMS = {
+  wisp:  { anims: WISP_ANIMS, fps: WISP_FPS, looping: WISP_LOOPING },
+  gecko: { anims: { float: 4, attack: 4 }, fps: { float: 6, attack: 10 }, looping: { float: true, attack: true } },
+};
+
+// How long the gecko holds its attack pose after a fling (visual only).
+const GECKO_ATTACK_POSE_SECONDS = 0.4;
+
+// --- A flung gecko ball ------------------------------------------------------
+// Owned by game.js (this.enemyBolts) so shots outlive their shooter. Player
+// collision/i-frames are handled in game.js; this is just motion + visuals.
+export class EnemyBolt {
+  constructor(x, y, targetX, targetY, speed, damage, life) {
+    this.x = x;
+    this.y = y;
+    this.radius = 5;
+    this.damage = damage;
+
+    const dx = targetX - x;
+    const dy = targetY - y;
+    const len = Math.hypot(dx, dy) || 1;
+    this.vx = (dx / len) * speed;
+    this.vy = (dy / len) * speed;
+
+    this.life = life;
+    this.dead = false;
+    this.spin = randomRange(0, Math.PI * 2); // wobble phase (visual only)
+  }
+
+  update(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.spin += dt * 9;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+
+  draw(ctx) {
+    // Placeholder "ball": teal glowing orb with a bright core (projectile
+    // sprite pending). Slight pulse so it reads as a live threat.
+    const r = this.radius + Math.sin(this.spin) * 1;
+    ctx.save();
+    ctx.shadowColor = "#5ad1d1";
+    ctx.shadowBlur = 10;
+    ctx.fillStyle = "#5ad1d1";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#d8fbfb";
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, r * 0.45, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
 export class Enemy {
-  constructor(x, y) {
+  constructor(x, y, type = "wisp") {
     this.x = x;
     this.y = y;
     this.radius = 13;
 
+    this.type = type;
+    this.def = ENEMY_TYPES[type] || ENEMY_TYPES.wisp;
+
     this.speed = 75;
     this.maxHealth = 2;
     this.health = 2;
-    this.damage = 8;
+    this.damage = this.def.damage;
 
     this.dead = false;
     this.hitFlash = 0;
     this.wobble = randomRange(0, Math.PI * 2);
 
-    // Animation state (visual only). Start frame is randomized so a swarm of
-    // wisps doesn't pulse in perfect lockstep.
+    // Ranged (Gutter Gecko) state.
+    this.fireTimer = this.def.ranged ? randomRange(0.8, this.def.ranged.cooldown) : 0;
+    this.attackPoseTimer = 0; // holds the attack anim briefly after a fling
+
+    // Animation state (visual only). Start frame is randomized so a swarm
+    // doesn't pulse in perfect lockstep.
+    const animCfg = ENEMY_ANIMS[this.def.spritePrefix];
     this.facing = "s";
     this.animState = "float"; // "float" | "attack"
-    this.animFrame = randomInt(0, WISP_ANIMS.float - 1);
+    this.animFrame = randomInt(0, animCfg.anims.float - 1);
     this.animTimer = 0;
     this.spriteScale = .8; // tune once the art is in (native px * this)
   }
 
-  update(dt, player) {
+  // `enemyBolts` is the game-owned array ranged enemies fling into (melee
+  // types ignore it; game.js handles bolt motion/collision after this).
+  update(dt, player, enemyBolts) {
     const dx = player.x - this.x;
     const dy = player.y - this.y;
     const len = Math.hypot(dx, dy) || 1;
-    this.x += (dx / len) * this.speed * dt;
-    this.y += (dy / len) * this.speed * dt;
+
+    if (this.def.ranged) {
+      // --- Skirmisher (Gutter Gecko): hold preferredRange, strafe, fling ---
+      const r = this.def.ranged;
+      let mx = 0, my = 0;
+      if (len > r.preferredRange + r.slack) {
+        mx = dx / len; my = dy / len;          // too far — close in
+      } else if (len < r.preferredRange - r.slack) {
+        mx = -dx / len; my = -dy / len;        // too close — back off
+      }
+      // Sideways drift (perpendicular) so it never moves on rails.
+      const strafe = Math.sin(this.wobble * 0.7) * 0.45;
+      mx += (-dy / len) * strafe;
+      my += (dx / len) * strafe;
+      const mlen = Math.hypot(mx, my) || 1;
+      this.x += (mx / mlen) * this.speed * dt;
+      this.y += (my / mlen) * this.speed * dt;
+
+      // Fling on cooldown whenever the witch is in range.
+      this.fireTimer -= dt;
+      if (this.fireTimer <= 0 && len <= r.fireRange && enemyBolts) {
+        enemyBolts.push(new EnemyBolt(this.x, this.y, player.x, player.y, r.projSpeed, r.projDamage, r.projLife));
+        this.fireTimer = r.cooldown + randomRange(-0.4, 0.4);
+        this.attackPoseTimer = GECKO_ATTACK_POSE_SECONDS;
+      }
+      if (this.attackPoseTimer > 0) this.attackPoseTimer -= dt;
+    } else {
+      // --- Melee chaser (wisp): walk straight at the witch (unchanged) ---
+      this.x += (dx / len) * this.speed * dt;
+      this.y += (dy / len) * this.speed * dt;
+    }
 
     this.wobble += dt * 6;
     if (this.hitFlash > 0) this.hitFlash -= dt;
 
     // --- Animation (visual only) ---
-    // The wisp always chases the player, so the vector to the player gives its
-    // 8-way facing for both float and attack.
+    // Both types always face the witch (the gecko backs away while facing her,
+    // as a flinger should).
     this.facing = dirFromVector(dx, dy);
 
-    // Play ATTACK while touching the player, FLOAT otherwise. This reads the
-    // same proximity the contact-damage check uses, but only swaps the sprite —
-    // damage, i-frames, and timing are untouched (handled in game.js).
+    // Wisp: ATTACK while touching (reads the same proximity the contact-damage
+    // check uses; damage itself is untouched, handled in game.js).
+    // Gecko: ATTACK briefly when it flings.
     const touching = len <= this.radius + player.radius + WISP_ATTACK_VISUAL_GAP;
-    const newState = touching ? "attack" : "float";
+    const attacking = this.def.ranged ? this.attackPoseTimer > 0 : touching;
+    const newState = attacking ? "attack" : "float";
     if (newState !== this.animState) {
       this.animState = newState;
       this.animFrame = 0;
@@ -92,14 +241,15 @@ export class Enemy {
     this.advanceFrames(dt);
   }
 
-  // Step the current animation. Both wisp anims loop; the non-looping branch is
+  // Step the current animation. Both anims loop; the non-looping branch is
   // kept for parity with the player/familiar steppers in case a one-shot
   // (e.g. a future death anim) is added later.
   advanceFrames(dt) {
-    const fps = WISP_FPS[this.animState];
-    const frameCount = WISP_ANIMS[this.animState];
+    const cfg = ENEMY_ANIMS[this.def.spritePrefix];
+    const fps = cfg.fps[this.animState];
+    const frameCount = cfg.anims[this.animState];
     const frameDur = 1 / fps;
-    const loops = WISP_LOOPING[this.animState];
+    const loops = cfg.looping[this.animState];
 
     this.animTimer += dt;
     while (this.animTimer >= frameDur) {
@@ -122,12 +272,12 @@ export class Enemy {
 
   draw(ctx) {
     const flash = this.hitFlash > 0;
-    const key = `wisp_${this.animState}_${this.facing}`;
+    const key = `${this.def.spritePrefix}_${this.animState}_${this.facing}`;
     const img = getImage(key);
 
     // --- Sprite path (real art) ---
     if (img && img.width > 0) {
-      const frames = WISP_ANIMS[this.animState];
+      const frames = ENEMY_ANIMS[this.def.spritePrefix].anims[this.animState];
       const fw = img.width / frames;
       const fh = img.height;
       const dw = fw * this.spriteScale;
@@ -149,18 +299,19 @@ export class Enemy {
     }
 
     // --- Fallback placeholder blob (per-direction, if a strip is missing) ---
+    // Type-colored: wisps keep their original red; the Gutter Gecko is teal.
     ctx.save();
     const r = this.radius + Math.sin(this.wobble) * 1.5;
 
-    ctx.shadowColor = "#e2536b";
+    ctx.shadowColor = this.def.fallbackOuter;
     ctx.shadowBlur = 14;
-    ctx.fillStyle = flash ? "#ffffff" : "#e2536b";
+    ctx.fillStyle = flash ? "#ffffff" : this.def.fallbackOuter;
     ctx.beginPath();
     ctx.arc(this.x, this.y, r, 0, Math.PI * 2);
     ctx.fill();
 
     ctx.shadowBlur = 0;
-    ctx.fillStyle = flash ? "#ffd0d8" : "#7d1f2e";
+    ctx.fillStyle = flash ? "#ffd0d8" : this.def.fallbackInner;
     ctx.beginPath();
     ctx.arc(this.x, this.y, r * 0.5, 0, Math.PI * 2);
     ctx.fill();
@@ -467,6 +618,11 @@ const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 // DEBUG: when true, EVERY wave spawns the boss (handy for testing boss art /
 // behavior without grinding to wave 10). Set to false for normal play and
 // before committing a release build.
+// --- Gutter Gecko wave composition (all tunable) -----------------------------
+const GECKO_INTRO_WAVE = 5;       // geckos join the spawn mix from this wave on
+const GECKO_SPAWN_CHANCE = 0.25;  // chance each spawn slot rolls a gecko
+const GECKO_MAX_ALIVE = 3;        // never more than this many alive at once
+
 const DEBUG_FORCE_BOSS = false;
 
 export class WaveManager {
@@ -533,7 +689,7 @@ export class WaveManager {
     if (this.toSpawn > 0) {
       this.spawnTimer -= dt;
       if (this.spawnTimer <= 0 && enemies.length < this.maxAlive) {
-        enemies.push(this.makeWisp(view));
+        enemies.push(this.makeEnemy(view, this.rollEnemyType(enemies)));
         this.toSpawn -= 1;
         this.spawnTimer = this.spawnGap();
       }
@@ -566,13 +722,30 @@ export class WaveManager {
     return new Boss(pos.x, pos.y, tier);
   }
 
-  makeWisp(view) {
+  // Which type the next spawn slot is: Gutter Geckos join from
+  // GECKO_INTRO_WAVE, at GECKO_SPAWN_CHANCE per slot, capped at
+  // GECKO_MAX_ALIVE simultaneously. Everything else is a wisp.
+  rollEnemyType(enemies) {
+    if (this.wave < GECKO_INTRO_WAVE) return "wisp";
+    let geckosAlive = 0;
+    for (const e of enemies) {
+      if (!e.dead && e.type === "gutter_gecko") geckosAlive += 1;
+    }
+    if (geckosAlive >= GECKO_MAX_ALIVE) return "wisp";
+    return Math.random() < GECKO_SPAWN_CHANCE ? "gutter_gecko" : "wisp";
+  }
+
+  makeEnemy(view, type = "wisp") {
     const pos = spawnOutsideView(view);
-    const e = new Enemy(pos.x, pos.y);
+    const e = new Enemy(pos.x, pos.y, type);
     const tier = this.endlessTier();
-    // Difficulty scaling: per-wave (as before) plus a small per-tier bump.
-    e.speed = 75 + this.wave * 4 + tier * ENEMY_SPEED_PER_TIER;
-    e.maxHealth = 2 + Math.floor(this.wave / 3) + tier * ENEMY_HP_PER_TIER;
+    // Wisp baseline scaling (per-wave + per-tier, exactly as before), then the
+    // type's multipliers on top — so a gecko is always relative to the wisps
+    // it spawns beside.
+    const baseSpeed = 75 + this.wave * 4 + tier * ENEMY_SPEED_PER_TIER;
+    const baseHealth = 2 + Math.floor(this.wave / 3) + tier * ENEMY_HP_PER_TIER;
+    e.speed = baseSpeed * e.def.speedMult;
+    e.maxHealth = Math.max(1, Math.round(baseHealth * e.def.healthMult));
     e.health = e.maxHealth;
     return e;
   }

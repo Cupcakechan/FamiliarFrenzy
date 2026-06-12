@@ -296,7 +296,7 @@ const SFX_DEFS = {
 };
 
 const SFX_STORAGE_KEY = "ff_sfxVolume";
-const DEFAULT_SFX_VOLUME = 100; // master, 0..100
+const DEFAULT_SFX_VOLUME = 50; // master, 0..100
 
 let sfxVolume = DEFAULT_SFX_VOLUME;
 const sfxPools = {}; // name -> { voices: [Audio], index, lastPlayed }

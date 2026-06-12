@@ -98,6 +98,7 @@ const TUTORIAL_HINTS = {
   level_up:    "Good pick! Every upgrade makes me scarier.",
   flask:       "A flask! Snag it if you're hurt.",
   spirit:      "I'm all charged — press SPACE for Spirit Imbued!",
+  gecko:       "A Gutter Gecko! Dodge whatever it flings at you!",
   boss:        "B-big wisp incoming! Dodge when it lines up a charge!",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
@@ -165,6 +166,7 @@ export class Game {
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
 
     this.enemies = [];
+    this.enemyBolts = []; // Gutter Gecko projectiles (outlive their shooter)
     this.waveManager = new WaveManager(MAX_WAVES);
     this.pickups = [];
     this.flasks = [];
@@ -224,6 +226,7 @@ export class Game {
     this.player.reset(WORLD_W / 2, WORLD_H / 2);
     this.familiar.reset(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
     this.enemies = [];
+    this.enemyBolts = [];
     this.waveManager.reset(mode === "endless");
     this.pickups = [];
     this.flasks = [];
@@ -279,6 +282,7 @@ export class Game {
     this.waveManager.phase = "intermission";
     this.waveManager.timer = this.waveManager.intermissionLength;
     this.enemies = [];
+    this.enemyBolts = [];
     this.activeHint = null; // tutorial dialogue ends with the tutorial
     this.hintQueue = [];
     this.state = STATE.PLAYING;
@@ -661,16 +665,31 @@ export class Game {
     };
     if (this.tutorialWavesStarted) this.waveManager.update(dt, this.enemies, view);
     if (this.enemies.length > 0) this.showHint("wisps");
+    if (!this.hintsShown.gecko && this.enemies.some((e) => e.type === "gutter_gecko")) this.showHint("gecko");
     if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");
 
     for (const enemy of this.enemies) {
-      enemy.update(dt, this.player);
+      enemy.update(dt, this.player, this.enemyBolts);
       if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
         this.player.takeDamage(enemy.damage);
       }
     }
 
     this.familiar.update(dt, this.player, this.enemies, this.frenzyTimer > 0);
+
+    // Gutter Gecko balls: move, hit the witch (her i-frames apply normally),
+    // and cull on expiry or when they leave the world.
+    for (const bolt of this.enemyBolts) {
+      bolt.update(dt);
+      if (bolt.dead) continue;
+      if (circlesOverlap(bolt.x, bolt.y, bolt.radius, this.player.x, this.player.y, this.player.radius)) {
+        this.player.takeDamage(bolt.damage);
+        bolt.dead = true; // the ball is spent on contact either way
+      } else if (bolt.x < 0 || bolt.y < 0 || bolt.x > this.world.width || bolt.y > this.world.height) {
+        bolt.dead = true;
+      }
+    }
+    this.enemyBolts = this.enemyBolts.filter((b) => !b.dead);
 
     // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
     const boss = this.waveManager.boss;
@@ -1032,6 +1051,7 @@ export class Game {
     for (const flask of this.flasks) flask.draw(ctx);
     for (const magnet of this.magnets) magnet.draw(ctx);
     for (const enemy of this.enemies) enemy.draw(ctx);
+    for (const bolt of this.enemyBolts) bolt.draw(ctx);
     this.familiar.draw(ctx);
     this.player.draw(ctx);
   }
