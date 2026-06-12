@@ -579,6 +579,35 @@ function drawUpgradeIcon(ctx, cx, cy, up, opts = {}) {
   }
 }
 
+// Split a string into at most `maxLines` lines that each fit `maxWidth`,
+// measured with the SAME font string text() composes — so wrapped lines render
+// at full size instead of text() shrinking the whole string to fit one line.
+// If the text needs more than maxLines, everything left is joined onto the
+// final line (text()'s shrink-to-fit then acts as the safety net).
+function wrapText(ctx, str, maxWidth, { size = 14, font = BODY_FONT, weight = "700", maxLines = 2 } = {}) {
+  ctx.save();
+  ctx.font = `${weight} ${size}px ${font}`;
+  const words = String(str).split(" ");
+  const lines = [];
+  let line = "";
+  for (let i = 0; i < words.length; i++) {
+    const tryLine = line ? `${line} ${words[i]}` : words[i];
+    if (!line || ctx.measureText(tryLine).width <= maxWidth) {
+      line = tryLine;
+    } else {
+      lines.push(line);
+      line = words[i];
+      if (lines.length === maxLines - 1) {
+        line = words.slice(i).join(" ");
+        break;
+      }
+    }
+  }
+  if (line) lines.push(line);
+  ctx.restore();
+  return lines;
+}
+
 function drawCard(ctx, x, y, cw, ch, up, i, count) {
   // Card body: sprite container if present (drawn 1:1, crisp), otherwise the
   // original code-drawn rounded rect as fallback.
@@ -607,7 +636,15 @@ function drawCard(ctx, x, y, cw, ch, up, i, count) {
     text(ctx, `Lv. ${up.level} / ${up.maxLevel}`, x + cw / 2, y + 114, { size: 14, color: PURPLE, weight: "700" });
   }
 
-  text(ctx, up.description, x + cw / 2, y + 138, { size: 14, color: DIM, weight: "500", maxWidth: cw - 24 });
+  // Description: word-wrapped to up to two FULL-SIZE lines (the old single-
+  // line draw shrank long descriptions into unreadable micro-text).
+  const descLines = wrapText(ctx, up.description, cw - 24, { size: 13, weight: "500" });
+  if (descLines.length === 1) {
+    text(ctx, descLines[0], x + cw / 2, y + 138, { size: 14, color: DIM, weight: "500", maxWidth: cw - 24 });
+  } else {
+    text(ctx, descLines[0], x + cw / 2, y + 131, { size: 13, color: DIM, weight: "500", maxWidth: cw - 24 });
+    text(ctx, descLines[1], x + cw / 2, y + 148, { size: 13, color: DIM, weight: "500", maxWidth: cw - 24 });
+  }
 
   const prompt = count > 1 ? `Press ${i + 1}` : "Press ENTER";
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);

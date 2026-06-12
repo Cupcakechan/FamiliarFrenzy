@@ -179,6 +179,8 @@ export class Enemy {
     // Ranged (Gutter Gecko) state.
     this.fireTimer = this.def.ranged ? randomRange(0.8, this.def.ranged.cooldown) : 0;
     this.attackPoseTimer = 0; // holds the attack anim briefly after a fling
+    this.repositioning = false; // gecko: outside its dead zone → walk vs idle
+    this.bondTickTimer = 0;     // Spirit Bond: per-enemy damage-tick cooldown
 
     // Animation state (visual only). Start frame is randomized so a swarm
     // doesn't pulse in perfect lockstep.

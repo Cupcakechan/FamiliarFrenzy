@@ -1,44 +1,46 @@
 # Familiar Frenzy — Project Handoff
 
-Last updated: **2026-06-11 (release-prep pass)** — rewritten from the verified current
-repo state, not from the previous handoff.
+Last updated: **2026-06-12** — rewritten from the verified current repo state.
+Covers all post-launch work through the unshipped **1.2.0** bundle.
 
 ---
 
 ## 1. Purpose of This Document
 
-This is the living source of truth for continuing **Familiar Frenzy**, Daniel's
-browser-based top-down survival arena game for **AI Browser Game Jam 3**. Read it fully
-before suggesting or changing anything. Update it at the end of any session that
-completes work.
+Living source of truth for continuing **Familiar Frenzy**, Daniel's browser-based
+top-down survival arena game, originally built for **AI Browser Game Jam 3** and
+now in post-launch update development (~1 week of update runway as of this write).
+Read fully before suggesting or changing anything. Update it at the end of any
+session that completes work.
 
 ---
 
 ## 2. Ground Rules for Working With Daniel
 
-* Tech stack: **plain HTML / CSS / JS + HTML5 Canvas, ES modules. No frameworks, no
-  npm, no TypeScript, no build tools.** Runs locally via VS Code **Live Server**.
-  **Python is NOT available** on Daniel's machine — never suggest Python commands.
+* Tech stack: **plain HTML / CSS / JS + HTML5 Canvas, ES modules. No frameworks,
+  no npm, no TypeScript, no build tools.** Runs locally via VS Code **Live
+  Server**. **Python is NOT available** — never suggest Python commands.
 * Repo access in the Claude project context is **review-only** and may reflect the
   last push, not the working copy. The `assets/` folder may be excluded from sync.
-  **When exact file contents matter, ask Daniel to upload the current files** before
-  delivering edits.
+  **When exact file contents matter, ask Daniel to upload the current files** first.
 * Deliver **entire updated files** via the file tool (no diffs/snippets as the main
   delivery), built from Daniel's current uploaded versions.
-* Every changed JS file must pass `node --check`. Confirm this in the delivery.
-* **Never clobber Daniel's locally tuned values.** Known tuned values to preserve:
+* Every changed JS file must pass `node --check`. Confirm in the delivery.
+* **Never clobber Daniel's local tuning.** Known tuned values to preserve:
+  * `enemies.js`: Elder Wisp boss `spriteScale = 2.0`; `DEBUG_FORCE_BOSS = false`
+  * `audio.js`: `POOL_COUNT = 9` (NEVER lower — §8); `DEFAULT_SFX_VOLUME = 50`
   * `familiar.js`: `RUNE_COUNT 14`, `RUNE_SCALE 0.5`, `spriteScale 0.55`
-  * `enemies.js`: Elder Wisp boss `spriteScale = 2`
-  * `game.js`: `FLASK_HEAL 15`, `FLASK_DROP_CHANCE 0.015`
-  * `audio.js`: `POOL_COUNT 9` (NEVER lower — see §8), `SFX_VOLUME 0.18`
-  * `ui.js`: `TITLE_OFFSET_X -13` (optical centering of the title banner)
-* Options/plan before non-trivial coding; wait for Daniel's go-ahead. Small, clearly
-  specified tweaks may be done directly. Single-value tweaks are often best handed
-  back as "change line N to X."
-* After completed work: files changed, what changed, test steps, risks, node --check
-  confirmation, ready-to-paste `AI_USAGE.md` row, git checkpoint block (NO `cd` lines).
-  Daniel tests first and decides when to commit — **never commit for him**.
-* Git block format:
+  * `ui.js`: `TITLE_OFFSET_X` (optical centering of the title banner)
+* Daniel often applies small one-line tweaks himself between turns (text, single
+  constants, banner gate). **Sync those into the working copy before building on a
+  file**, and ask if unsure whether he's edited it since the last delivery.
+* Options/plan before non-trivial coding; wait for the go-ahead. Single-value
+  tweaks are often best handed back as "change line N to X."
+* After completed work provide, in order: files changed; what changed; test steps;
+  known risks; `node --check` confirmation; a ready-to-paste **DEVLOG.md** entry
+  (player-facing, see §11); a ready-to-paste **AI_USAGE.md** row; the git
+  checkpoint block (NO `cd` lines). **Daniel tests first and decides when to
+  commit — never commit for him.**
 
 ```bash
 git add .
@@ -50,42 +52,42 @@ git push
 
 ## 3. Game Summary & Current Feature Set
 
-Player controls a young witch (move/dodge/collect only); her ghost cat **familiar**
-auto-attacks. Wave survival, EXP motes → level-ups → upgrades, boss every 10 waves.
-Tutorial mode ends after Wave 10 (Victory, can carry into Endless); Endless runs until
-death with per-tier scaling and a top-10 leaderboard.
+Player controls a young witch (move/dodge/collect only); her ghost cat
+**familiar** auto-attacks. EXP motes → level-ups → upgrades; boss every 10 waves.
+Tutorial mode ends after Wave 10 (Victory, can carry into Endless); Endless runs
+until death with per-tier scaling and a top-10 leaderboard.
 
-All major systems are implemented and tested:
+Implemented and tested:
 
-* Main Menu (background + title-banner art), Mode Select (background art, text title),
-  How to Play, Grimoire, Settings (music volume, persisted), High Scores
-* Full wave system + Elder Wisp boss (sprite-driven, telegraphed dash, staggered
-  summons, boss HP bar at y=84); boss kill grants a free upgrade
-* 2400×1344 world, player-following camera, tiled dungeon arena + wall collision,
-  seeded floor props
-* Player: 8-dir idle/walk/die sprites, i-frames, death animation
-* Familiar: 8-dir idle/attack sprites, ghost imprints, rune projectile pool, pierce,
-  projectile SFX; **Phantom Pounce** evolution (choosable, guaranteed slot)
-* Pickups: EXP motes (glow), health flasks (heal 15), rare Spirit Magnet (vacuum)
-* Upgrades: data-driven pool with caps, sprite-skinned cards + per-id 32×32 icons,
-  Spirit Recovery fallback; Grimoire reads the same data
-* **Spirit Imbued** mode (player-facing name; internals still `frenzy*` — intentional)
-  with Spirit Link ribbon
-* **HUD (reworked 2026-06-11):** thin frameless **XP strip flush along the top edge**
-  (full width, Vampire-Survivors style); **HP bar (263×24 frame sprite)** top-left with
-  in-well label; **Spirit Imbued bar (263×24 frame sprite)** docked directly below it
-  (in-well label; dark text over gold while active); Score + `Lv` stacked top-right;
-  "SPACE: SPIRIT IMBUED!" prompt pulses centered under the bar cluster.
-  Shared `drawSkinnedBar()` helper: well insets 3px (x) / 4px (y), dark well backing →
-  fill → frame on top; fallbacks match sprite sizes so layout never shifts.
-* **High Scores with arcade initials (2026-06-11):** a qualifying Endless death enters
-  `NAME_ENTRY` (Up/Down letter, Left/Right slot, **Enter/Esc confirm — deliberately NOT
-  Space**, to avoid accidental confirm while mashing). Entries: `{name, score, wave,
-  date}` in localStorage `ff_highscores`, top 10, score-desc/wave-desc. Old entries
-  without names display `—`. Personal bests (`ff_bestEndlessWave/Score`) still update
-  immediately on every Endless death regardless of qualification.
-* Audio: see §8 (rebuilt 2026-06-11).
-* Asset fallback safety everywhere: missing art/sound → placeholder/silence, never a crash.
+* **Menus/screens:** Main Menu (background + title-banner art), Mode Select
+  (background art, text title), How to Play, Grimoire, Settings (music + SFX
+  sliders), High Scores (with arcade initials), Pause, Confirm-Quit, Victory,
+  Game Over.
+* **World/combat:** 2400x1344 world, player-following camera, tiled dungeon arena
+  + wall collision; wave system; Elder Wisp boss (sprite-driven dash + staggered
+  summons, HP bar y=84); boss kill grants a free upgrade.
+* **Player:** 8-dir idle/walk/die sprites, i-frames, death animation.
+* **Familiar:** 8-dir idle/attack sprites, ghost imprints, rune projectile pool,
+  pierce, projectile SFX.
+* **Enemies (data-driven `ENEMY_TYPES`):**
+  * **Wisp** — melee chaser, 8-dir float/attack sprites.
+  * **Gutter Gecko** (NEW) — ranged skirmisher; holds ~280px, strafes, retreats,
+    flings dodgeable projectiles. Three-anim model (idle/walk/attack one-shot),
+    8 directions; **art still placeholder (teal blob + teal ball)** — 24 strips
+    pending. Intro wave 5, 25% spawn chance, max 3 alive.
+* **Pickups:** EXP motes (glow), health flasks (heal 15), rare Spirit Magnet
+  (vacuum). Innate 40px magnet range for everyone.
+* **Upgrades (data-driven):** capped pool + 32x32 icons + Grimoire; Spirit
+  Recovery fallback. **Two evolutions:** Phantom Pounce (Claws 5 + Ghost Pounce 3)
+  and **Spirit Bond** (NEW — Spirit Heart 3 + Spirit Focus 3).
+* **Spirit Imbued** mode (internals still `frenzy*`) with the Spirit Link ribbon;
+  **ready cues:** pulsing gold spark over the witch + breathing gold bar fill +
+  the flashing prompt under the HUD cluster.
+* **HUD:** top-edge XP strip; HP + Spirit bars (263x24 frames) stacked top-left;
+  Score + Lv top-right; familiar tutorial dialogue bar (bottom-center).
+* **Audio:** dual-deck music (§8) + data-driven SFX registry (§8).
+* Asset-fallback safety everywhere: missing art/sound → placeholder/silence,
+  never a crash.
 
 ---
 
@@ -93,124 +95,135 @@ All major systems are implemented and tested:
 
 ```txt
 familiar-frenzy/
-  index.html
-  style.css                  # page frame; responsive canvas shrink on small screens
-  package_itch.bat           # itch.io packaging script (see §10) — NOT shipped in the zip
-  ITCH_RELEASE_CHECKLIST.md  # release steps (see §10) — NOT shipped in the zip
+  index.html   style.css
+  package_itch.bat            # packaging + butler auto-publish (§10) — not shipped
+  ITCH_RELEASE_CHECKLIST.md   # release steps (§10) — not shipped in the zip
+  DEVLOG.md                   # player-facing release notes (§11) — not shipped
   src/
     main.js      # entry, canvas, dt loop, font preload, initAudio
-    game.js      # state machine (incl. NAME_ENTRY), world/camera, drops/collection,
-                 #   high-score persistence (updateEndlessBests / qualifiesForTop10 /
-                 #   saveHighScore), music-context sync, screen wiring
+    game.js      # state machine, world/camera, drops/collection, high scores,
+                 #   tutorial script + hints, Spirit Bond damage, SFX triggers,
+                 #   music-context sync, screen wiring
     input.js     # keyboard (held + one-frame presses)
     player.js    # witch
-    familiar.js  # ghost cat + bolts
-    enemies.js   # Wisp + Elder Wisp boss + WaveManager + scaling; DEBUG_FORCE_BOSS here
+    familiar.js  # ghost cat + bolts + Spirit Link
+    enemies.js   # ENEMY_TYPES table, Enemy (wisp + gecko), EnemyBolt, Boss,
+                 #   WaveManager; DEBUG_FORCE_BOSS + gecko composition consts here
     pickups.js   # motes, flasks, Spirit Magnet
-    upgrades.js  # upgrade data + offers + getGrimoireEntries()
-    ui.js        # all screens/HUD; drawMenu(art {bg,title}), drawSkinnedBar,
-                 #   drawNameEntry, TITLE_SCALE / TITLE_OFFSET_X tunables
+    upgrades.js  # UPGRADES + EVOLUTIONS (Phantom Pounce, Spirit Bond) + Grimoire
+    ui.js        # all screens/HUD; drawSkinnedBar, drawFamiliarHint, wrapText,
+                 #   drawNameEntry, two-row Settings, title-card tunables
     assets.js    # loadImage/getImage with graceful fallback
-    utils.js     # math helpers + dirFromVector
-    audio.js     # dual-deck music player + projectile SFX (see §8)
+    utils.js     # math helpers; dirFromVector; pointSegmentDistance (Spirit Bond)
+    audio.js     # dual-deck music + SFX registry (§8)
   assets/
-    fonts/  tiles/  music/  sfx/
-    backgrounds/
-      background_main.png    # 960×540 main-menu + mode-select backdrop, drawn 1:1
+    fonts/ tiles/ music/ sfx/
+    backgrounds/background_main.png   # 960x540, menu + mode-select backdrop
     sprites/
-      player/ familiar/ enemies/ pickups/ projectiles/ upgrades/
+      player/ familiar/ pickups/ projectiles/ upgrades/
+      enemies/   # wisp_*, elder_wisp_*, gecko_* (gecko art PENDING)
       ui/
-        menu_button.png      # 175×37
-        upgrade_card.png     # 240×180
-        health_bar.png       # 263×24, transparent well at (3,4) 257×16
-        spirit_bar.png       # 263×24, same well template
-        xp_bar.png           # 600×24 — NO LONGER USED (XP is a code-drawn strip);
-                             #   safe to delete
-        title_main.png       # title banner, drawn 1:1 centered at y=100
+        menu_button.png (175x37)  upgrade_card.png (240x180)
+        health_bar.png (263x24)   spirit_bar.png (263x24)
+        title_main.png            # title banner, drawn 1:1 centered at y=100
+        (xp_bar.png deleted — XP is now a code-drawn top strip)
   README.md  CREDITS.md  AI_USAGE.md  PROJECT_HANDOFF.md  .gitignore
-  builds/                    # packaging output (gitignored, never committed)
+  builds/      # packaging output (gitignored)
 ```
 
-**HUD bar sprite template:** all bar frames share one construction — gold pixel border,
-TRANSPARENT inner well inset 3px left/right and 4px top/bottom. Code draws dark backing
-→ colored fill → frame on top. The helper reads each sprite's native size, so
-re-authoring a bar at a new width needs no code change.
-
-**Menu art:** `drawMenu(..., art = { bg, title })`. Main Menu passes both; Mode Select
-passes `{ bg: true }` only. Title draws at native size × `TITLE_SCALE` (INTEGER only),
-centered with midpoint y=100, nudged by `TITLE_OFFSET_X` (currently −13 because the
-lettering is baked 13px right of the file's center).
+HUD bar template: gold pixel border + transparent well inset 3px (x) / 4px (y);
+code draws dark backing -> fill -> frame on top; helper reads native size.
+Menu art: `drawMenu(..., art = { bg, title })`; title scaled by integer
+`TITLE_SCALE`, nudged by `TITLE_OFFSET_X`.
 
 ---
 
-## 5. Sprite Conventions (unchanged)
+## 5. Sprite Conventions
 
-Player: 8 dirs, single-row strips — idle 4 / walk 6 / die 8 frames,
-`assets/sprites/player/witch_<anim>_<dir>.png`. Familiar: 8 dirs, idle 4 (loops, doubles
-as float) / attack 6 (one-shot), `assets/sprites/familiar/familiar_<anim>_<dir>.png`,
-drawn at `spriteScale 0.55`. Wisp: 8-dir float/attack strips. Elder Wisp: 8-dir float
-(4) + charge (2, state-driven), `spriteScale 2`. Frame width always computed at runtime
-(`img.width / frameCount`). Upgrade icons derived from id:
-`assets/sprites/upgrades/<id>.png` (32×32).
+Frame width always computed at runtime (`img.width / frameCount`); diagonals use
+vertical-first names (`ne`, `sw`).
 
-Pixel-art rules learned the hard way: only INTEGER scales; author art on a true uniform
-pixel grid (PixelLab sometimes outputs wobbly pseudo-pixel art — verify); trim
-transparent margins or accept that the code centers the file, not the lettering.
+* **Player:** 8 dirs — idle 4 / walk 6 / die 8. `witch_<anim>_<dir>.png`.
+* **Familiar:** 8 dirs — idle 4 (loops, doubles as float) / attack 6 (one-shot).
+  `familiar_<anim>_<dir>.png`, `spriteScale 0.55`.
+* **Wisp:** 8 dirs — float 4 / attack 4 (both loop). `wisp_<anim>_<dir>.png`.
+* **Elder Wisp boss:** 8 dirs — float 4 / charge 2 (state-driven). `spriteScale 2`.
+* **Gutter Gecko (PENDING ART):** 8 dirs, single-row 4-frame strips —
+  `gecko_idle_<dir>.png` (loops), `gecko_walk_<dir>.png` (loops),
+  `gecko_attack_<dir>.png` (ONE-SHOT, throw on frame 2-3).
+  24 files in `assets/sprites/enemies/`. Per-type `spriteScale` in `ENEMY_TYPES`
+  (currently 0.8); the attack-pose window is derived as frames/fps (0.4s).
+* **Upgrade icons:** `assets/sprites/upgrades/<id>.png` (32x32) — incl. pending
+  `phantom_pounce.png`, `spirit_bond.png`.
+
+Pixel-art rules: INTEGER scales only; author on a true uniform grid (watch
+PixelLab wobble); trim margins consistently; match new creatures' frame size to
+the wisp strips for shared scale.
 
 ---
 
-## 6. Most Recent Work Completed (2026-06-11, this session)
+## 6. Post-Launch Work Log (newest first)
 
 ```txt
-1. HUD bar skinning + layout rework: drawSkinnedBar helper; new 263×24 health/spirit
-   frames (transparent-well template); XP moved to a 6px frameless top-edge strip;
-   Spirit bar docked under HP; Score+Lv stacked top-right; boss bar y 58→84 so it
-   clears the corner cluster; LEVEL UP! subtitle spacing +34→+48.
-2. Arcade initials high-score entry: NAME_ENTRY state, qualification check, name field
-   in entries, Name column in the High Scores table.
-3. Main-menu background (960×540) + title banner wired via drawMenu art flags, with
-   TITLE_SCALE / TITLE_OFFSET_X tunables; Mode Select gets the background too.
-4. audio.js REBUILT (see §8) to permanently fix AbortError-induced silence.
-5. Release prep: package_itch.bat, ITCH_RELEASE_CHECKLIST.md, this handoff rewrite,
-   builds/ added to .gitignore, README publishing note.
+1.2.0 BUNDLE (UNSHIPPED — all committed locally, held for one combined release):
+  - Gutter Gecko ranged enemy (data-driven ENEMY_TYPES, EnemyBolt owned by
+    game.js, wave-5 intro, three-anim model wired for pending art)
+  - Ambient chitter changed from per-frame coin-flip to a 6-14s scheduler
+  - SFX registry (playSfx) + 5 sounds (level_up, heal, magnet, wisp, hint) +
+    master SFX volume with persisted Settings slider (two-row Settings)
+  - Spirit Imbued visibility: gold spark over the witch + breathing gold bar
+  - Spirit Bond evolution (Spirit Heart 3 + Spirit Focus 3; link cuts crossers
+    during Spirit Imbued) + pointSegmentDistance util
+  - Balance audit: FRENZY_MOTES 25->30, innate 40px magnet, xpToNext +3->+4
+  - wrapText helper: two-line full-size upgrade-card descriptions;
+    Spirit Bond description shortened
+  - DEFAULT_SFX_VOLUME set to 50
+
+1.1.0 (SHIPPED): familiar tutorial hints + scripted intro (waves held until
+  first move, 5s shadowed free-walk spotlight, wave-1 motes-only, wave-2
+  guaranteed flask), title-banner re-export, minor polish.
+
+1.0.0 (SHIPPED): jam submission.
 ```
 
-All JS passed `node --check`; Daniel tested each step in-browser and committed
-incrementally.
+---
+
+## 7. Upgrade System
+
+Data-driven in `upgrades.js`. Upgrades: Sharper Spirit Claws (5), Restless Wisp
+(5), Spirit Heart (3), Magnet Charm (4), Ghost Pounce (3), Spirit Focus (3, id
+`frenzy_focus`), Lucky Paws (3, rare-drop-only). Evolutions:
+* **Phantom Pounce** — requires Claws 5 + Ghost Pounce 3; +2 pierce, +2 damage.
+* **Spirit Bond** — requires Spirit Heart 3 + Spirit Focus 3; during Spirit
+  Imbued the witch<->familiar link damages enemies crossing it (half the
+  familiar's damage, min 1, per 0.5s per enemy; gold/thicker link visual).
+Spirit Recovery is the all-maxed fallback (not in Grimoire). New upgrade -> add to
+`UPGRADES` with `maxedStat` (+ `evolutionNotes` if it feeds an evolution); offers,
+Grimoire, and icon pick it up automatically. Do not rename internal `frenzy*` ids.
+
+Balance notes (post-audit): offensive chain (Claws/Restless/Pounce/Phantom) is
+well-tuned and unchanged. Spirit Focus is intentionally strong (it now also gates
+Spirit Bond); FRENZY_MOTES was nudged 25->30 rather than nerfing Focus.
 
 ---
 
-## 7. Upgrade System (unchanged this session)
+## 8. Audio System (read before touching)
 
-Data-driven in `upgrades.js` — see the table there. Upgrades: Sharper Spirit Claws (5),
-Restless Wisp (5), Spirit Heart (3), Magnet Charm (4), Ghost Pounce (3), Spirit Focus
-(3, id `frenzy_focus`), Lucky Paws (3, rare-drop-only). Evolution: Phantom Pounce
-(requires Claws 5 + Pounce 3). Spirit Recovery is the all-maxed fallback (not in
-Grimoire). New upgrade → add to `UPGRADES` with `maxedStat` (+ `evolutionNotes` if it
-feeds an evolution) and offers/Grimoire/icon all pick it up automatically. Do not
-rename internal `frenzy*` identifiers.
+**Music** — `audio.js` uses **two persistent decks + a generation counter**.
+Transitions swap the active deck; `pause()` never interrupts a pending `play()`
+(waits for the promise, skips if reactivated); only `NotAllowedError` arms
+retry-on-gesture (AbortError/load hiccups are logged and ignored — **do not
+"fix" by treating them as autoplay blocks; that was the original silence bug**).
+Invariants: `POOL_COUNT = 9`; shared normal pool for menus+gameplay; boss track
+interrupts and returns; 240s loop-then-rotate; volume persisted (`ff_musicVolume`).
 
----
-
-## 8. Audio System (REBUILT 2026-06-11 — read before touching)
-
-`audio.js` uses **two persistent decks + a generation counter**:
-
-* Transitions swap the active deck; incoming gets src+play, outgoing fades down.
-* Every transition bumps `transitionGen`; all async callbacks (play promises, fade
-  frames, deferred pauses) self-discard if stale.
-* `pause()` NEVER interrupts a pending `play()` — it waits for the deck's play promise
-  to settle and skips if the deck was reactivated. This eliminated the AbortError →
-  permanent-silence failure of the old design.
-* Error triage: only `NotAllowedError` (genuine autoplay block) arms retry-on-gesture.
-  `AbortError`/load hiccups are logged and ignored — **do not "fix" by treating them as
-  autoplay blocks; that was the original bug.**
-
-Invariants: **`POOL_COUNT = 9`** (familiar_theme_01..09 — lowering it caused random
-menu silence once); shared normal pool for menus+gameplay; boss track interrupts and
-returns; 240s loop-then-rotate; volume persisted in `ff_musicVolume`. Public API
-unchanged: initAudio / setMusicContext / setMusicVolume / getMusicVolume / stopMusic /
-playFamiliarProjectileSfx. SFX: 4-voice round-robin, volume 0.18, 60ms throttle.
+**SFX** — data-driven `SFX_DEFS` registry; `playSfx(name)` with per-sound voice
+pools + throttle, scaled by a master SFX volume (0-100, default 50, persisted
+`ff_sfxVolume`). Sounds: projectile (.wav), level_up/heal/magnet/wisp/hint (.mp3,
+art-supplied; missing = silent). `playFamiliarProjectileSfx()` kept as a wrapper
+so familiar.js needs no changes. Triggers (all in game.js): level-up screen open,
+flask grab, magnet vacuum, hint appear (per sentence), ambient wisp/gecko/boss
+chitter (scheduled, §3).
 
 ---
 
@@ -222,69 +235,79 @@ ENDLESS_PLACEHOLDER, HIGHSCORES_PLACEHOLDER, SETTINGS_PLACEHOLDER,
 PLAYING, PAUSED, CONFIRM_QUIT, LEVEL_UP, DYING, NAME_ENTRY, GAME_OVER, VICTORY
 ```
 
-Flow notes: `DYING → (endless + qualifies top-10) → NAME_ENTRY → GAME_OVER`, else
-straight to `GAME_OVER`. Grimoire/Settings open from Main Menu OR Pause with return
-targets. Quitting an Endless run via Pause → Main Menu intentionally records nothing.
+Flow: `DYING -> (endless + qualifies top-10) -> NAME_ENTRY -> GAME_OVER`, else
+straight to `GAME_OVER`. High scores: `{name, score, wave, date}` in
+`ff_highscores` (top 10, score-desc/wave-desc); bests in
+`ff_bestEndlessWave/Score`. Quitting Endless via Pause records nothing
+(intentional).
 
-Legacy names (cleanup candidates, all functional or dead):
-`HIGHSCORES_PLACEHOLDER` (functional High Scores), `SETTINGS_PLACEHOLDER` (functional
-Settings), `ENDLESS_PLACEHOLDER` (dead — never entered; `drawPlaceholder()` in ui.js is
-its only consumer; both safe to remove together).
-
----
-
-## 10. Release / Publishing Workflow (NEW)
-
-* **Debug flag status: `DEBUG_FORCE_BOSS = false` — verified in `src/enemies.js` on
-  2026-06-11.** Always re-verify from code before packaging; never trust this doc alone.
-* **Package:** double-click **`package_itch.bat`** (project root). It validates required
-  files, stages runtime files into `builds\package\`, zips them with `index.html` at
-  the ZIP ROOT, and self-verifies the zip. Output: **`builds\familiar-frenzy-itch.zip`**.
-* ZIP includes: index.html, style.css, src/, assets/, README.md, CREDITS.md,
-  AI_USAGE.md. Excludes (by never staging them): .git, .gitignore, PROJECT_HANDOFF.md,
-  ITCH_RELEASE_CHECKLIST.md, package_itch.bat, builds/.
-* **Checklist:** follow **`ITCH_RELEASE_CHECKLIST.md`** top-to-bottom for every upload
-  (local test → flag check → filename case check → package → itch settings: Kind HTML,
-  "played in browser", viewport 960×540 → on-page retest).
-* `builds/` is in `.gitignore` — never commit packaging output.
-* itch.io is case-sensitive: asset filenames on disk must exactly match the paths in
-  code (all code paths are lowercase_with_underscores).
+Legacy names (cleanup candidates): `HIGHSCORES_PLACEHOLDER` /
+`SETTINGS_PLACEHOLDER` are functional screens with misleading names;
+`ENDLESS_PLACEHOLDER` is dead (never entered; `drawPlaceholder()` is its only
+consumer) — both safe to remove together.
 
 ---
 
-## 11. Current Backlog / Scope Guardrails
+## 10. Release / Publishing Workflow
 
-Open items (none are blockers):
+* **Debug flag: `DEBUG_FORCE_BOSS = false` — verified in enemies.js 2026-06-12.**
+  Re-verify from code before every package; never trust this doc alone.
+* **Package + publish (one step):** `package_itch.bat` (root). Validates, stages
+  runtime files to `builds\package\`, zips with `index.html` at the ZIP root
+  (self-verified), then **auto-publishes via butler** to
+  `mrcanela/familiar-frenzy:html` (slug is a variable at the top of the script).
+  Optional version: `package_itch.bat 1.2.0`. Backup zip:
+  `builds\familiar-frenzy-itch.zip`. Degrades to zip-only if butler is missing.
+* ZIP includes index.html, style.css, src/, assets/, README.md, CREDITS.md,
+  AI_USAGE.md. Excludes .git, dev docs, the bat, builds/.
+* Checklist: `ITCH_RELEASE_CHECKLIST.md`. One-time itch setup after first push:
+  Kind=HTML, tick the `html` channel "played in browser", viewport 960x540.
+* itch is case-sensitive — asset filenames on disk must exactly match code paths.
+
+---
+
+## 11. DEVLOG.md (player-facing)
+
+Maintain `DEVLOG.md` (newest first); every significant pass gets a ready-to-paste
+entry that doubles as an itch devlog post. **The 1.2.0 entry is written and
+pending** (Geckos, Sounds & Spirit — see DEVLOG.md), held until Daniel ships the
+bundle.
+
+---
+
+## 12. Current Backlog / Next Steps
 
 ```txt
-- Title banner re-export: current title_main.png art occupies only the middle 320×120
-  of its 640×120 canvas and has a non-uniform pixel grid (PixelLab wobble). Re-author on
-  a true uniform grid, wider/shorter (~640×130 at 1× or ~320×70 at TITLE_SCALE 2),
-  ceiling 720×150. Code adapts automatically; reset TITLE_OFFSET_X for new art.
-- README.md refresh: the status sections are stale (say audio is a stub, High Scores
-  placeholder, enemy sprites pending). The publishing section is current.
-- Optional polish: more SFX (pickup / enemy hit / level-up / boss spawn) via the
-  existing voice-pool pattern; legacy state-name cleanup + ENDLESS_PLACEHOLDER removal;
-  delete unused assets/sprites/ui/xp_bar.png; selected-button sprite.
-- Audio soak: the rebuilt player passed initial testing; one long Endless session with
-  the console open is good extra confidence before submission.
-- Balance watch: xpToNext grows linearly (+3/level) — deep Endless runs may level-up
-  very frequently. Only touch if Daniel reports it feels choppy.
+HIGH (blocks the 1.2.0 ship being "complete"):
+  - Gutter Gecko art: 24 strips (idle/walk/attack x 8 dirs, 4f each). Code is
+    wired and waiting; tune gecko spriteScale once art is in.
+
+WHEN READY:
+  - Ship 1.2.0: package_itch.bat 1.2.0 + post the pending DEVLOG entry.
+  - Optional SFX art: spirit_ready chime (a one-row SFX_DEFS add) if Daniel
+    wants the audio cue for Spirit Imbued ready in addition to the visuals.
+  - Evolution icons: phantom_pounce.png, spirit_bond.png (32x32).
+  - README.md refresh (status sections stale: audio "stub", High Scores
+    "placeholder", enemy sprites "pending" — all now done/changed).
+  - Legacy state cleanup + ENDLESS_PLACEHOLDER removal.
+
+BALANCE WATCH (only if Daniel reports it):
+  - Gecko composition (25% / max 3) — tune if wave 7+ feels like a shooting
+    gallery. Spirit Bond tick (half dmg / 0.5s) — watch for trivializing crowds.
 ```
 
-Guardrails: no large new systems, online leaderboards, new enemy types in bulk,
-external libraries, npm/build tooling, or balance rewrites without testing. Prefer one
-feature at a time and jam readiness. When a 2nd enemy type is added, prefer a
-data-driven ENEMY_TYPES table over subclasses.
+Guardrails: one feature at a time; no large new systems, online leaderboards,
+external libraries, or build tooling; data-driven tables over subclasses for new
+content (ENEMY_TYPES / UPGRADES patterns).
 
 ---
 
-## 12. First Response Required from Next Claude
+## 13. First Response Required from Next Claude
 
 1. Confirm this handoff was read.
-2. Briefly summarize current state.
-3. Verify `DEBUG_FORCE_BOSS` from `src/enemies.js` (do not trust this doc) and report it.
+2. Briefly summarize current state (note the 1.2.0 bundle is built but unshipped).
+3. Verify `DEBUG_FORCE_BOSS` from `enemies.js` (don't trust this doc) and report.
 4. Note any stale-looking handoff items.
-5. Offer a short option list of next tasks and ask Daniel what he wants to do.
+5. Offer a short option list and ask what Daniel wants to do.
 
 Do not start coding immediately.

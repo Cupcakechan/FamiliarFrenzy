@@ -142,7 +142,7 @@ export const EVOLUTIONS = [
   {
     id: "spirit_bond",
     name: "Spirit Bond",
-    description: "While Spirit Imbued, the link between witch and familiar cuts enemies crossing it.",
+    description: "While Spirit Imbued, your link cuts enemies crossing it.",
     tag: "evolution",
     maxLevel: 1,
     // Unlocks once BOTH Spirit Heart and Spirit Focus are maxed.
