@@ -4,29 +4,9 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 
 ## AI tools used
 - **Claude** — code generation, project structure, debugging, planning.
-- _(Add others as used: ChatGPT, art tools, audio tools, etc.)_
+- **ChatGPT** - Prompter
+- **PixelLab** - Sprites
 
-## What Claude helped code
-- Phase 1 skeleton: project folder structure, `index.html`, `style.css`,
-  game loop (`main.js`), state machine (`game.js`), input (`input.js`),
-  player placeholder + movement (`player.js`), UI screens/HUD (`ui.js`),
-  shared helpers (`utils.js`).
-
-## What ChatGPT helped plan / review
-- _(Fill in if used.)_
-
-## AI art / audio tools used
-- _(Fill in if used — tool name, what it generated, any prompts worth noting.)_
-
-## Decisions made by me (Daniel)
-- Engine choice: plain HTML/CSS/JS + Canvas (not Unity) for easy itch.io upload.
-- Core fantasy: witch survives; the cat familiar is the real attacker.
-- MVP scope: 10 waves, single starter upgrade (Sharper Claws).
-- _(Add more design decisions as the project grows.)_
-
-## Major AI-assisted features
-- _Phase 2 cat familiar — follow behavior and automatic bolt attacks (Claude)_
----
 
 ### Log
 
@@ -112,3 +92,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-11 | Audio/UI | Rebuilt audio.js around two persistent decks with generation-guarded transitions: pause() never interrupts pending play(), stale callbacks self-discard, only true NotAllowedError arms gesture-retry (fixes AbortError-induced permanent silence); POOL_COUNT 9 preserved, public API unchanged. Mode Select now uses the stone background via art {bg,title} flags | Claude |
 | 2026-06-11 | Release/Tooling | Extended package_itch.bat to auto-publish via butler (push staged folder to mrcanela/familiar-frenzy:html, optional --userversion arg, graceful zip-only fallback if butler missing); checklist + handoff updated for the one-step publish workflow | Claude |
 | 2026-06-11 | Tutorial/UX | Familiar tutorial hints + scripted intro: waves held until first movement with 5s shadowed free-walk (spotlight veil, eased fade), wave-1 motes-only drops, wave-2 guaranteed first-kill flask, 8 condition-triggered cat dialogue lines in a bottom-center bar (one at a time, once per run, queued, sticky movement hint), all tunable and tutorial-gated | Claude |
+| 2026-06-12 | Audio/UX | Data-driven SFX registry (playSfx) with per-sound mix + voice pools: level-up, heal, magnet, hint-per-sentence, and ambient wisp/boss chitter (random, throttled); master SFX volume with persisted Settings slider (two-row Settings screen, audible adjust feedback); projectile SFX migrated to registry with no familiar.js changes | Claude |

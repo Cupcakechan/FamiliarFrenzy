@@ -277,48 +277,83 @@ export function stopMusic() {
   }
 }
 
-// --- Sound effects --------------------------------------------------------
-// Short one-shots (currently just the familiar's projectile). Kept simple:
-//   - Fixed volume, INDEPENDENT of the music slider (there is no SFX slider).
-//   - Autoplay-gated on the same `unlocked` flag as the music.
-//   - A tiny round-robin pool of reused Audio voices so rapid fire overlaps
-//     cleanly instead of cutting itself off, plus a minimum interval so very
-//     fast attack speeds (Spirit Imbued) can't spam/clip the sound.
-//   - A missing file just fails silently — never throws.
-const SFX_PROJECTILE_SRC = `assets/sfx/familiar_projectile.wav`;
-const SFX_VOLUME = 0.18;       // modest; rapid fire shouldn't get loud
-const SFX_MIN_INTERVAL = 0.06; // seconds between projectile sfx (throttle)
-const SFX_VOICES = 4;          // reused Audio elements for overlap
+// --- Sound effects ---------------------------------------------------------
+// Data-driven one-shot registry. Each entry defines its file, base volume,
+// voice-pool size (for overlapping plays), and a minimum interval throttle.
+// All are autoplay-gated on the same `unlocked` flag as the music, and a
+// missing file just fails silently — never throws.
+//
+// There is now also a MASTER SFX volume (0..100, Settings slider, persisted in
+// localStorage) — the per-sound `volume` below is each sound's level in the
+// mix, scaled by the master at play time. Tune the mix here.
+const SFX_DEFS = {
+  projectile: { src: "assets/sfx/familiar_projectile.wav", volume: 0.18, voices: 4, minInterval: 0.06 },
+  level_up:   { src: "assets/sfx/level_up.mp3",   volume: 0.50, voices: 1, minInterval: 0.10 },
+  heal:       { src: "assets/sfx/heal.mp3",       volume: 0.45, voices: 2, minInterval: 0.05 },
+  magnet:     { src: "assets/sfx/magnet.mp3",     volume: 0.50, voices: 1, minInterval: 0.10 },
+  wisp:       { src: "assets/sfx/wisp_noise.mp3", volume: 0.30, voices: 3, minInterval: 0.25 },
+  hint:       { src: "assets/sfx/hint.mp3",       volume: 0.40, voices: 1, minInterval: 0.20 },
+};
 
-let sfxVoices = [];
-let sfxVoiceIndex = 0;
-let lastProjectileSfx = 0;     // performance.now() ms of the last one played
+const SFX_STORAGE_KEY = "ff_sfxVolume";
+const DEFAULT_SFX_VOLUME = 100; // master, 0..100
+
+let sfxVolume = DEFAULT_SFX_VOLUME;
+const sfxPools = {}; // name -> { voices: [Audio], index, lastPlayed }
+
+function loadSfxVolume() {
+  try {
+    const v = parseInt(localStorage.getItem(SFX_STORAGE_KEY), 10);
+    if (!Number.isNaN(v)) sfxVolume = Math.max(0, Math.min(100, v));
+  } catch (e) { /* storage blocked — keep default */ }
+}
+
+export function getSfxVolume() {
+  return sfxVolume;
+}
+
+export function setSfxVolume(v) {
+  sfxVolume = Math.max(0, Math.min(100, Math.round(v)));
+  try { localStorage.setItem(SFX_STORAGE_KEY, String(sfxVolume)); } catch (e) { /* ignore */ }
+}
 
 function initSfx() {
-  for (let i = 0; i < SFX_VOICES; i++) {
-    const el = new Audio(SFX_PROJECTILE_SRC);
-    el.volume = SFX_VOLUME;
-    el.onerror = () => {}; // missing/blocked file — ignore, never crash
-    sfxVoices.push(el);
+  for (const [name, def] of Object.entries(SFX_DEFS)) {
+    const pool = { voices: [], index: 0, lastPlayed: 0 };
+    for (let i = 0; i < def.voices; i++) {
+      const el = new Audio(def.src);
+      el.onerror = () => {}; // missing/blocked file — ignore, never crash
+      pool.voices.push(el);
+    }
+    sfxPools[name] = pool;
   }
 }
 
-export function playFamiliarProjectileSfx() {
-  if (!unlocked || sfxVoices.length === 0) return; // respect autoplay
-  const now = performance.now();
-  if (now - lastProjectileSfx < SFX_MIN_INTERVAL * 1000) return; // throttle
-  lastProjectileSfx = now;
+export function playSfx(name) {
+  if (!unlocked) return; // respect autoplay
+  const def = SFX_DEFS[name];
+  const pool = sfxPools[name];
+  if (!def || !pool || pool.voices.length === 0) return;
 
-  const el = sfxVoices[sfxVoiceIndex];
-  sfxVoiceIndex = (sfxVoiceIndex + 1) % sfxVoices.length;
+  const now = performance.now();
+  if (now - pool.lastPlayed < def.minInterval * 1000) return; // throttle
+  pool.lastPlayed = now;
+
+  const el = pool.voices[pool.index];
+  pool.index = (pool.index + 1) % pool.voices.length;
   try {
     el.currentTime = 0;
-    el.volume = SFX_VOLUME;
+    el.volume = def.volume * (sfxVolume / 100);
     const p = el.play();
     if (p && typeof p.catch === "function") p.catch(() => {});
   } catch (e) {
     /* ignore */
   }
+}
+
+// Back-compat wrapper so familiar.js needs no changes.
+export function playFamiliarProjectileSfx() {
+  playSfx("projectile");
 }
 
 // First user gesture unlocks audio (browsers block it until then). Stays
@@ -335,6 +370,7 @@ function onUserGesture() {
 
 export function initAudio() {
   loadVolume();
+  loadSfxVolume();
   initSfx();
   window.addEventListener("keydown", onUserGesture);
   window.addEventListener("pointerdown", onUserGesture);

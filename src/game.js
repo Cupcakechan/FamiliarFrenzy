@@ -25,7 +25,7 @@ import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
 import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire } from "./ui.js";
-import { setMusicContext, setMusicVolume, getMusicVolume } from "./audio.js";
+import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
 const TILE = 32;
@@ -83,13 +83,18 @@ const SHADOW_ALPHA = 0.78;        // darkness of the intro shadow veil
 const SHADOW_RADIUS = 230;        // clear "spotlight" radius around the witch
 const SHADOW_FADE_SECONDS = 1.2;  // how long the shadow takes to lift
 
+// Ambient wisp chitter: while anything spooky is alive, each second has this
+// chance to play the wisp noise once (the registry's minInterval prevents
+// stacking). Shared by regular wisps and the Elder Wisp.
+const WISP_NOISE_CHANCE_PER_SEC = 0.35;
+
 // One line per lesson; each shows at most once per run, one at a time
 // (later triggers queue behind the active hint instead of interrupting).
 const TUTORIAL_HINTS = {
-  move:        "Move with WASD or the arrows! I'll handle the spooky stuff.",
-  wisps:       "Careful — touching wisps hurts. Keep your distance!",
-  mote_drop:   "Ooh! Grab the glowy motes — they make us stronger.",
-  mote_pickup: "See the purple strip up top? Fill it and we level up!",
+  move:        "Move with WASD or the arrow keys! I'll handle the spooky stuff.",
+  wisps:       "Careful — touching spooky creatures hurts. Keep your distance!",
+  mote_drop:   "Ooh! Grab the glowy motes — they make me stronger.",
+  mote_pickup: "See the purple strip up top? Fill it and I'll level up!",
   level_up:    "Good pick! Every upgrade makes me scarier.",
   flask:       "A flask! Snag it if you're hurt.",
   spirit:      "I'm all charged — press SPACE for Spirit Imbued!",
@@ -147,6 +152,7 @@ export class Game {
     this.state = STATE.MAIN_MENU;
     this.menuIndex = 0; // highlighted option in the current menu
     this.settingsReturn = STATE.MAIN_MENU; // where the Settings screen goes "back" to
+    this.settingsIndex = 0;                // selected Settings row: 0 music, 1 sfx
 
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
@@ -288,7 +294,7 @@ export class Game {
           else if (this.menuIndex === 1) this.state = STATE.HOW_TO_PLAY;
           else if (this.menuIndex === 2) this.openGrimoire(STATE.MAIN_MENU);
           else if (this.menuIndex === 3) this.state = STATE.HIGHSCORES_PLACEHOLDER;
-          else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.state = STATE.SETTINGS_PLACEHOLDER; }
+          else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
         break;
 
@@ -320,11 +326,21 @@ export class Game {
         break;
 
       case STATE.SETTINGS_PLACEHOLDER:
+        // Two rows: 0 = Music Volume, 1 = SFX Volume. Up/Down selects,
+        // Left/Right adjusts. SFX adjustments blip so the level is audible.
+        if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+          this.settingsIndex = (this.settingsIndex + 1) % 2;
+        }
+        if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+          this.settingsIndex = (this.settingsIndex + 1) % 2;
+        }
         if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA")) {
-          setMusicVolume(getMusicVolume() - 5);
+          if (this.settingsIndex === 0) setMusicVolume(getMusicVolume() - 5);
+          else { setSfxVolume(getSfxVolume() - 5); playSfx("hint"); }
         }
         if (Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
-          setMusicVolume(getMusicVolume() + 5);
+          if (this.settingsIndex === 0) setMusicVolume(getMusicVolume() + 5);
+          else { setSfxVolume(getSfxVolume() + 5); playSfx("hint"); }
         }
         if (this.backPressed()) {
           this.state = this.settingsReturn || STATE.MAIN_MENU;
@@ -355,6 +371,7 @@ export class Game {
             this.openGrimoire(STATE.PAUSED);            // Upgrade Grimoire (returns to Pause)
           } else if (this.menuIndex === 2) {
             this.settingsReturn = STATE.PAUSED;         // Settings (returns to Pause)
+            this.settingsIndex = 0;
             this.state = STATE.SETTINGS_PLACEHOLDER;
           } else {
             this.state = STATE.CONFIRM_QUIT;            // Main Menu (confirm first)
@@ -565,12 +582,17 @@ export class Game {
     if (this.hintsShown[id]) return;
     this.hintsShown[id] = true;
     const hint = { id, text: TUTORIAL_HINTS[id], timer: HINT_DURATION, sticky: !!opts.sticky };
-    if (this.activeHint) this.hintQueue.push(hint);
-    else this.activeHint = hint;
+    if (this.activeHint) {
+      this.hintQueue.push(hint);
+    } else {
+      this.activeHint = hint;
+      playSfx("hint"); // one blip per sentence, when it actually appears
+    }
   }
 
   advanceHint() {
     this.activeHint = this.hintQueue.shift() || null;
+    if (this.activeHint) playSfx("hint"); // queued hint rotating in
   }
 
   updateHints(dt) {
@@ -653,6 +675,11 @@ export class Game {
     // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
     const boss = this.waveManager.boss;
     if (boss && !boss.dead) this.showHint("boss");
+
+    // Ambient wisp chitter (shared by wisps and the Elder Wisp).
+    if ((this.enemies.length > 0 || (boss && !boss.dead)) && Math.random() < WISP_NOISE_CHANCE_PER_SEC * dt) {
+      playSfx("wisp");
+    }
     if (boss && !boss.dead && boss.consumeSummon()) {
       const a = Math.random() * Math.PI * 2;
       const r = 36 + Math.random() * 28;
@@ -728,6 +755,7 @@ export class Game {
       if (circlesOverlap(flask.x, flask.y, flask.radius + 6, this.player.x, this.player.y, this.player.radius)) {
         flask.dead = true;
         this.player.heal(flask.heal);
+        playSfx("heal");
       }
     }
     this.flasks = this.flasks.filter((f) => !f.dead);
@@ -739,6 +767,7 @@ export class Game {
       if (circlesOverlap(magnet.x, magnet.y, magnet.radius + 6, this.player.x, this.player.y, this.player.radius)) {
         magnet.dead = true;
         this.vacuumTimer = VACUUM_DURATION;
+        playSfx("magnet");
       }
     }
     this.magnets = this.magnets.filter((m) => !m.dead);
@@ -759,6 +788,7 @@ export class Game {
     if (this.pendingLevelUps > 0) {
       this.offers = getOffers(OFFER_COUNT, this.upgradeLevels);
       this.state = STATE.LEVEL_UP;
+      playSfx("level_up");
     }
   }
 
@@ -908,7 +938,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.SETTINGS_PLACEHOLDER) {
-      drawSettings(ctx, this.width, this.height, getMusicVolume());
+      drawSettings(ctx, this.width, this.height, getMusicVolume(), getSfxVolume(), this.settingsIndex);
       return;
     }
     if (this.state === STATE.CONFIRM_QUIT) {
