@@ -22,7 +22,7 @@ import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
-import { circlesOverlap, clamp, randomRange } from "./utils.js";
+import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
 import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
@@ -115,13 +115,14 @@ const LUCK_FLASK_STEP = 0.04;   // +4% flask chance per Lucky Paws level
 const LUCK_MAGNET_STEP = 0.006; // +0.6% Spirit Magnet chance per Lucky Paws level
 
 // Spirit Magnet (rare pickup): vacuums all dropped rewards toward the player.
+const BASE_MAGNET_RANGE = 40; // innate pickup attraction (px); Magnet Charm adds +55/level
 const SPIRIT_MAGNET_DROP_CHANCE = 0.008; // 0.8% from normal enemies (rare)
 const SPIRIT_MAGNET_BOSS_CHANCE = 0.2;   // 20% from bosses (occasional treat)
 const VACUUM_DURATION = 1.5;             // seconds the vacuum pull lasts
 const VACUUM_PULL_SPEED = 1000;          // px/s items rush toward the player
 
 // Familiar Frenzy meter (Feature 3).
-const FRENZY_MOTES = 25;    // motes collected to fill the meter
+const FRENZY_MOTES = 30;    // motes collected to fill the meter (was 25; Spirit Focus audit)
 const FRENZY_DURATION = 6;  // seconds the frenzy lasts
 
 // World size (larger than the 960x540 viewport; the camera follows the player).
@@ -138,6 +139,9 @@ const LINK_SEGMENTS = 24;       // points sampled along the link (smoothness)
 const LINK_FADE_IN = 0.30;      // seconds to fade in when frenzy starts
 const LINK_FADE_OUT = 0.50;     // seconds to fade out as frenzy ends
 const LINK_ATTACK_BOOST = 1.7;  // opacity multiplier while the cat is attacking
+const LINK_BOND_COLOR = "#F4D58D";   // Spirit Bond: the link turns gold and cuts
+const SPIRIT_BOND_TICK = 0.5;        // seconds between Bond damage ticks per enemy
+const SPIRIT_BOND_WIDTH = 6;         // ribbon half-width (px) beyond the enemy radius
 
 // Deterministic 0..1 value for a tile + seed (stable every frame, no flicker).
 function tileRand(x, y, seed) {
@@ -187,12 +191,13 @@ export class Game {
     this.upgradeLevels = {}; // { upgradeId: currentLevel }
 
     // Upgrade-driven values (mutated by apply()); reset each run.
-    this.magnetRange = 0;     // Magnet Charm: pickup attraction radius (0 = none)
+    this.magnetRange = BASE_MAGNET_RANGE; // pickup attraction radius (innate + Magnet Charm)
     this.frenzyPerMote = 1;   // Frenzy Focus: charge added per mote
     this.luckLevel = 0;       // Lucky Paws: drop-chance level
 
     // Evolution (one-shot).
     this.phantomPounceUnlocked = false;
+    this.spiritBondUnlocked = false;
     this.evoBannerText = "";
     this.evoBannerTimer = 0;  // seconds the unlock banner stays on screen
 
@@ -244,10 +249,11 @@ export class Game {
     this.offers = [];
     this.upgradeLevels = {};
 
-    this.magnetRange = 0;
+    this.magnetRange = BASE_MAGNET_RANGE;
     this.frenzyPerMote = 1;
     this.luckLevel = 0;
     this.phantomPounceUnlocked = false;
+    this.spiritBondUnlocked = false;
     this.evoBannerText = "";
     this.evoBannerTimer = 0;
 
@@ -682,6 +688,22 @@ export class Game {
 
     this.familiar.update(dt, this.player, this.enemies, this.frenzyTimer > 0);
 
+    // Spirit Bond (evolution): while Spirit Imbued is active, the witch<->
+    // familiar link cuts enemies that cross it. Tick damage scales with the
+    // familiar's damage; a per-enemy cooldown stops anything from melting.
+    if (this.spiritBondUnlocked && this.frenzyTimer > 0) {
+      const tickDmg = Math.max(1, Math.round(this.familiar.damage * 0.5));
+      for (const enemy of this.enemies) {
+        if (enemy.dead) continue;
+        if (enemy.bondTickTimer > 0) { enemy.bondTickTimer -= dt; continue; }
+        const d = pointSegmentDistance(enemy.x, enemy.y, this.player.x, this.player.y, this.familiar.x, this.familiar.y);
+        if (d <= enemy.radius + SPIRIT_BOND_WIDTH) {
+          enemy.takeDamage(tickDmg);
+          enemy.bondTickTimer = SPIRIT_BOND_TICK;
+        }
+      }
+    }
+
     // Gutter Gecko balls: move, hit the witch (her i-frames apply normally),
     // and cull on expiry or when they leave the world.
     for (const bolt of this.enemyBolts) {
@@ -930,7 +952,7 @@ export class Game {
     while (this.xp >= this.xpToNext) {
       this.xp -= this.xpToNext;
       this.level += 1;
-      this.xpToNext += 3;
+      this.xpToNext += 4; // was +3; slows deep-Endless level-up spam a touch
       this.pendingLevelUps += 1;
     }
   }
@@ -1064,6 +1086,36 @@ export class Game {
     for (const bolt of this.enemyBolts) bolt.draw(ctx);
     this.familiar.draw(ctx);
     this.player.draw(ctx);
+
+    // Spirit Imbued "ready" spark: a pulsing gold diamond above the witch
+    // whenever the meter is full (the on-character cue for players who never
+    // look at the HUD corner).
+    if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) {
+      const t = performance.now() / 1000;
+      const pulse = 0.55 + 0.45 * Math.sin(t * 6);
+      const bob = Math.sin(t * 3) * 2;
+      const sx = this.player.x;
+      const sy = this.player.y - this.player.radius - 26 + bob;
+      const s = 5 + pulse * 2.5; // spark half-size
+      ctx.save();
+      ctx.globalAlpha = 0.55 + pulse * 0.45;
+      ctx.shadowColor = "#f4d58d";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#f4d58d";
+      ctx.beginPath(); // four-point diamond
+      ctx.moveTo(sx, sy - s);
+      ctx.lineTo(sx + s * 0.55, sy);
+      ctx.lineTo(sx, sy + s);
+      ctx.lineTo(sx - s * 0.55, sy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#fff6dd";
+      ctx.beginPath();
+      ctx.arc(sx, sy, s * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   // Frenzy Spirit Link (visual only): a wavy, semi-transparent ribbon between
@@ -1107,11 +1159,12 @@ export class Game {
     }
 
     // Soft outer glow, then a thin inner line (same path, stroked twice).
-    ctx.strokeStyle = LINK_COLOR;
-    ctx.shadowColor = LINK_COLOR;
+    const bondActive = this.spiritBondUnlocked; // gold blade while evolved
+    ctx.strokeStyle = bondActive ? LINK_BOND_COLOR : LINK_COLOR;
+    ctx.shadowColor = bondActive ? LINK_BOND_COLOR : LINK_COLOR;
     ctx.globalAlpha = alpha * 0.5;
     ctx.shadowBlur = 10;
-    ctx.lineWidth = 5;
+    ctx.lineWidth = bondActive ? 7 : 5;
     ctx.stroke();
 
     ctx.globalAlpha = alpha;
@@ -1319,7 +1372,8 @@ export class Game {
       maxHealth: this.player.maxHealth,
       frenzy,
       upgrades,
-      evolution: this.phantomPounceUnlocked ? "Phantom Pounce" : "None",
+      evolution: [this.phantomPounceUnlocked && "Phantom Pounce", this.spiritBondUnlocked && "Spirit Bond"]
+        .filter(Boolean).join(" + ") || "None",
     };
   }
 

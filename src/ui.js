@@ -482,6 +482,15 @@ export function drawHUD(ctx, w, h, state) {
     fillColor = "#c77dff";
     frLabel = "Spirit Imbued";
     frLabelColor = CREAM;
+    if (frPct >= 1) {
+      // READY: pulse the fill between lavender (199,125,255) and gold
+      // (244,213,141) so the full bar visibly breathes.
+      const t = 0.5 + 0.5 * Math.sin(performance.now() / 180);
+      const r = Math.round(199 + (244 - 199) * t);
+      const g = Math.round(125 + (213 - 125) * t);
+      const b = Math.round(255 + (141 - 255) * t);
+      fillColor = `rgb(${r}, ${g}, ${b})`;
+    }
   }
 
   const fr = drawSkinnedBar(ctx, "spirit_bar", 16, hp.y + hp.h + BAR_STACK_GAP, frPct, fillColor, BAR_FALLBACK_W, BAR_FALLBACK_H);

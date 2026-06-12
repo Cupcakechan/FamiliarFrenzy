@@ -37,6 +37,20 @@ export function circlesOverlap(ax, ay, ar, bx, by, br) {
   return distance(ax, ay, bx, by) < ar + br;
 }
 
+// Shortest distance from point P to the line SEGMENT A->B (not the infinite
+// line). Used by the Spirit Bond evolution: enemies within the witch<->familiar
+// ribbon's width take damage. Projects P onto AB, clamps to the segment, and
+// measures to that closest point.
+export function pointSegmentDistance(px, py, ax, ay, bx, by) {
+  const abx = bx - ax;
+  const aby = by - ay;
+  const len2 = abx * abx + aby * aby;
+  if (len2 === 0) return distance(px, py, ax, ay); // degenerate: A == B
+  let t = ((px - ax) * abx + (py - ay) * aby) / len2;
+  t = clamp(t, 0, 1);
+  return distance(px, py, ax + abx * t, ay + aby * t);
+}
+
 // Pick one of 8 directions (N/S/E/W + diagonals) from a direction vector.
 // Canvas y+ points DOWN, so positive dy = south. Diagonal names are
 // vertical-first (e.g. "ne", "sw") to match the sprite file naming and the

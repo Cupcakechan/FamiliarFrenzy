@@ -47,6 +47,7 @@ export const UPGRADES = [
     name: "Spirit Heart",
     description: "Max health +20",
     maxedStat: "+60",
+    evolutionNotes: "Required for Spirit Bond (must be maxed).",
     tag: "survival",
     maxLevel: 3,
     apply(game) {
@@ -82,6 +83,7 @@ export const UPGRADES = [
     name: "Spirit Focus",
     description: "Spirit Imbued charges faster",
     maxedStat: "+3 per mote",
+    evolutionNotes: "Required for Spirit Bond (must be maxed).",
     tag: "frenzy",
     maxLevel: 3,
     apply(game) {
@@ -135,6 +137,22 @@ export const EVOLUTIONS = [
       game.phantomPounceUnlocked = true;
       game.evoBannerText = "Evolution Unlocked: Phantom Pounce";
       game.evoBannerTimer = 4; // seconds the banner stays on screen
+    },
+  },
+  {
+    id: "spirit_bond",
+    name: "Spirit Bond",
+    description: "While Spirit Imbued, the link between witch and familiar cuts enemies crossing it.",
+    tag: "evolution",
+    maxLevel: 1,
+    // Unlocks once BOTH Spirit Heart and Spirit Focus are maxed.
+    requires(levels) {
+      return (levels.spirit_heart || 0) >= 3 && (levels.frenzy_focus || 0) >= 3;
+    },
+    apply(game) {
+      game.spiritBondUnlocked = true;
+      game.evoBannerText = "Evolution Unlocked: Spirit Bond";
+      game.evoBannerTimer = 4;
     },
   },
 ];
