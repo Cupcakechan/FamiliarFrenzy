@@ -22,7 +22,7 @@ import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager } from "./enemies.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
-import { circlesOverlap, clamp } from "./utils.js";
+import { circlesOverlap, clamp, randomRange } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
 import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
@@ -83,10 +83,13 @@ const SHADOW_ALPHA = 0.78;        // darkness of the intro shadow veil
 const SHADOW_RADIUS = 230;        // clear "spotlight" radius around the witch
 const SHADOW_FADE_SECONDS = 1.2;  // how long the shadow takes to lift
 
-// Ambient wisp chitter: while anything spooky is alive, each second has this
-// chance to play the wisp noise once (the registry's minInterval prevents
-// stacking). Shared by regular wisps and the Elder Wisp.
-const WISP_NOISE_CHANCE_PER_SEC = 0.35;
+// Ambient wisp chitter: SCHEDULED, not rolled — after each chitter the next
+// one is booked at a random time in [MIN_GAP, MAX_GAP] seconds, and the timer
+// only counts down while something spooky is alive. Guarantees breathing room
+// (no per-frame coin-flip clustering). Shared by wisps, geckos, and the boss.
+const WISP_NOISE_MIN_GAP = 6;
+const WISP_NOISE_MAX_GAP = 14;
+const WISP_NOISE_FIRST_DELAY = 3; // seconds after a run starts before the first chitter can land
 
 // One line per lesson; each shows at most once per run, one at a time
 // (later triggers queue behind the active hint instead of interrupting).
@@ -210,6 +213,7 @@ export class Game {
     this.tutorialWavesStarted = true;  // only flips false for scripted tutorial runs
     this.tutorialFlaskGiven = false;
     this.shadowAlpha = 0;              // intro shadow veil opacity
+    this.wispNoiseTimer = WISP_NOISE_FIRST_DELAY; // next ambient chitter (scheduled)
 
     // Arcade initials entry (shown only for a qualifying Endless score).
     this.nameLetters = ["A", "A", "A"];
@@ -263,6 +267,7 @@ export class Game {
     this.tutorialHasMoved = false;
     this.tutorialGraceTimer = 0;
     this.tutorialFlaskGiven = false;
+    this.wispNoiseTimer = WISP_NOISE_FIRST_DELAY;
     const scripted = this.gameMode === "tutorial" && TUTORIAL_SCRIPT.holdWavesUntilMove;
     this.tutorialWavesStarted = !scripted;
     this.shadowAlpha = scripted ? SHADOW_ALPHA : 0;
@@ -695,9 +700,14 @@ export class Game {
     const boss = this.waveManager.boss;
     if (boss && !boss.dead) this.showHint("boss");
 
-    // Ambient wisp chitter (shared by wisps and the Elder Wisp).
-    if ((this.enemies.length > 0 || (boss && !boss.dead)) && Math.random() < WISP_NOISE_CHANCE_PER_SEC * dt) {
-      playSfx("wisp");
+    // Ambient wisp chitter: the timer only ticks while something spooky is
+    // alive; on expiry, play once and book the next chitter 6-14s out.
+    if (this.enemies.length > 0 || (boss && !boss.dead)) {
+      this.wispNoiseTimer -= dt;
+      if (this.wispNoiseTimer <= 0) {
+        playSfx("wisp");
+        this.wispNoiseTimer = randomRange(WISP_NOISE_MIN_GAP, WISP_NOISE_MAX_GAP);
+      }
     }
     if (boss && !boss.dead && boss.consumeSummon()) {
       const a = Math.random() * Math.PI * 2;
