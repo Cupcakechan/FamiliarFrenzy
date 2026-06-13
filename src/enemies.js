@@ -106,6 +106,12 @@ const ENEMY_ANIMS = {
   },
 };
 
+// The gecko's flung ball sprite (60x60 canvas, ~34px swirl ball inside).
+// Drawn at GECKO_BALL_SCALE (visual only — the gameplay hitbox stays radius 5)
+// and spun in crisp 90-degree steps so the pixel grid never blurs.
+loadImage("lizard_projectile", "assets/sprites/projectiles/lizard_projectile.png");
+const GECKO_BALL_SCALE = 0.5;
+
 // The fling pose lasts exactly one attack cycle (frames / fps = 4/10 = 0.4s).
 const GECKO_ATTACK_POSE_SECONDS = ENEMY_ANIMS.gecko.anims.attack / ENEMY_ANIMS.gecko.fps.attack;
 
@@ -139,8 +145,32 @@ export class EnemyBolt {
   }
 
   draw(ctx) {
-    // Placeholder "ball": teal glowing orb with a bright core (projectile
-    // sprite pending). Slight pulse so it reads as a live threat.
+    const img = getImage("lizard_projectile");
+
+    if (img && img.width > 0) {
+      // --- Sprite ball: soft sage halo for readability on the dark floor,
+      // then the art spun in exact quarter-turn steps (pixel-grid safe). ---
+      const dw = img.width * GECKO_BALL_SCALE;
+      const dh = img.height * GECKO_BALL_SCALE;
+      const haloR = this.radius * 2.4;
+      const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, haloR);
+      g.addColorStop(0, "rgba(140, 200, 150, 0.30)");
+      g.addColorStop(1, "rgba(140, 200, 150, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, haloR, 0, Math.PI * 2);
+      ctx.fill();
+
+      const quarter = Math.floor(this.spin / (Math.PI / 2)) % 4; // 0..3
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(quarter * (Math.PI / 2));
+      ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+      ctx.restore();
+      return;
+    }
+
+    // --- Fallback "ball": teal glowing orb with a bright core. ---
     const r = this.radius + Math.sin(this.spin) * 1;
     ctx.save();
     ctx.shadowColor = "#5ad1d1";
@@ -214,16 +244,19 @@ export class Enemy {
         mx = -dx / len; my = -dy / len;        // too close — back off
         repositioning = true;
       }
-      // Sideways drift (perpendicular) so it never moves on rails.
-      const strafe = Math.sin(this.wobble * 0.7) * 0.45;
-      mx += (-dy / len) * strafe;
-      my += (dx / len) * strafe;
-      // Cap the vector at unit length WITHOUT boosting small ones, so the
-      // in-dead-zone shuffle is genuinely slow (it pairs with the idle anim).
-      const mlen = Math.hypot(mx, my);
-      if (mlen > 1) { mx /= mlen; my /= mlen; }
-      this.x += mx * this.speed * dt;
-      this.y += my * this.speed * dt;
+      // Sideways drift (perpendicular) so approach/retreat never runs on
+      // rails — applied ONLY while repositioning. In the dead zone the gecko
+      // stands truly still: the idle animation provides the motion (moving
+      // while playing idle read as "sliding in place").
+      if (repositioning) {
+        const strafe = Math.sin(this.wobble * 0.7) * 0.45;
+        mx += (-dy / len) * strafe;
+        my += (dx / len) * strafe;
+        const mlen = Math.hypot(mx, my);
+        if (mlen > 1) { mx /= mlen; my /= mlen; }
+        this.x += mx * this.speed * dt;
+        this.y += my * this.speed * dt;
+      }
       this.repositioning = repositioning;
 
       // Fling on cooldown whenever the witch is in range.
