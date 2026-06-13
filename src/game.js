@@ -739,6 +739,17 @@ export class Game {
       this.enemies.push(new Enemy(ex, ey));
     }
 
+    // Watching Hand slam: at the impact instant, anyone inside the LOCKED ring
+    // takes slam damage (through normal i-frames, so it can't double-dip).
+    if (boss && !boss.dead && boss.consumeSlamHit) {
+      if (boss.consumeSlamHit()) {
+        if (circlesOverlap(boss.slamX, boss.slamY, boss.slamRadius, this.player.x, this.player.y, this.player.radius)) {
+          this.player.takeDamage(boss.slamDamage);
+        }
+        playSfx("wisp"); // placeholder thud until a slam SFX is added
+      }
+    }
+
     for (const enemy of this.enemies) {
       if (enemy.dead) {
         this.enemiesDefeated += 1;
@@ -1076,9 +1087,50 @@ export class Game {
     return { x: Math.round(camX), y: Math.round(camY) };
   }
 
+  // The Watching Hand's locked slam ring: a red→white danger circle that fades
+  // in over the windup and pulses while the hand is airborne. Drawn only when
+  // the active boss is mid-slam (slamMarkerAlpha > 0).
+  drawSlamMarker(ctx) {
+    const boss = this.waveManager.boss;
+    if (!boss || boss.dead || typeof boss.slamMarkerAlpha !== "function") return;
+    const a = boss.slamMarkerAlpha();
+    if (a <= 0) return;
+
+    const r = boss.slamRadius;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 90);
+    ctx.save();
+    ctx.globalAlpha = a;
+
+    // Filled danger tint.
+    ctx.fillStyle = `rgba(226, 83, 107, ${0.18 + pulse * 0.12})`;
+    ctx.beginPath();
+    ctx.arc(boss.slamX, boss.slamY, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Ring edge (brightens to white as impact nears via the alpha ramp).
+    ctx.strokeStyle = "#ff5a6e";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(boss.slamX, boss.slamY, r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // Inner crosshair so the locked center is unmistakable.
+    ctx.strokeStyle = `rgba(255, 246, 221, ${0.6 * pulse})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(boss.slamX - r * 0.4, boss.slamY);
+    ctx.lineTo(boss.slamX + r * 0.4, boss.slamY);
+    ctx.moveTo(boss.slamX, boss.slamY - r * 0.4);
+    ctx.lineTo(boss.slamX, boss.slamY + r * 0.4);
+    ctx.stroke();
+
+    ctx.restore();
+  }
+
   drawWorld(ctx) {
     this.drawArena(ctx);
     this.drawSpiritLink(ctx); // Frenzy ribbon: above the floor, below all actors
+    this.drawSlamMarker(ctx); // Watching Hand telegraph: on the floor, under actors
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
     for (const magnet of this.magnets) magnet.draw(ctx);

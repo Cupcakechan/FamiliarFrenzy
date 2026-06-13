@@ -13,7 +13,7 @@
      health  = 2 + floor(wave/3)  (+1 HP every 3 waves)
    ========================================================================= */
 
-import { randomInt, randomRange, clamp, dirFromVector } from "./utils.js";
+import { randomInt, randomRange, clamp, lerp, dirFromVector } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
 
 // --- Wisp enemy sprites (visual only) ------------------------------------
@@ -682,7 +682,276 @@ const GECKO_INTRO_WAVE = 5;       // geckos join the spawn mix from this wave on
 const GECKO_SPAWN_CHANCE = 0.25;  // chance each spawn slot rolls a gecko
 const GECKO_MAX_ALIVE = 3;        // never more than this many alive at once
 
+// ===========================================================================
+//  WATCHING HAND — second boss (Phase 1: skeleton).
+//  A giant crawling hand that HOPS around the arena. Phase 1 implements only
+//  the hop movement + placeholder art + boss-bar plumbing, so it's harmless
+//  and fully playable; the slam (Phase 2) and eye lasers (Phase 3) come later.
+//
+//  Deliberately simple per design: always faces south, no directional sprites,
+//  jumps shown via a shadow + position lerp (no jump sprite). Shares the same
+//  public surface the HUD/boss systems expect: x, y, radius, health, maxHealth,
+//  damage, dead, isBoss, name, hitFlash, takeDamage(), update(dt, player),
+//  draw(ctx). Eventual art: watching_hand_idle, watching_hand_slam (face-south).
+// ===========================================================================
+const HAND_HEALTH = 60;          // base; scaled by tier like the Elder Wisp
+const HAND_DAMAGE = 18;          // contact damage if you stand on the body
+const HAND_HOP_MIN = 1.2;        // seconds resting between hops
+const HAND_HOP_MAX = 1.8;
+const HAND_HOP_AIR = 0.45;       // seconds airborne per hop
+const HAND_HOP_RANGE = 260;      // max hop distance toward a new spot near the player
+const HAND_HOPS_PER_SLAM = 2;    // hops it takes between slams
+
+// --- Slam attack (the core threat) ------------------------------------------
+// The marker LOCKS at windup start (+ a small velocity lead) and never moves —
+// you dodge by walking out of the locked ring during the airborne window.
+const SLAM_WINDUP = 0.4;         // crouch; marker fades in at the locked spot
+const SLAM_AIR = 0.7;            // hand rises; marker solid + pulsing
+const SLAM_IMPACT = 0.15;        // ring is LIVE DAMAGE for this instant
+const SLAM_RECOVER = 0.8;        // grounded, vulnerable punish window
+const SLAM_RADIUS = 72;          // danger ring radius (player radius is 16)
+const SLAM_LEAD = 0.18;          // seconds of player velocity to lead the marker
+const SLAM_DAMAGE_MULT = 1.0;    // slam damage = this.damage * this (tunable)
+
+loadImage("watching_hand_idle", "assets/sprites/enemies/watching_hand_idle.png");
+loadImage("watching_hand_slam", "assets/sprites/enemies/watching_hand_slam.png");
+
+export class WatchingHand {
+  constructor(x, y, tier = 1) {
+    this.x = x;
+    this.y = y;
+    this.radius = 32;
+    this.tier = tier;
+
+    this.maxHealth = HAND_HEALTH * tier;
+    this.health = this.maxHealth;
+    this.damage = HAND_DAMAGE + (tier - 1) * 5;
+
+    this.dead = false;
+    this.hitFlash = 0;
+    this.isBoss = true;
+    this.name = "The Watching Hand";
+
+    this.facing = "s"; // always south by design
+
+    // Phases: "rest" (grounded, vulnerable) -> "air" (hop lerp) -> ... after
+    // HAND_HOPS_PER_SLAM hops -> "windup" -> "slam_air" -> "impact" ->
+    // "recover" -> rest. The shadow shrinks during airborne phases to fake the
+    // jump arc; the slam marker is locked at windup start.
+    this.phase = "rest";
+    this.hopRestTimer = randomRange(HAND_HOP_MIN, HAND_HOP_MAX);
+    this.hopsSinceSlam = 0;
+    this.airTimer = 0;
+    this.hopProgress = 0;        // 0..1 jump arc, drives shadow + body lift
+    this.hopFromX = x; this.hopFromY = y;
+    this.hopToX = x;   this.hopToY = y;
+
+    // Slam state.
+    this.phaseTimer = 0;         // counts the current slam sub-phase
+    this.slamX = x; this.slamY = y; // LOCKED marker position
+    this.slamFired = false;      // ensures the impact damages once
+    this.slamHitPending = false; // game.js reads + clears this to apply ring damage
+
+    this.wobble = Math.random() * Math.PI * 2;
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.spriteScale = 2.0; // tune once art is in (placeholder ignores this)
+
+    // World bounds for hop clamping, learned from the view each update.
+    this._worldW = 2400;
+    this._worldH = 1344;
+  }
+
+  // Driven by the generic enemy loop as update(dt, player, enemyBolts); the
+  // Hand ignores the 3rd arg. SLAM_RADIUS/marker are exposed for game.js to
+  // draw + collide.
+  update(dt, player) {
+    this.wobble += dt * 3;
+    if (this.hitFlash > 0) this.hitFlash -= dt;
+
+    switch (this.phase) {
+      case "rest":
+        this.hopRestTimer -= dt;
+        if (this.hopRestTimer <= 0) {
+          if (this.hopsSinceSlam >= HAND_HOPS_PER_SLAM) this.beginSlam(player);
+          else this.beginHop(player);
+        }
+        break;
+
+      case "air": {
+        this.airTimer += dt;
+        const t = Math.min(1, this.airTimer / HAND_HOP_AIR);
+        const e = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2; // ease-in-out
+        this.x = lerp(this.hopFromX, this.hopToX, e);
+        this.y = lerp(this.hopFromY, this.hopToY, e);
+        this.hopProgress = t;
+        if (t >= 1) {
+          this.phase = "rest";
+          this.hopRestTimer = randomRange(HAND_HOP_MIN, HAND_HOP_MAX);
+          this.hopProgress = 0;
+          this.hopsSinceSlam += 1;
+        }
+        break;
+      }
+
+      // --- Slam cycle ---
+      case "windup":
+        // Marker is already locked; just brace. (Marker fades in via timer.)
+        this.phaseTimer += dt;
+        if (this.phaseTimer >= SLAM_WINDUP) { this.phase = "slam_air"; this.phaseTimer = 0; }
+        break;
+
+      case "slam_air": {
+        // Hand lifts off and travels to OVER the locked marker; marker solid.
+        this.phaseTimer += dt;
+        const t = Math.min(1, this.phaseTimer / SLAM_AIR);
+        this.hopProgress = t; // reuse arc for body lift + shadow
+        this.x = lerp(this.hopFromX, this.slamX, t);
+        this.y = lerp(this.hopFromY, this.slamY, t);
+        if (t >= 1) { this.phase = "impact"; this.phaseTimer = 0; this.hopProgress = 0; }
+        break;
+      }
+
+      case "impact":
+        // The instant of contact: flag the ring as live ONCE; game.js reads it.
+        if (!this.slamFired) { this.slamHitPending = true; this.slamFired = true; }
+        this.phaseTimer += dt;
+        if (this.phaseTimer >= SLAM_IMPACT) { this.phase = "recover"; this.phaseTimer = 0; }
+        break;
+
+      case "recover":
+        this.phaseTimer += dt;
+        if (this.phaseTimer >= SLAM_RECOVER) {
+          this.phase = "rest";
+          this.hopRestTimer = randomRange(HAND_HOP_MIN, HAND_HOP_MAX);
+          this.hopsSinceSlam = 0;
+        }
+        break;
+    }
+
+    this.animTimer += dt;
+    if (this.animTimer >= 1 / 6) { this.animTimer -= 1 / 6; this.animFrame += 1; }
+  }
+
+  // Lock the slam marker at the player's position + a small velocity lead, then
+  // enter the windup. The marker NEVER moves after this — that's the fairness
+  // contract: telegraph, then commit.
+  beginSlam(player) {
+    const vx = player.vx || 0; // player exposes velocity if available; 0 is fine
+    const vy = player.vy || 0;
+    this.slamX = clamp(player.x + vx * SLAM_LEAD, 40, this._worldW - 40);
+    this.slamY = clamp(player.y + vy * SLAM_LEAD, 40, this._worldH - 40);
+    this.hopFromX = this.x; this.hopFromY = this.y;
+    this.phase = "windup";
+    this.phaseTimer = 0;
+    this.slamFired = false;
+    this.hopProgress = 0;
+  }
+
+  // True only for the single frame the ring should deal damage; game.js calls
+  // this, applies the ring check, and the flag self-clears.
+  consumeSlamHit() {
+    if (this.slamHitPending) { this.slamHitPending = false; return true; }
+    return false;
+  }
+
+  // Slam danger geometry for game.js (marker draw + ring collision).
+  get slamRadius() { return SLAM_RADIUS; }
+  get slamDamage() { return Math.round(this.damage * SLAM_DAMAGE_MULT); }
+  // 0..1 telegraph intensity for the marker: fades in over windup, full during
+  // air, brightest at impact. 0 = don't draw.
+  slamMarkerAlpha() {
+    if (this.phase === "windup") return Math.min(1, this.phaseTimer / SLAM_WINDUP) * 0.7;
+    if (this.phase === "slam_air") return 0.7 + 0.3 * Math.min(1, this.phaseTimer / SLAM_AIR);
+    if (this.phase === "impact") return 1;
+    return 0;
+  }
+
+  // Pick a landing spot: a hop toward the player (capped at HAND_HOP_RANGE),
+  // so it closes in over several hops but never teleports onto them.
+  beginHop(player) {
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const dist = Math.min(HAND_HOP_RANGE, len * 0.7);
+    this.hopFromX = this.x; this.hopFromY = this.y;
+    this.hopToX = clamp(this.x + (dx / len) * dist, 40, this._worldW - 40);
+    this.hopToY = clamp(this.y + (dy / len) * dist, 40, this._worldH - 40);
+    this.phase = "air";
+    this.airTimer = 0;
+    this.hopProgress = 0;
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    this.hitFlash = 0.08;
+    if (this.health <= 0) this.dead = true;
+  }
+
+  // The Hand has no summon mechanic — stub keeps game.js's shared boss-summon
+  // call a safe no-op (Phase 2/3 add the slam + lasers instead).
+  consumeSummon() {
+    return false;
+  }
+
+  draw(ctx) {
+    const flash = this.hitFlash > 0;
+    const airborne = this.phase === "air" || this.phase === "slam_air";
+    const hopH = airborne ? Math.sin(this.hopProgress * Math.PI) * 46 : 0; // fake arc height
+    const by = this.y - hopH; // body lifts while airborne; shadow stays grounded
+
+    ctx.save();
+
+    // Ground shadow (shrinks while airborne).
+    const shadowScale = 1 - (hopH / 46) * 0.45;
+    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+    ctx.beginPath();
+    ctx.ellipse(this.x, this.y + this.radius * 0.7, this.radius * shadowScale, this.radius * 0.45 * shadowScale, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    const slamming = this.phase === "windup" || this.phase === "slam_air" || this.phase === "impact";
+    const img = getImage(slamming ? "watching_hand_slam" : "watching_hand_idle")
+             || getImage("watching_hand_idle");
+    if (img && img.width > 0) {
+      const dw = img.width * this.spriteScale;
+      const dh = img.height * this.spriteScale;
+      if (flash) ctx.globalAlpha = 0.85;
+      ctx.drawImage(img, this.x - dw / 2, by - dh / 2, dw, dh);
+    } else {
+      // --- Placeholder: pale fingered hand with watching eyes ---
+      const r = this.radius;
+      ctx.fillStyle = flash ? "#ffffff" : "#d9cdb8";
+      for (let i = -1.5; i <= 1.5; i += 1) { // four knuckle bumps
+        ctx.beginPath();
+        ctx.arc(this.x + i * (r * 0.5), by - r * 0.6, r * 0.32, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.beginPath(); // palm
+      ctx.ellipse(this.x, by, r, r * 0.85, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const eyes = [[-0.4, -0.1], [0.4, -0.1], [-0.15, 0.35], [0.2, 0.3]];
+      for (const [ex, ey] of eyes) {
+        ctx.fillStyle = flash ? "#fff6dd" : "#f4d58d";
+        ctx.beginPath();
+        ctx.arc(this.x + ex * r, by + ey * r, r * 0.13, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = "#1c1a26"; // pupil
+        ctx.beginPath();
+        ctx.arc(this.x + ex * r, by + ey * r, r * 0.06, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+}
+
+// --- Boss selection ----------------------------------------------------------
+// DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
+// which: "elder_wisp", "watching_hand", or "auto" (the normal alternation —
+// Elder Wisp on wave 10/30/..., Watching Hand on wave 20/40/...).
 const DEBUG_FORCE_BOSS = false;
+const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand"
 
 export class WaveManager {
   constructor(maxWaves = 10) {
@@ -778,7 +1047,17 @@ export class WaveManager {
 
   makeBoss(view, tier = 1) {
     const pos = spawnOutsideView(view);
-    return new Boss(pos.x, pos.y, tier);
+    // Which boss: debug override wins; otherwise alternate by boss-wave count —
+    // Elder Wisp on the 1st/3rd/... boss (wave 10, 30, ...), Watching Hand on
+    // the 2nd/4th/... (wave 20, 40, ...). bossOrdinal = how many bosses deep.
+    let type = DEBUG_BOSS_TYPE;
+    if (type === "auto") {
+      const bossOrdinal = Math.max(1, Math.round(this.wave / 10)); // 1 at wave 10, 2 at 20...
+      type = bossOrdinal % 2 === 0 ? "watching_hand" : "elder_wisp";
+    }
+    return type === "watching_hand"
+      ? new WatchingHand(pos.x, pos.y, tier)
+      : new Boss(pos.x, pos.y, tier);
   }
 
   // Which type the next spawn slot is: Gutter Geckos join from
