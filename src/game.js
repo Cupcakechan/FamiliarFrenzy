@@ -761,8 +761,10 @@ export class Game {
         const room = Math.max(0, boss.summonGeckoCap - geckosAlive);
         const spawn = Math.min(want, room);
         for (let i = 0; i < spawn; i++) {
+          // Spawn on a ring clear of the hand's body (boss.radius) plus a gap,
+          // so geckos crawl out AROUND the hand rather than on top of it.
           const a = Math.random() * Math.PI * 2;
-          const r = 50 + Math.random() * 40;
+          const r = boss.radius + 70 + Math.random() * 50; // ~102-152px out
           const GECKO_R = 13; // matches Enemy.radius
           const ex = clamp(boss.x + Math.cos(a) * r, TILE + GECKO_R, this.world.width - TILE - GECKO_R);
           const ey = clamp(boss.y + Math.sin(a) * r, TILE + GECKO_R, this.world.height - TILE - GECKO_R);
