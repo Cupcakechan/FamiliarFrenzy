@@ -401,6 +401,24 @@ function spawnOutsideView(view, margin = 40) {
   };
 }
 
+// --- Playfield bounds (the walkable floor inside the wall ring) --------------
+// The arena has a one-tile (WALL_INSET) wall border. Enemies, boss summons,
+// hop targets, and slam markers must stay on the FLOOR accounting for their
+// own body radius — otherwise things spawn/land half-buried in the wall and,
+// near the world edge, sit outside the camera view. The WaveManager refreshes
+// PLAYFIELD from the live view each frame; clampToPlayfield(x, y, radius)
+// keeps a body fully on the floor.
+const WALL_INSET = 32; // matches game.js TILE wall ring
+const PLAYFIELD = { worldW: 2400, worldH: 1344 };
+
+function clampToPlayfield(x, y, radius = 0) {
+  const m = WALL_INSET + radius;
+  return {
+    x: clamp(x, m, PLAYFIELD.worldW - m),
+    y: clamp(y, m, PLAYFIELD.worldH - m),
+  };
+}
+
 // --- Boss: Elder Wisp (Wave 10) ------------------------------------------
 // Tunable constants (Endless can later pass a higher `tier` for tougher bosses).
 const BOSS_HEALTH = 50;
@@ -727,11 +745,11 @@ const SUMMON_TOTAL_GECKO_CAP = 4; // game.js won't exceed this many geckos alive
 const SUMMON_RECOVER = 0.5;      // settle beat before hopping resumes
 
 loadImage("watching_hand_idle", "assets/sprites/enemies/watching_hand_idle.png");
-loadImage("watching_hand_slam", "assets/sprites/enemies/watching_hand_slam.png");
+loadImage("watching_hand_slam", "assets/sprites/enemies/watching_hand_slam.png");   // south (default)
+loadImage("watching_hand_slam_n", "assets/sprites/enemies/watching_hand_slam_n.png"); // north (slamming upward)
 const HAND_IDLE_FRAMES = 6; // idle strip: open hand, eyes shifting
 const HAND_SLAM_FRAMES = 6; // slam strip: open -> fist
-const HAND_IDLE_FPS = 6;
-const HAND_SLAM_FPS = 12;   // 6 frames @ 12fps = 0.5s, ~the windup+impact beat
+const HAND_IDLE_FPS = 6;    // idle is free-running; the slam is progress-driven
 
 export class WatchingHand {
   constructor(x, y, tier = 1) {
@@ -766,7 +784,8 @@ export class WatchingHand {
     // Slam state.
     this.phaseTimer = 0;         // counts the current slam/summon sub-phase
     this.slamX = x; this.slamY = y; // LOCKED marker position
-    this.slamFired = false;      // ensures the impact damages once
+    this.slamFacing = "s";          // "s" | "n" — which slam strip to use
+    this.slamFired = false;         // ensures the impact damages once
     this.slamHitPending = false; // game.js reads + clears this to apply ring damage
 
     // Summon state.
@@ -783,10 +802,12 @@ export class WatchingHand {
     this._worldH = 1344;
   }
 
-  // Driven by the generic enemy loop as update(dt, player, enemyBolts); the
-  // Hand ignores the 3rd arg. SLAM_RADIUS/marker are exposed for game.js to
-  // draw + collide.
+  // Driven by the generic enemy loop as update(dt, player, enemyBolts). The
+  // 3rd arg is ignored; world bounds come from the module-level PLAYFIELD set
+  // by the WaveManager each frame (so hop/slam targets stay on the floor).
   update(dt, player) {
+    this._worldW = PLAYFIELD.worldW;
+    this._worldH = PLAYFIELD.worldH;
     this.wobble += dt * 3;
     if (this.hitFlash > 0) this.hitFlash -= dt;
 
@@ -879,21 +900,42 @@ export class WatchingHand {
         break;
     }
 
-    // Animation: the slam strip (open->fist) plays during the slam windup/air/
-    // impact and during the summon rise (the hand opening to call); it holds on
-    // its last frame. Idle loops the rest of the time.
+    // Animation. Idle free-runs (loop). The slam/summon poses are PROGRESS-
+    // DRIVEN, not clocked: the 6-frame open->fist strip is mapped across the
+    // whole slam so the hand opens during the windup, hangs/rises through the
+    // air on the early frames, then punches through the final frames exactly as
+    // it descends to impact — keeping the art in sync with the real motion.
     const onSlamAnim = this.phase === "windup" || this.phase === "slam_air" ||
                        this.phase === "impact" || this.phase === "summon_windup";
-    const fps = onSlamAnim ? HAND_SLAM_FPS : HAND_IDLE_FPS;
-    const frames = onSlamAnim ? HAND_SLAM_FRAMES : HAND_IDLE_FRAMES;
-    if (onSlamAnim !== this._onSlamAnimPrev) { this.animFrame = 0; this.animTimer = 0; }
-    this._onSlamAnimPrev = onSlamAnim;
-    this.animTimer += dt;
-    while (this.animTimer >= 1 / fps) {
-      this.animTimer -= 1 / fps;
-      if (onSlamAnim) { if (this.animFrame < frames - 1) this.animFrame += 1; } // hold last
-      else this.animFrame = (this.animFrame + 1) % frames; // idle loops
+
+    if (onSlamAnim) {
+      const last = HAND_SLAM_FRAMES - 1;
+      let p; // 0..1 progress across the slam/summon gesture
+      if (this.phase === "windup") {
+        // First ~40% of the strip spreads over the windup (hand opening).
+        p = (this.phaseTimer / SLAM_WINDUP) * 0.4;
+      } else if (this.phase === "slam_air") {
+        // Next chunk over the airborne rise/hang (still early frames).
+        p = 0.4 + (this.phaseTimer / SLAM_AIR) * 0.4;
+      } else if (this.phase === "impact") {
+        // The punch: final frames land during the brief impact window.
+        p = 0.8 + Math.min(1, this.phaseTimer / SLAM_IMPACT) * 0.2;
+      } else {
+        // summon_windup: run the open->fist gesture across the rise.
+        p = this.phaseTimer / SUMMON_WINDUP;
+      }
+      this.animFrame = Math.min(last, Math.floor(p * HAND_SLAM_FRAMES));
+    } else {
+      // Idle loops on a free-running clock.
+      this.animTimer += dt;
+      while (this.animTimer >= 1 / HAND_IDLE_FPS) {
+        this.animTimer -= 1 / HAND_IDLE_FPS;
+        this.animFrame = (this.animFrame + 1) % HAND_IDLE_FRAMES;
+      }
     }
+    // Reset the idle frame cleanly when leaving a slam pose.
+    if (onSlamAnim !== this._onSlamAnimPrev && !onSlamAnim) { this.animFrame = 0; this.animTimer = 0; }
+    this._onSlamAnimPrev = onSlamAnim;
   }
 
   // Lock the slam marker at the player's position + a small velocity lead, then
@@ -902,8 +944,12 @@ export class WatchingHand {
   beginSlam(player) {
     const vx = player.vx || 0; // player exposes velocity if available; 0 is fine
     const vy = player.vy || 0;
-    this.slamX = clamp(player.x + vx * SLAM_LEAD, 40, this._worldW - 40);
-    this.slamY = clamp(player.y + vy * SLAM_LEAD, 40, this._worldH - 40);
+    // Lock the marker on the floor, keeping the whole ring off the wall.
+    const lock = clampToPlayfield(player.x + vx * SLAM_LEAD, player.y + vy * SLAM_LEAD, SLAM_RADIUS);
+    this.slamX = lock.x;
+    this.slamY = lock.y;
+    // Face north when slamming clearly upward, else south (its default pose).
+    this.slamFacing = lock.y < this.y - 20 ? "n" : "s";
     this.hopFromX = this.x; this.hopFromY = this.y;
     this.phase = "windup";
     this.phaseTimer = 0;
@@ -966,8 +1012,9 @@ export class WatchingHand {
     const len = Math.hypot(dx, dy) || 1;
     const dist = Math.min(HAND_HOP_RANGE, len * 0.7);
     this.hopFromX = this.x; this.hopFromY = this.y;
-    this.hopToX = clamp(this.x + (dx / len) * dist, 40, this._worldW - 40);
-    this.hopToY = clamp(this.y + (dy / len) * dist, 40, this._worldH - 40);
+    const dest = clampToPlayfield(this.x + (dx / len) * dist, this.y + (dy / len) * dist, this.radius);
+    this.hopToX = dest.x;
+    this.hopToY = dest.y;
     this.phase = "air";
     this.airTimer = 0;
     this.hopProgress = 0;
@@ -1002,8 +1049,15 @@ export class WatchingHand {
 
     const slamming = this.phase === "windup" || this.phase === "slam_air" ||
                      this.phase === "impact" || this.phase === "summon_windup";
-    const useSlam = slamming && getImage("watching_hand_slam");
-    const img = useSlam ? getImage("watching_hand_slam") : getImage("watching_hand_idle");
+    // North slam uses its own strip during the slam phases; the summon rise
+    // always uses the south (default) gesture. Falls back to south if the
+    // north strip is missing.
+    const slamFacingN = this.slamFacing === "n" &&
+      (this.phase === "windup" || this.phase === "slam_air" || this.phase === "impact");
+    const slamKey = (slamFacingN && getImage("watching_hand_slam_n"))
+      ? "watching_hand_slam_n" : "watching_hand_slam";
+    const useSlam = slamming && getImage(slamKey);
+    const img = useSlam ? getImage(slamKey) : getImage("watching_hand_idle");
     if (img && img.width > 0) {
       const frames = useSlam ? HAND_SLAM_FRAMES : HAND_IDLE_FRAMES;
       const fw = img.width / frames;
@@ -1091,6 +1145,9 @@ export class WaveManager {
   // Mutates the `enemies` array. Call every frame while playing.
   // `view` describes the camera/world so spawns happen just off-screen.
   update(dt, enemies, view) {
+    // Keep the shared playfield bounds current (used by hop/slam/spawn clamps).
+    if (view) { PLAYFIELD.worldW = view.worldW; PLAYFIELD.worldH = view.worldH; }
+
     if (this.phase === "intermission") {
       this.timer -= dt;
       if (this.timer <= 0) this.startNextWave(enemies, view);

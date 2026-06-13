@@ -734,8 +734,9 @@ export class Game {
     if (boss && !boss.dead && boss.consumeSummon()) {
       const a = Math.random() * Math.PI * 2;
       const r = 36 + Math.random() * 28;
-      const ex = clamp(boss.x + Math.cos(a) * r, TILE, this.world.width - TILE);
-      const ey = clamp(boss.y + Math.sin(a) * r, TILE, this.world.height - TILE);
+      const WISP_R = 13; // matches Enemy.radius
+      const ex = clamp(boss.x + Math.cos(a) * r, TILE + WISP_R, this.world.width - TILE - WISP_R);
+      const ey = clamp(boss.y + Math.sin(a) * r, TILE + WISP_R, this.world.height - TILE - WISP_R);
       this.enemies.push(new Enemy(ex, ey));
     }
 
@@ -762,8 +763,9 @@ export class Game {
         for (let i = 0; i < spawn; i++) {
           const a = Math.random() * Math.PI * 2;
           const r = 50 + Math.random() * 40;
-          const ex = clamp(boss.x + Math.cos(a) * r, TILE, this.world.width - TILE);
-          const ey = clamp(boss.y + Math.sin(a) * r, TILE, this.world.height - TILE);
+          const GECKO_R = 13; // matches Enemy.radius
+          const ex = clamp(boss.x + Math.cos(a) * r, TILE + GECKO_R, this.world.width - TILE - GECKO_R);
+          const ey = clamp(boss.y + Math.sin(a) * r, TILE + GECKO_R, this.world.height - TILE - GECKO_R);
           const g = new Enemy(ex, ey, "gutter_gecko");
           this.enemies.push(g);
         }
