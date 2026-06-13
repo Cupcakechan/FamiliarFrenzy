@@ -747,7 +747,7 @@ export class Game {
         if (circlesOverlap(boss.slamX, boss.slamY, boss.slamRadius, this.player.x, this.player.y, this.player.radius)) {
           this.player.takeDamage(boss.slamDamage);
         }
-        playSfx("wisp"); // placeholder thud until a slam SFX is added
+        playSfx("hand_slam"); // plays on the slam impact frame
       }
     }
 

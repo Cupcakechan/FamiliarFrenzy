@@ -63,7 +63,7 @@ const ENEMY_TYPES = {
   },
   gutter_gecko: {
     spritePrefix: "gecko",
-    spriteScale: 0.5, // tune independently once the gecko art is in
+    spriteScale: 0.6, // tune independently once the gecko art is in
     speedMult: 0.6,   // slower than a wisp — it fights from range
     healthMult: 0.75, // squishier — reach is its armor
     damage: 8,        // contact damage if you do touch it
@@ -1100,8 +1100,8 @@ export class WatchingHand {
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal alternation —
 // Elder Wisp on wave 10/30/..., Watching Hand on wave 20/40/...).
-const DEBUG_FORCE_BOSS = true;
-const DEBUG_BOSS_TYPE = "watching_hand"; // "auto" | "elder_wisp" | "watching_hand"
+const DEBUG_FORCE_BOSS = false;
+const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand"
 
 export class WaveManager {
   constructor(maxWaves = 10) {

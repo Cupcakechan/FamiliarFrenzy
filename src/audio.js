@@ -293,10 +293,11 @@ const SFX_DEFS = {
   magnet:     { src: "assets/sfx/magnet.mp3",     volume: 0.50, voices: 1, minInterval: 0.10 },
   wisp:       { src: "assets/sfx/wisp_noise.mp3", volume: 0.30, voices: 3, minInterval: 0.25 },
   hint:       { src: "assets/sfx/hint.mp3",       volume: 0.40, voices: 1, minInterval: 0.20 },
+  hand_slam:  { src: "assets/sfx/hand_slam.mp3",  volume: 0.55, voices: 2, minInterval: 0.10 },
 };
 
 const SFX_STORAGE_KEY = "ff_sfxVolume";
-const DEFAULT_SFX_VOLUME = 50; // master, 0..100
+const DEFAULT_SFX_VOLUME = 50; // master, 0..100 (new players start at half)
 
 let sfxVolume = DEFAULT_SFX_VOLUME;
 const sfxPools = {}; // name -> { voices: [Audio], index, lastPlayed }
