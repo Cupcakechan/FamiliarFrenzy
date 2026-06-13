@@ -686,7 +686,8 @@ const GECKO_MAX_ALIVE = 3;        // never more than this many alive at once
 //  WATCHING HAND — second boss (Phase 1: skeleton).
 //  A giant crawling hand that HOPS around the arena. Phase 1 implements only
 //  the hop movement + placeholder art + boss-bar plumbing, so it's harmless
-//  and fully playable; the slam (Phase 2) and eye lasers (Phase 3) come later.
+//  Hops + slam (with a locked telegraph) + a gecko-summon phase at HP
+//  thresholds. Always faces south; jumps faked via shadow + position lerp.
 //
 //  Deliberately simple per design: always faces south, no directional sprites,
 //  jumps shown via a shadow + position lerp (no jump sprite). Shares the same
@@ -713,8 +714,24 @@ const SLAM_RADIUS = 72;          // danger ring radius (player radius is 16)
 const SLAM_LEAD = 0.18;          // seconds of player velocity to lead the marker
 const SLAM_DAMAGE_MULT = 1.0;    // slam damage = this.damage * this (tunable)
 
+// --- Summon phase (event at HP thresholds) ----------------------------------
+// Interrupts the loop (never concurrent with a slam — it only triggers from a
+// safe phase). The Hand rises and a burst of Gutter Geckos crawls out around
+// it, then it resumes hopping. Fits the theme far better than eye-beams: a
+// giant hand calling forth crawling things. game.js does the actual spawning
+// (it owns the enemy list) when consumeSummonBurst() returns the count.
+const SUMMON_THRESHOLDS = [0.75, 0.50, 0.25]; // fire once each as HP drops past these
+const SUMMON_WINDUP = 0.5;       // rise + telegraph before the geckos appear
+const SUMMON_BURST = 3;          // geckos requested per event
+const SUMMON_TOTAL_GECKO_CAP = 4; // game.js won't exceed this many geckos alive
+const SUMMON_RECOVER = 0.5;      // settle beat before hopping resumes
+
 loadImage("watching_hand_idle", "assets/sprites/enemies/watching_hand_idle.png");
 loadImage("watching_hand_slam", "assets/sprites/enemies/watching_hand_slam.png");
+const HAND_IDLE_FRAMES = 6; // idle strip: open hand, eyes shifting
+const HAND_SLAM_FRAMES = 6; // slam strip: open -> fist
+const HAND_IDLE_FPS = 6;
+const HAND_SLAM_FPS = 12;   // 6 frames @ 12fps = 0.5s, ~the windup+impact beat
 
 export class WatchingHand {
   constructor(x, y, tier = 1) {
@@ -747,10 +764,14 @@ export class WatchingHand {
     this.hopToX = x;   this.hopToY = y;
 
     // Slam state.
-    this.phaseTimer = 0;         // counts the current slam sub-phase
+    this.phaseTimer = 0;         // counts the current slam/summon sub-phase
     this.slamX = x; this.slamY = y; // LOCKED marker position
     this.slamFired = false;      // ensures the impact damages once
     this.slamHitPending = false; // game.js reads + clears this to apply ring damage
+
+    // Summon state.
+    this.summonsUsed = 0;          // how many threshold events have fired
+    this.summonBurstPending = 0;   // geckos game.js should spawn (it reads + clears)
 
     this.wobble = Math.random() * Math.PI * 2;
     this.animFrame = 0;
@@ -768,6 +789,15 @@ export class WatchingHand {
   update(dt, player) {
     this.wobble += dt * 3;
     if (this.hitFlash > 0) this.hitFlash -= dt;
+
+    // HP-threshold check: if health has dropped past the next summon threshold,
+    // call forth a gecko burst — but only from a safe phase (rest/air), so an
+    // in-progress slam always completes first (no jarring mid-slam cancel).
+    const hpFrac = this.health / this.maxHealth;
+    const canSummon = this.phase === "rest" || this.phase === "air";
+    if (canSummon && this.summonsUsed < SUMMON_THRESHOLDS.length && hpFrac <= SUMMON_THRESHOLDS[this.summonsUsed]) {
+      this.beginSummon();
+    }
 
     switch (this.phase) {
       case "rest":
@@ -827,10 +857,43 @@ export class WatchingHand {
           this.hopsSinceSlam = 0;
         }
         break;
+
+      // --- Summon (gecko burst) ---
+      case "summon_windup":
+        // Hand rises + telegraphs; the geckos appear when the windup ends.
+        this.phaseTimer += dt;
+        if (this.phaseTimer >= SUMMON_WINDUP) {
+          this.summonBurstPending = SUMMON_BURST; // game.js spawns + clears
+          this.phase = "summon_recover";
+          this.phaseTimer = 0;
+        }
+        break;
+
+      case "summon_recover":
+        this.phaseTimer += dt;
+        if (this.phaseTimer >= SUMMON_RECOVER) {
+          this.phase = "rest";
+          this.hopRestTimer = randomRange(HAND_HOP_MIN, HAND_HOP_MAX);
+          this.hopsSinceSlam = 0;
+        }
+        break;
     }
 
+    // Animation: the slam strip (open->fist) plays during the slam windup/air/
+    // impact and during the summon rise (the hand opening to call); it holds on
+    // its last frame. Idle loops the rest of the time.
+    const onSlamAnim = this.phase === "windup" || this.phase === "slam_air" ||
+                       this.phase === "impact" || this.phase === "summon_windup";
+    const fps = onSlamAnim ? HAND_SLAM_FPS : HAND_IDLE_FPS;
+    const frames = onSlamAnim ? HAND_SLAM_FRAMES : HAND_IDLE_FRAMES;
+    if (onSlamAnim !== this._onSlamAnimPrev) { this.animFrame = 0; this.animTimer = 0; }
+    this._onSlamAnimPrev = onSlamAnim;
     this.animTimer += dt;
-    if (this.animTimer >= 1 / 6) { this.animTimer -= 1 / 6; this.animFrame += 1; }
+    while (this.animTimer >= 1 / fps) {
+      this.animTimer -= 1 / fps;
+      if (onSlamAnim) { if (this.animFrame < frames - 1) this.animFrame += 1; } // hold last
+      else this.animFrame = (this.animFrame + 1) % frames; // idle loops
+    }
   }
 
   // Lock the slam marker at the player's position + a small velocity lead, then
@@ -858,6 +921,34 @@ export class WatchingHand {
   // Slam danger geometry for game.js (marker draw + ring collision).
   get slamRadius() { return SLAM_RADIUS; }
   get slamDamage() { return Math.round(this.damage * SLAM_DAMAGE_MULT); }
+
+  // Enter the summon phase: rise + telegraph, then a gecko burst crawls out.
+  beginSummon() {
+    this.summonsUsed += 1;
+    this.phase = "summon_windup";
+    this.phaseTimer = 0;
+  }
+
+  // game.js calls this each frame; when a burst is pending it returns the
+  // requested count (and clears), so game.js can spawn against its own caps.
+  consumeSummonBurst() {
+    if (this.summonBurstPending > 0) {
+      const n = this.summonBurstPending;
+      this.summonBurstPending = 0;
+      return n;
+    }
+    return 0;
+  }
+  get summonGeckoCap() { return SUMMON_TOTAL_GECKO_CAP; }
+
+  // 0..1 telegraph intensity for the summon windup (a rising glow under the
+  // Hand), 0 when not summoning.
+  summonGlow() {
+    if (this.phase === "summon_windup") return Math.min(1, this.phaseTimer / SUMMON_WINDUP);
+    if (this.phase === "summon_recover") return 1 - Math.min(1, this.phaseTimer / SUMMON_RECOVER);
+    return 0;
+  }
+
   // 0..1 telegraph intensity for the marker: fades in over windup, full during
   // air, brightest at impact. 0 = don't draw.
   slamMarkerAlpha() {
@@ -889,7 +980,7 @@ export class WatchingHand {
   }
 
   // The Hand has no summon mechanic — stub keeps game.js's shared boss-summon
-  // call a safe no-op (Phase 2/3 add the slam + lasers instead).
+  // call a safe no-op (the Hand uses slam + gecko summons, not minions).
   consumeSummon() {
     return false;
   }
@@ -909,14 +1000,19 @@ export class WatchingHand {
     ctx.ellipse(this.x, this.y + this.radius * 0.7, this.radius * shadowScale, this.radius * 0.45 * shadowScale, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    const slamming = this.phase === "windup" || this.phase === "slam_air" || this.phase === "impact";
-    const img = getImage(slamming ? "watching_hand_slam" : "watching_hand_idle")
-             || getImage("watching_hand_idle");
+    const slamming = this.phase === "windup" || this.phase === "slam_air" ||
+                     this.phase === "impact" || this.phase === "summon_windup";
+    const useSlam = slamming && getImage("watching_hand_slam");
+    const img = useSlam ? getImage("watching_hand_slam") : getImage("watching_hand_idle");
     if (img && img.width > 0) {
-      const dw = img.width * this.spriteScale;
-      const dh = img.height * this.spriteScale;
+      const frames = useSlam ? HAND_SLAM_FRAMES : HAND_IDLE_FRAMES;
+      const fw = img.width / frames;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = Math.floor(this.animFrame) % frames * fw;
       if (flash) ctx.globalAlpha = 0.85;
-      ctx.drawImage(img, this.x - dw / 2, by - dh / 2, dw, dh);
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, by - dh / 2, dw, dh);
     } else {
       // --- Placeholder: pale fingered hand with watching eyes ---
       const r = this.radius;

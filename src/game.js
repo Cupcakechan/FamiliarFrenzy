@@ -750,6 +750,27 @@ export class Game {
       }
     }
 
+    // Watching Hand summon: spawn a Gutter Gecko burst around the Hand, capped
+    // so the total alive (from waves + summons) never exceeds the boss cap.
+    if (boss && !boss.dead && boss.consumeSummonBurst) {
+      const want = boss.consumeSummonBurst();
+      if (want > 0) {
+        let geckosAlive = 0;
+        for (const e of this.enemies) if (!e.dead && e.type === "gutter_gecko") geckosAlive += 1;
+        const room = Math.max(0, boss.summonGeckoCap - geckosAlive);
+        const spawn = Math.min(want, room);
+        for (let i = 0; i < spawn; i++) {
+          const a = Math.random() * Math.PI * 2;
+          const r = 50 + Math.random() * 40;
+          const ex = clamp(boss.x + Math.cos(a) * r, TILE, this.world.width - TILE);
+          const ey = clamp(boss.y + Math.sin(a) * r, TILE, this.world.height - TILE);
+          const g = new Enemy(ex, ey, "gutter_gecko");
+          this.enemies.push(g);
+        }
+        playSfx("wisp"); // placeholder summon cue
+      }
+    }
+
     for (const enemy of this.enemies) {
       if (enemy.dead) {
         this.enemiesDefeated += 1;
@@ -1127,10 +1148,33 @@ export class Game {
     ctx.restore();
   }
 
+  // The Watching Hand's summon telegraph: a swelling dark-purple glow on the
+  // floor beneath the Hand while it calls forth a gecko burst.
+  drawSummonGlow(ctx) {
+    const boss = this.waveManager.boss;
+    if (!boss || boss.dead || typeof boss.summonGlow !== "function") return;
+    const g = boss.summonGlow();
+    if (g <= 0) return;
+
+    const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 70);
+    const radius = boss.radius * (1.4 + g * 1.6);
+    ctx.save();
+    const grad = ctx.createRadialGradient(boss.x, boss.y, 0, boss.x, boss.y, radius);
+    grad.addColorStop(0, `rgba(155, 108, 255, ${0.10 + g * 0.30 * pulse})`);
+    grad.addColorStop(0.6, `rgba(120, 70, 200, ${0.08 + g * 0.18})`);
+    grad.addColorStop(1, "rgba(120, 70, 200, 0)");
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(boss.x, boss.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+
   drawWorld(ctx) {
     this.drawArena(ctx);
     this.drawSpiritLink(ctx); // Frenzy ribbon: above the floor, below all actors
     this.drawSlamMarker(ctx); // Watching Hand telegraph: on the floor, under actors
+    this.drawSummonGlow(ctx);  // Watching Hand summon telegraph
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
     for (const magnet of this.magnets) magnet.draw(ctx);
