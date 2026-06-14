@@ -485,7 +485,7 @@ export class Boss {
     this.facing = "s";
     this.animFrame = randomInt(0, BOSS_FLOAT_FRAMES - 1); // randomized float start
     this.animTimer = 0;
-    this.spriteScale = 2.0; // tune once art is in (boss radius 30; native px * this)
+    this.spriteScale = 1.0; // tune once art is in (boss radius 30; native px * this)
 
     this.summonTimer = BOSS_SUMMON_COOLDOWN;
     this.summonPending = 0;      // adds queued by a summon wave, released one at a time
@@ -1103,6 +1103,10 @@ export class WatchingHand {
 const DEBUG_FORCE_BOSS = false;
 const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand"
 
+// All boss types in the random rotation. Add a new boss here and it joins the
+// shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).
+const BOSS_TYPES = ["elder_wisp", "watching_hand"];
+
 export class WaveManager {
   constructor(maxWaves = 10) {
     this.maxWaves = maxWaves;
@@ -1200,17 +1204,33 @@ export class WaveManager {
 
   makeBoss(view, tier = 1) {
     const pos = spawnOutsideView(view);
-    // Which boss: debug override wins; otherwise alternate by boss-wave count —
-    // Elder Wisp on the 1st/3rd/... boss (wave 10, 30, ...), Watching Hand on
-    // the 2nd/4th/... (wave 20, 40, ...). bossOrdinal = how many bosses deep.
+    // Which boss: debug override wins; otherwise draw from a shuffled "bag" of
+    // all boss types. The bag cycles through every type in random order and
+    // reshuffles when empty, so you never face the same boss twice in a row and
+    // the ORDER varies run to run (true random can repeat or starve a type).
     let type = DEBUG_BOSS_TYPE;
-    if (type === "auto") {
-      const bossOrdinal = Math.max(1, Math.round(this.wave / 10)); // 1 at wave 10, 2 at 20...
-      type = bossOrdinal % 2 === 0 ? "watching_hand" : "elder_wisp";
-    }
+    if (type === "auto") type = this.drawBossFromBag();
     return type === "watching_hand"
       ? new WatchingHand(pos.x, pos.y, tier)
       : new Boss(pos.x, pos.y, tier);
+  }
+
+  // Shuffled-bag boss draw. Refills + shuffles when empty. Avoids an immediate
+  // repeat across a bag boundary (e.g. last of one bag == first of the next).
+  drawBossFromBag() {
+    if (!this._bossBag || this._bossBag.length === 0) {
+      this._bossBag = BOSS_TYPES.slice();
+      for (let i = this._bossBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [this._bossBag[i], this._bossBag[j]] = [this._bossBag[j], this._bossBag[i]];
+      }
+      // Don't let a fresh bag start with the boss we just fought.
+      if (BOSS_TYPES.length > 1 && this._bossBag[0] === this._lastBossType) {
+        this._bossBag.push(this._bossBag.shift());
+      }
+    }
+    this._lastBossType = this._bossBag.shift();
+    return this._lastBossType;
   }
 
   // Which type the next spawn slot is: Gutter Geckos join from

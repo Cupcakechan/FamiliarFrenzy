@@ -55,8 +55,8 @@ const STATE = {
   VICTORY: "victory",
 };
 
-const MAIN_MENU_ITEMS = ["Play", "How to Play", "Grimoire", "High Scores", "Settings"];
-const MODE_SELECT_ITEMS = ["Tutorial Run", "Endless Mode", "Back"];
+const MAIN_MENU_ITEMS = ["Play", "Grimoire", "High Scores", "Settings"];
+const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
 const PAUSE_ITEMS = ["Resume", "Grimoire", "Settings", "Main Menu"];
 const CONFIRM_ITEMS = ["Yes", "No"];
@@ -310,15 +310,16 @@ export class Game {
         this.navMenu(MAIN_MENU_ITEMS.length);
         if (this.confirmPressed()) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
-          else if (this.menuIndex === 1) this.state = STATE.HOW_TO_PLAY;
-          else if (this.menuIndex === 2) this.openGrimoire(STATE.MAIN_MENU);
-          else if (this.menuIndex === 3) this.state = STATE.HIGHSCORES_PLACEHOLDER;
-          else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
+          else if (this.menuIndex === 1) this.openGrimoire(STATE.MAIN_MENU);
+          else if (this.menuIndex === 2) this.state = STATE.HIGHSCORES_PLACEHOLDER;
+          else if (this.menuIndex === 3) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
         break;
 
       case STATE.HOW_TO_PLAY:
-        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+        // Lives under Play now, so it returns to Mode Select (How to Play is
+        // index 2 there, so restore that highlight).
+        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MODE_SELECT; this.menuIndex = 2; }
         break;
 
       case STATE.GRIMOIRE:
@@ -328,9 +329,10 @@ export class Game {
       case STATE.MODE_SELECT:
         this.navMenu(MODE_SELECT_ITEMS.length);
         if (this.confirmPressed()) {
-          if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Run
+          if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Mode
           else if (this.menuIndex === 1) this.startGame("endless");    // Endless Mode
-          else if (this.menuIndex === 2) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+          else if (this.menuIndex === 2) { this.state = STATE.HOW_TO_PLAY; } // How to Play (returns to Mode Select)
+          else if (this.menuIndex === 3) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         } else if (this.backPressed()) {
           this.state = STATE.MAIN_MENU; this.menuIndex = 0;
         }
