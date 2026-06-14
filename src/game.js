@@ -19,7 +19,7 @@
 import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
-import { Enemy, WaveManager } from "./enemies.js";
+import { Enemy, WaveManager, HazardZone } from "./enemies.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
@@ -107,6 +107,7 @@ const TUTORIAL_HINTS = {
   boss:        "Something big is coming! Stay sharp and keep dodging!",
   elder_wisp:  "The Elder Wisp! Watch for when it lines up a charge!",
   watching_hand: "The Watching Hand! Don't stand where it aims to slam!",
+  bone_mage:   "A Bone Mage! It curses the ground — step off the rune!",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
 
@@ -127,6 +128,11 @@ const BESTIARY = [
     id: "gutter_gecko", name: "Gutter Gecko", kind: "Enemy", enemyType: "gutter_gecko",
     spriteKey: "gecko_idle_s", frames: 4,
     blurb: "Keeps its distance and flings balls from its pouch. Keep moving.",
+  },
+  {
+    id: "bone_mage", name: "Bone Mage", kind: "Enemy", enemyType: "bone_mage",
+    spriteKey: "bone_mage_idle_s", frames: 6,
+    blurb: "Curses the ground from afar, then blinks away. Don't linger.",
   },
   {
     id: "elder_wisp", name: "Elder Wisp", kind: "Boss", bossName: "Elder Wisp",
@@ -209,6 +215,7 @@ export class Game {
 
     this.enemies = [];
     this.enemyBolts = []; // Gutter Gecko projectiles (outlive their shooter)
+    this.hazards = [];    // Bone Mage cursed-ground zones (telegraph -> blast)
     this.waveManager = new WaveManager(MAX_WAVES);
     this.pickups = [];
     this.flasks = [];
@@ -274,6 +281,7 @@ export class Game {
     this.familiar.reset(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
     this.enemies = [];
     this.enemyBolts = [];
+    this.hazards = [];
     this.waveManager.reset(mode === "endless");
     this.pickups = [];
     this.flasks = [];
@@ -335,6 +343,7 @@ export class Game {
     this.waveManager.timer = this.waveManager.intermissionLength;
     this.enemies = [];
     this.enemyBolts = [];
+    this.hazards = [];
     this.activeHint = null; // tutorial dialogue ends with the tutorial
     this.hintQueue = [];
     this.state = STATE.PLAYING;
@@ -801,11 +810,15 @@ export class Game {
         this.markSeen("gutter_gecko");
         this.showEnemyHint("gecko"); // both modes, once per run
       }
+      if (this.enemies.some((e) => e.type === "bone_mage")) {
+        this.markSeen("bone_mage");
+        this.showEnemyHint("bone_mage"); // both modes, once per run
+      }
     }
     if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");
 
     for (const enemy of this.enemies) {
-      enemy.update(dt, this.player, this.enemyBolts);
+      enemy.update(dt, this.player, this.enemyBolts, this.hazards);
       if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
         this.player.takeDamage(enemy.damage);
       }
@@ -842,6 +855,11 @@ export class Game {
       }
     }
     this.enemyBolts = this.enemyBolts.filter((b) => !b.dead);
+
+    // Bone Mage cursed ground: each zone telegraphs then blasts (damage handled
+    // inside HazardZone against the witch's i-frames), then fades and is culled.
+    for (const hz of this.hazards) hz.update(dt, this.player);
+    this.hazards = this.hazards.filter((h) => !h.dead);
 
     // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
     const boss = this.waveManager.boss;
@@ -908,6 +926,12 @@ export class Game {
     for (const enemy of this.enemies) {
       if (enemy.dead) {
         this.enemiesDefeated += 1;
+        // Bone Mage parting shot: one last cursed rune where it fell, punishing
+        // greedy point-blank kills. Reuses the mage's own blast tuning.
+        if (enemy.type === "bone_mage" && enemy.def.caster) {
+          const c = enemy.def.caster;
+          this.hazards.push(new HazardZone(enemy.x, enemy.y, c.blastRadius, c.telegraph, c.blastDamage));
+        }
         if (enemy.isBoss) {
           this.bossesDefeated += 1;
           this.pendingLevelUps += 1; // boss kill grants a free upgrade choice
@@ -1320,6 +1344,7 @@ export class Game {
     this.drawSpiritLink(ctx); // Frenzy ribbon: above the floor, below all actors
     this.drawSlamMarker(ctx); // Watching Hand telegraph: on the floor, under actors
     this.drawSummonGlow(ctx);  // Watching Hand summon telegraph
+    for (const hz of this.hazards) hz.draw(ctx); // Bone Mage cursed ground (under actors)
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
     for (const magnet of this.magnets) magnet.draw(ctx);

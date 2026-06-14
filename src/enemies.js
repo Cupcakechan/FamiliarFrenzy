@@ -15,6 +15,7 @@
 
 import { randomInt, randomRange, clamp, lerp, dirFromVector } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
+import { playSfx } from "./audio.js";
 
 // --- Wisp enemy sprites (visual only) ------------------------------------
 // 8-direction FLOAT (default, loops) + ATTACK (loops while the wisp is
@@ -79,6 +80,28 @@ const ENEMY_TYPES = {
       fireRange: 420,
     },
   },
+  bone_mage: {
+    spritePrefix: "bone_mage",
+    spriteScale: 0.8,   // tune independently once the art is in (visual only)
+    speedMult: 0,       // stationary — it relocates by BLINKING, not walking
+    healthMult: 1.0,    // a priority target; squishy enough to punish ignoring it
+    damage: 8,          // contact damage if you crowd it
+    fallbackOuter: "#b48cff", // pale bone-violet
+    fallbackInner: "#4a3b6b",
+    ranged: null,
+    // caster: stands at range, curses the GROUND (telegraph -> blast), and
+    // phase-steps to reposition. The hazard zone forces the witch to move.
+    caster: {
+      preferredRange: 300, // distance it likes to keep (informational; it blinks)
+      blinkRange: 150,     // if the witch gets this close, blink away (on cooldown)
+      blinkDist: 200,      // how far each phase-step jumps
+      castCooldown: 3.5,   // seconds between casts (+/- jitter)
+      fireRange: 460,      // max distance it will curse from
+      telegraph: 1.1,      // windup seconds before the blast (escape window)
+      blastRadius: 70,     // damage circle radius
+      blastDamage: 15,     // damage if you're inside at detonation
+    },
+  },
 };
 
 // Gutter Gecko sprite strips (anthropomorphic lizard with a pouch). Unlike
@@ -96,6 +119,19 @@ for (const anim of ["idle", "walk", "attack"]) {
   }
 }
 
+// Bone Mage sprite strips. Only TWO anims by design: the caster is stationary
+// and BLINKS to reposition (so no walk), and its death is the parting curse rune
+// (so no die anim). Single-row strips in assets/sprites/enemies/:
+//   bone_mage_idle_<dir>.png    (6 frames, loops — channelling stance)
+//   bone_mage_attack_<dir>.png  (6 frames, ONE-SHOT — the cast pose)
+// Missing strips fall back to the bone-violet placeholder per direction.
+for (const anim of ["idle", "attack"]) {
+  for (const d of WISP_DIRS) {
+    const key = `bone_mage_${anim}_${d}`;
+    loadImage(key, `assets/sprites/enemies/${key}.png`);
+  }
+}
+
 // Per-prefix animation tables.
 const ENEMY_ANIMS = {
   wisp:  { anims: WISP_ANIMS, fps: WISP_FPS, looping: WISP_LOOPING },
@@ -103,6 +139,11 @@ const ENEMY_ANIMS = {
     anims:   { idle: 4, walk: 4, attack: 4 },
     fps:     { idle: 5, walk: 8, attack: 10 },
     looping: { idle: true, walk: true, attack: false }, // attack plays once
+  },
+  bone_mage: {
+    anims:   { idle: 6, attack: 6 },
+    fps:     { idle: 5, attack: 10 },
+    looping: { idle: true, attack: false }, // attack (cast pose) plays once
   },
 };
 
@@ -114,6 +155,11 @@ const GECKO_BALL_SCALE = 0.5;
 
 // The fling pose lasts exactly one attack cycle (frames / fps = 4/10 = 0.4s).
 const GECKO_ATTACK_POSE_SECONDS = ENEMY_ANIMS.gecko.anims.attack / ENEMY_ANIMS.gecko.fps.attack;
+
+// --- Bone Mage timing / phase-step tuning (all visual-adjacent, tunable) ----
+const MAGE_ATTACK_POSE_SECONDS = ENEMY_ANIMS.bone_mage.anims.attack / ENEMY_ANIMS.bone_mage.fps.attack;
+const MAGE_BLINK_COOLDOWN = 1.5; // min seconds between "you crowded me" blinks
+const BLINK_FX_LIFE = 0.35;      // phase-step poof ring fade duration (seconds)
 
 // --- A flung gecko ball ------------------------------------------------------
 // Owned by game.js (this.enemyBolts) so shots outlive their shooter. Player
@@ -188,6 +234,93 @@ export class EnemyBolt {
   }
 }
 
+// --- Bone Mage hazard zone (the reusable telegraph -> blast system) ----------
+// Optional ground-rune art for the telegraph. Absent by default -> the zone
+// uses its code-drawn warning ring. Drop the file in and it appears.
+loadImage("hex_rune", "assets/sprites/enemies/hex_rune.png");
+
+// A stationary patch of cursed ground. It WARNS for `telegraph` seconds (the
+// ring fills toward detonation), then BLASTS once — anyone inside the radius at
+// the instant of detonation takes `damage` (through the witch's normal i-frames)
+// — then a brief flash fades out. Owned + drawn (world space, on the floor) by
+// game.js, which also marks it dead. Reusable by any future enemy/boss.
+const HAZARD_BLAST_TIME = 0.35; // brief impact flash AFTER the telegraph ends
+export class HazardZone {
+  constructor(x, y, radius, telegraph, damage) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;
+    this.telegraph = telegraph;
+    this.damage = damage;
+    this.phase = "telegraph"; // "telegraph" -> "blast"
+    this.timer = telegraph;
+    this.dead = false;
+    this.hasHit = false;
+  }
+
+  update(dt, player) {
+    this.timer -= dt;
+    if (this.phase === "telegraph") {
+      if (this.timer <= 0) {
+        // Detonate: damage once if the witch is inside the ring right now.
+        if (!this.hasHit && player && !player.dead) {
+          const d = Math.hypot(player.x - this.x, player.y - this.y);
+          if (d <= this.radius + player.radius) player.takeDamage(this.damage);
+        }
+        this.hasHit = true;
+        this.phase = "blast";
+        this.timer = HAZARD_BLAST_TIME;
+        playSfx("mage_blast"); // missing file = silent (registry is graceful)
+      }
+    } else if (this.timer <= 0) {
+      this.dead = true;
+    }
+  }
+
+  draw(ctx) {
+    const img = getImage("hex_rune");
+    if (this.phase === "blast") {
+      // Bright impact flash that expands a touch and fades.
+      const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME; // 0->1
+      const r = this.radius * (1 + p * 0.18);
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = "rgba(255, 240, 200, 0.85)";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#e2536b";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    // Telegraph: fill 0->1 as detonation nears.
+    const fill = 1 - Math.max(0, this.timer) / this.telegraph;
+    ctx.save();
+    if (img && img.width > 0) {
+      // Sprite rune (assets/sprites/enemies/hex_rune.png): brightens as it fills.
+      const dw = this.radius * 2, dh = this.radius * 2;
+      ctx.globalAlpha = 0.55 + 0.4 * fill;
+      ctx.drawImage(img, this.x - dw / 2, this.y - dh / 2, dw, dh);
+    } else {
+      // Code-drawn warning: outer danger ring + an inner disc that grows to fill
+      // the circle (a clock for "time to blast") + a small rune cross.
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 120);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(226, 83, 107, ${0.45 + 0.45 * fill})`;
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = `rgba(226, 83, 107, ${0.10 + 0.16 * pulse})`;
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * fill, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = "rgba(180, 140, 255, 0.7)";
+      ctx.beginPath();
+      ctx.moveTo(this.x - 9, this.y); ctx.lineTo(this.x + 9, this.y);
+      ctx.moveTo(this.x, this.y - 9); ctx.lineTo(this.x, this.y + 9);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 export class Enemy {
   constructor(x, y, type = "wisp") {
     this.x = x;
@@ -206,28 +339,33 @@ export class Enemy {
     this.hitFlash = 0;
     this.wobble = randomRange(0, Math.PI * 2);
 
-    // Ranged (Gutter Gecko) state.
-    this.fireTimer = this.def.ranged ? randomRange(0.8, this.def.ranged.cooldown) : 0;
-    this.attackPoseTimer = 0; // holds the attack anim briefly after a fling
+    // Ranged (Gutter Gecko) / caster (Bone Mage) state.
+    this.fireTimer = this.def.ranged
+      ? randomRange(0.8, this.def.ranged.cooldown)
+      : (this.def.caster ? randomRange(0.8, this.def.caster.castCooldown) : 0);
+    this.attackPoseTimer = 0; // holds the attack anim briefly after a fling/cast
     this.repositioning = false; // gecko: outside its dead zone → walk vs idle
     this.bondTickTimer = 0;     // Spirit Bond: per-enemy damage-tick cooldown
+    this.blinkFx = [];          // Bone Mage phase-step poof rings (visual only)
+    this.blinkCooldown = 0;     // min gap between "crowded me" blinks
 
     // Animation state (visual only). Start frame is randomized so a swarm
     // doesn't pulse in perfect lockstep.
     const animCfg = ENEMY_ANIMS[this.def.spritePrefix];
     this.facing = "s";
     // Resting state differs per model: the ghostly wisp floats; the grounded
-    // gecko idles.
-    this.restState = this.def.ranged ? "idle" : "float";
+    // gecko and the Bone Mage idle.
+    this.restState = (this.def.ranged || this.def.caster) ? "idle" : "float";
     this.animState = this.restState;
     this.animFrame = randomInt(0, animCfg.anims[this.restState] - 1);
     this.animTimer = 0;
     this.spriteScale = this.def.spriteScale; // per-type (native px * this)
   }
 
-  // `enemyBolts` is the game-owned array ranged enemies fling into (melee
-  // types ignore it; game.js handles bolt motion/collision after this).
-  update(dt, player, enemyBolts) {
+  // `enemyBolts` is the game-owned array ranged enemies fling into; `hazards`
+  // is the array casters drop cursed-ground zones into. Melee types ignore both
+  // (game.js handles bolt/hazard motion + collision after this).
+  update(dt, player, enemyBolts, hazards) {
     const dx = player.x - this.x;
     const dy = player.y - this.y;
     const len = Math.hypot(dx, dy) || 1;
@@ -267,6 +405,10 @@ export class Enemy {
         this.attackPoseTimer = GECKO_ATTACK_POSE_SECONDS;
       }
       if (this.attackPoseTimer > 0) this.attackPoseTimer -= dt;
+    } else if (this.def.caster) {
+      // --- Bone Mage: a stationary caster. It curses the ground and BLINKS to
+      // reposition (no walking) — all movement is via phase-step. ---
+      this.updateCaster(dt, player, len, hazards);
     } else {
       // --- Melee chaser (wisp): walk straight at the witch (unchanged) ---
       this.x += (dx / len) * this.speed * dt;
@@ -297,6 +439,8 @@ export class Enemy {
     let newState;
     if (this.def.ranged) {
       newState = this.attackPoseTimer > 0 ? "attack" : (this.repositioning ? "walk" : "idle");
+    } else if (this.def.caster) {
+      newState = this.attackPoseTimer > 0 ? "attack" : "idle";
     } else {
       newState = touching ? "attack" : "float";
     }
@@ -306,6 +450,49 @@ export class Enemy {
       this.animTimer = 0;
     }
     this.advanceFrames(dt);
+  }
+
+  // Bone Mage brain: blink to keep distance, curse the ground on cooldown.
+  updateCaster(dt, player, len, hazards) {
+    const c = this.def.caster;
+
+    if (this.blinkCooldown > 0) this.blinkCooldown -= dt;
+    // Emergency reposition: the witch crowded it (gated so it can't spam-blink).
+    if (len < c.blinkRange && this.blinkCooldown <= 0) this.blink(player, c);
+
+    // Curse the witch's CURRENT spot on cooldown, then blink off its own rune so
+    // casts come from varied angles and it never gets pinned.
+    this.fireTimer -= dt;
+    if (this.fireTimer <= 0 && len <= c.fireRange && hazards) {
+      hazards.push(new HazardZone(player.x, player.y, c.blastRadius, c.telegraph, c.blastDamage));
+      this.fireTimer = c.castCooldown + randomRange(-0.5, 0.5);
+      this.attackPoseTimer = MAGE_ATTACK_POSE_SECONDS;
+      this.facing = dirFromVector(player.x - this.x, player.y - this.y); // face the cast
+      playSfx("mage_cast"); // missing file = silent (registry is graceful)
+      this.blink(player, c);
+    }
+    if (this.attackPoseTimer > 0) this.attackPoseTimer -= dt;
+
+    // Age the phase-step poof rings.
+    for (const f of this.blinkFx) f.t -= dt;
+    this.blinkFx = this.blinkFx.filter((f) => f.t > 0);
+  }
+
+  // Phase-step: vanish (poof at the old spot) and reappear a fixed distance
+  // away, biased AWAY from the witch and clamped to the floor.
+  blink(player, c) {
+    const away = Math.atan2(this.y - player.y, this.x - player.x);
+    const ang = away + randomRange(-0.8, 0.8);
+    const dest = clampToPlayfield(
+      this.x + Math.cos(ang) * c.blinkDist,
+      this.y + Math.sin(ang) * c.blinkDist,
+      this.radius
+    );
+    this.blinkFx.push({ x: this.x, y: this.y, t: BLINK_FX_LIFE });
+    this.x = dest.x;
+    this.y = dest.y;
+    this.blinkFx.push({ x: this.x, y: this.y, t: BLINK_FX_LIFE });
+    this.blinkCooldown = MAGE_BLINK_COOLDOWN;
   }
 
   // Step the current animation. Both anims loop; the non-looping branch is
@@ -338,6 +525,22 @@ export class Enemy {
   }
 
   draw(ctx) {
+    // Phase-step poofs: an expanding, fading ring at each end of a blink.
+    if (this.blinkFx && this.blinkFx.length) {
+      for (const f of this.blinkFx) {
+        const p = 1 - f.t / BLINK_FX_LIFE; // 0 -> 1 over its life
+        const r = 6 + p * (this.radius + 10);
+        ctx.save();
+        ctx.globalAlpha = (1 - p) * 0.7;
+        ctx.strokeStyle = "#b48cff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(f.x, f.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+
     const flash = this.hitFlash > 0;
     const key = `${this.def.spritePrefix}_${this.animState}_${this.facing}`;
     const img = getImage(key);
@@ -707,6 +910,9 @@ const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 const GECKO_INTRO_WAVE = 5;       // geckos join the spawn mix from this wave on
 const GECKO_SPAWN_CHANCE = 0.25;  // chance each spawn slot rolls a gecko
 const GECKO_MAX_ALIVE = 3;        // never more than this many alive at once
+const MAGE_INTRO_WAVE = 8;        // Bone Mages join the spawn mix from this wave on
+const MAGE_SPAWN_CHANCE = 0.12;   // chance each eligible slot rolls a Bone Mage
+const MAGE_MAX_ALIVE = 2;         // never more than this many alive at once (zoning is oppressive in bulk)
 
 // ===========================================================================
 //  WATCHING HAND — second boss (Phase 1: skeleton).
@@ -1245,13 +1451,23 @@ export class WaveManager {
   // GECKO_INTRO_WAVE, at GECKO_SPAWN_CHANCE per slot, capped at
   // GECKO_MAX_ALIVE simultaneously. Everything else is a wisp.
   rollEnemyType(enemies) {
-    if (this.wave < GECKO_INTRO_WAVE) return "wisp";
-    let geckosAlive = 0;
+    let geckosAlive = 0, magesAlive = 0;
     for (const e of enemies) {
-      if (!e.dead && e.type === "gutter_gecko") geckosAlive += 1;
+      if (e.dead) continue;
+      if (e.type === "gutter_gecko") geckosAlive += 1;
+      else if (e.type === "bone_mage") magesAlive += 1;
     }
-    if (geckosAlive >= GECKO_MAX_ALIVE) return "wisp";
-    return Math.random() < GECKO_SPAWN_CHANCE ? "gutter_gecko" : "wisp";
+    // Bone Mage rolls first (rarer + capped) so its zoning pressure isn't
+    // crowded out by the more common gecko roll.
+    if (this.wave >= MAGE_INTRO_WAVE && magesAlive < MAGE_MAX_ALIVE &&
+        Math.random() < MAGE_SPAWN_CHANCE) {
+      return "bone_mage";
+    }
+    if (this.wave >= GECKO_INTRO_WAVE && geckosAlive < GECKO_MAX_ALIVE &&
+        Math.random() < GECKO_SPAWN_CHANCE) {
+      return "gutter_gecko";
+    }
+    return "wisp";
   }
 
   makeEnemy(view, type = "wisp") {

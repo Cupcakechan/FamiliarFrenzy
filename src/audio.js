@@ -294,6 +294,8 @@ const SFX_DEFS = {
   wisp:       { src: "assets/sfx/wisp_noise.mp3", volume: 0.30, voices: 3, minInterval: 0.25 },
   hint:       { src: "assets/sfx/hint.mp3",       volume: 0.40, voices: 1, minInterval: 0.20 },
   hand_slam:  { src: "assets/sfx/hand_slam.mp3",  volume: 0.55, voices: 2, minInterval: 0.10 },
+  mage_cast:  { src: "assets/sfx/mage_cast.mp3",  volume: 0.40, voices: 2, minInterval: 0.10 },
+  mage_blast: { src: "assets/sfx/mage_blast.mp3", volume: 0.50, voices: 2, minInterval: 0.08 },
 };
 
 const SFX_STORAGE_KEY = "ff_sfxVolume";
