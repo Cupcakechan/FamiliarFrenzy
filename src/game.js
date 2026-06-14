@@ -97,6 +97,7 @@ const WISP_NOISE_FIRST_DELAY = 3; // seconds after a run starts before the first
 const TUTORIAL_HINTS = {
   move:        "Move with WASD or the arrow keys! I'll handle the spooky stuff.",
   wisps:       "Careful — touching spooky creatures hurts. Keep your distance!",
+  wisp_intro:  "Wisps! They drift right at you — don't let them crowd you.",
   mote_drop:   "Ooh! Grab the glowy motes — they make me stronger.",
   mote_pickup: "See the purple strip up top? Fill it and I'll level up!",
   level_up:    "Good pick! Every upgrade makes me scarier.",
@@ -788,7 +789,12 @@ export class Game {
     // Encounter tracking + intro hints (both modes). Wisp + gecko via presence.
     if (this.enemies.length > 0) {
       this.showHint("wisps"); // tutorial-only "touching hurts" lesson
-      if (this.enemies.some((e) => e.type === "wisp")) this.markSeen("wisp");
+      if (this.enemies.some((e) => e.type === "wisp")) {
+        this.markSeen("wisp");
+        // The Tutorial already teaches wisps via the "wisps" lesson above, so
+        // the standalone intro is Endless-only (avoids two wisp lines at once).
+        if (this.gameMode !== "tutorial") this.showEnemyHint("wisp_intro");
+      }
       if (this.enemies.some((e) => e.type === "gutter_gecko")) {
         this.markSeen("gutter_gecko");
         this.showEnemyHint("gecko"); // both modes, once per run
