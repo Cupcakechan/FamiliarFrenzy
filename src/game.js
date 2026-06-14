@@ -1140,6 +1140,7 @@ export class Game {
         img: getImage(b.spriteKey),
       }));
       drawBestiary(ctx, this.width, this.height, entries, this.bestiaryIndex);
+      return;
     }
 
     if (this.state === STATE.GRIMOIRE) {
