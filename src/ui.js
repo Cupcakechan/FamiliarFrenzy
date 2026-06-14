@@ -482,9 +482,9 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
     y += rowH;
   });
 
-  // Back row.
+  // Back row (extra gap so it clears the last entry's portrait).
   const backSelected = selectedIndex === entries.length;
-  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 2, {
+  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 18, {
     size: 22, color: backSelected ? GOLD : CREAM, align: "left", weight: backSelected ? "700" : "500",
   });
 
@@ -494,7 +494,7 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   const sel = selectedIndex < entries.length ? entries[selectedIndex] : null;
   if (sel) {
     const panelX = 120, panelW = w - 240;
-    const panelY = h - 132, panelH = 84;
+    const panelY = h - 140, panelH = 92;
 
     ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
     ctx.fillRect(panelX, panelY, panelW, panelH);

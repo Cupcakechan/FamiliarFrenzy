@@ -121,22 +121,22 @@ const BESTIARY = [
   {
     id: "wisp", name: "Wisp", kind: "Enemy", enemyType: "wisp",
     spriteKey: "wisp_float_s", frames: 4,
-    blurb: "A restless spirit that drifts straight at you. Harmless apart, dangerous in a crowd — they swarm.",
+    blurb: "A restless spirit that drifts straight at you. Deadly in a crowd.",
   },
   {
     id: "gutter_gecko", name: "Gutter Gecko", kind: "Enemy", enemyType: "gutter_gecko",
     spriteKey: "gecko_idle_s", frames: 4,
-    blurb: "A skittish lizard that keeps its distance and flings glowing balls from its pouch. Keep moving and the shots miss.",
+    blurb: "Keeps its distance and flings balls from its pouch. Keep moving.",
   },
   {
     id: "elder_wisp", name: "Elder Wisp", kind: "Boss", bossName: "Elder Wisp",
     spriteKey: "elder_wisp_float_s", frames: 4,
-    blurb: "An ancient spirit that wobble-follows, then telegraphs a sudden dash. It summons lesser wisps to wear you down.",
+    blurb: "Follows, then dashes. Summons lesser wisps.",
   },
   {
     id: "watching_hand", name: "The Watching Hand", kind: "Boss", bossName: "The Watching Hand",
     spriteKey: "watching_hand_idle", frames: 6,
-    blurb: "A many-eyed hand that hops the arena and slams down — watch the red ring. As it weakens, it calls geckos to swarm you.",
+    blurb: "Hops and slams — mind the red ring. Calls geckos when weak.",
   },
 ];
 
