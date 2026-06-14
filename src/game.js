@@ -200,6 +200,8 @@ export class Game {
     this.spiritBondUnlocked = false;
     this.evoBannerText = "";
     this.evoBannerTimer = 0;  // seconds the unlock banner stays on screen
+    this.beatBestWave = false;  // set by updateEndlessBests() at run end
+    this.beatBestScore = false;
 
     // Simple run-summary counters (shown on the Victory screen).
     this.enemiesDefeated = 0;
@@ -256,6 +258,8 @@ export class Game {
     this.spiritBondUnlocked = false;
     this.evoBannerText = "";
     this.evoBannerTimer = 0;
+    this.beatBestWave = false;
+    this.beatBestScore = false;
 
     this.enemiesDefeated = 0;
     this.upgradesChosen = 0;
@@ -1363,10 +1367,18 @@ export class Game {
       const wave = this.waveManager.wave;
       const bw = parseInt(localStorage.getItem("ff_bestEndlessWave") || "0", 10);
       const bs = parseInt(localStorage.getItem("ff_bestEndlessScore") || "0", 10);
+      // Capture whether THIS run beat a prior best BEFORE overwriting — the
+      // Game Over screen reads these flags. A first-ever run (no stored best,
+      // i.e. 0) only counts as a "best" if the value is actually > 0, so an
+      // immediate wave-1 / score-0 death doesn't trigger a celebration.
+      this.beatBestWave = wave > bw && wave > 0;
+      this.beatBestScore = this.score > bs && this.score > 0;
       if (wave > bw) localStorage.setItem("ff_bestEndlessWave", String(wave));
       if (this.score > bs) localStorage.setItem("ff_bestEndlessScore", String(this.score));
     } catch (e) {
       /* localStorage unavailable — skip persistent bests */
+      this.beatBestWave = false;
+      this.beatBestScore = false;
     }
   }
 
@@ -1427,13 +1439,25 @@ export class Game {
     } catch (e) {
       /* ignore */
     }
+    const evolutions = [
+      this.phantomPounceUnlocked && "Phantom Pounce",
+      this.spiritBondUnlocked && "Spirit Bond",
+    ].filter(Boolean);
+
     return {
       endless: this.gameMode === "endless",
       wave: this.waveManager.wave,
       score: this.score,
+      level: this.level,
+      enemiesDefeated: this.enemiesDefeated,
       bossesDefeated: this.bossesDefeated,
+      evolutions,
       bestWave,
       bestScore,
+      // Personal-best flags (Endless only; captured before the bests were
+      // overwritten in updateEndlessBests()).
+      beatBestWave: this.gameMode === "endless" && this.beatBestWave,
+      beatBestScore: this.gameMode === "endless" && this.beatBestScore,
     };
   }
 

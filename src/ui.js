@@ -948,14 +948,32 @@ export function drawGameOver(ctx, w, h, info) {
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
 
   if (info.endless) {
-    text(ctx, "ENDLESS RUN OVER", w / 2, h / 2 - 78, { size: 48, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
-    text(ctx, `Wave reached: ${info.wave}`, w / 2, h / 2 - 18, { size: 24, color: GOLD });
+    // Personal-best callout: a pulsing gold banner above the title when this
+    // run beat a stored best (wave and/or score). Most players never noticed
+    // their bests persist — this makes the achievement land.
+    let titleY = h / 2 - 78;
+    if (info.beatBestWave || info.beatBestScore) {
+      titleY = h / 2 - 58;
+      const bestMsg = (info.beatBestWave && info.beatBestScore) ? "NEW PERSONAL BEST!"
+        : info.beatBestWave ? "NEW BEST WAVE!" : "NEW HIGH SCORE!";
+      ctx.globalAlpha = pulse;
+      text(ctx, bestMsg, w / 2, h / 2 - 116, { size: 30, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+      ctx.globalAlpha = 1;
+    }
+
+    text(ctx, "ENDLESS RUN OVER", w / 2, titleY, { size: 44, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
+
+    // Run stats block.
+    text(ctx, `Wave reached: ${info.wave}      Level: ${info.level}`, w / 2, h / 2 - 14, { size: 22, color: GOLD });
     text(ctx, `Score: ${info.score}`, w / 2, h / 2 + 14, { size: 20, color: CREAM, weight: "500" });
-    text(ctx, `Bosses defeated: ${info.bossesDefeated}`, w / 2, h / 2 + 42, { size: 18, color: DIM, weight: "500" });
-    text(ctx, `Best wave: ${info.bestWave}      Best score: ${info.bestScore}`, w / 2, h / 2 + 70, { size: 16, color: DIM, weight: "500" });
+    text(ctx, `Enemies defeated: ${info.enemiesDefeated}      Bosses: ${info.bossesDefeated}`, w / 2, h / 2 + 40, { size: 16, color: DIM, weight: "500" });
+    if (info.evolutions && info.evolutions.length) {
+      text(ctx, `Evolutions: ${info.evolutions.join(", ")}`, w / 2, h / 2 + 62, { size: 16, color: PURPLE, weight: "500" });
+    }
+    text(ctx, `Best wave: ${info.bestWave}      Best score: ${info.bestScore}`, w / 2, h / 2 + 86, { size: 15, color: DIM, weight: "500" });
 
     ctx.globalAlpha = pulse;
-    text(ctx, "R: new endless run      Esc: main menu", w / 2, h / 2 + 114, { size: 18, color: PURPLE });
+    text(ctx, "R: new endless run      Esc: main menu", w / 2, h / 2 + 124, { size: 18, color: PURPLE });
     ctx.globalAlpha = 1;
     return;
   }
