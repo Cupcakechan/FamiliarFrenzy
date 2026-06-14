@@ -419,102 +419,161 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   ctx.fillRect(0, 0, w, h);
 
   text(ctx, "BESTIARY", w / 2, 46, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
-
   const seenCount = entries.filter((e) => e.seen).length;
   text(ctx, `${seenCount} / ${entries.length} discovered`, w / 2, 74, { size: 14, color: DIM, weight: "500" });
 
-  // --- Compact list (portrait + name + tag; no per-row blurb) ---
-  const leftX = 200;          // portrait left edge
-  const portrait = 48;        // portrait box size
-  const nameX = leftX + portrait + 22;
-  const rightX = w - 200;
-  const rowH = 60;
-  let y = 100;
+  // --- Layout metrics ---
+  const leftX = 200;       // row content left edge
+  const rightX = w - 200;  // tag right edge
+  const portrait = 40;     // collapsed-row icon box
+  const compactH = 54;     // collapsed row height
+  const bigArt = 110;      // expanded artwork box
+  const gap = 8;           // gap between rows
+  const backIndex = entries.length;
 
+  // Viewport: clipped + SCROLLABLE so the screen never overflows as the roster
+  // grows. Rows flow top-to-bottom (no fixed bottom panel — that was what put
+  // the old "Back" on top of the detail box), and we scroll to keep the
+  // selected (expanded) row in view.
+  const viewTop = 94;
+  const viewBottom = h - 40;
+  const viewH = viewBottom - viewTop;
+
+  // --- Pass 1: lay rows out in CONTENT space (measuring expanded heights). ---
+  const rows = [];
+  let cy = 0;
   entries.forEach((e, i) => {
-    const selected = i === selectedIndex;
+    const expanded = i === selectedIndex;
+    let height = compactH;
+    let blurbLines = null;
+    if (expanded) {
+      const textX = leftX + bigArt + 22;
+      const blurb = e.seen ? e.blurb : "Not yet encountered. Venture deeper to reveal this creature.";
+      blurbLines = wrapText(ctx, blurb, rightX - textX, { size: 16, weight: "500", maxLines: 4 });
+      const textBlock = 30 + 6 + blurbLines.length * 22;
+      height = Math.max(bigArt, textBlock) + 24;
+    }
+    rows.push({ kind: "entry", i, e, expanded, blurbLines, y: cy, height });
+    cy += height + gap;
+  });
+  const backRow = { kind: "back", i: backIndex, y: cy, height: 40 };
+  rows.push(backRow);
+  cy += backRow.height;
+  const contentH = cy;
 
-    if (selected) {
-      ctx.fillStyle = "rgba(244, 213, 141, 0.08)";
-      ctx.fillRect(leftX - 20, y - 6, rightX - leftX + 40, portrait + 12);
+  // --- Scroll so the selected row is fully visible. ---
+  const selRow = rows.find((r) => r.i === selectedIndex) || backRow;
+  const maxScroll = Math.max(0, contentH - viewH);
+  let scroll = 0;
+  if (selRow.y < scroll) scroll = selRow.y;
+  if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  scroll = Math.max(0, Math.min(maxScroll, scroll));
+
+  // --- Draw the rows, clipped to the viewport. ---
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, viewTop, w, viewH);
+  ctx.clip();
+
+  for (const r of rows) {
+    const ry = viewTop + r.y - scroll;
+    if (ry + r.height < viewTop || ry > viewBottom) continue; // cull offscreen rows
+
+    if (r.kind === "back") {
+      const sel = selectedIndex === backIndex;
+      text(ctx, `${sel ? "> " : "  "}Back`, leftX, ry + 20, {
+        size: 22, color: sel ? GOLD : CREAM, align: "left", weight: sel ? "700" : "500",
+      });
+      continue;
     }
 
-    // Portrait box (lit so dark sprites + silhouettes stand off it).
-    ctx.fillStyle = "rgba(244, 213, 141, 0.06)";
-    ctx.fillRect(leftX, y, portrait, portrait);
-    ctx.strokeStyle = selected ? GOLD : "rgba(244, 213, 141, 0.3)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(leftX, y, portrait, portrait);
-
-    if (e.img && e.img.width > 0) {
-      const fw = e.img.width / (e.frames || 1);
-      const fh = e.img.height;
-      const scale = Math.min((portrait - 12) / fw, (portrait - 12) / fh);
-      const dw = fw * scale, dh = fh * scale;
-      const dx = leftX + (portrait - dw) / 2;
-      const dy = y + (portrait - dh) / 2;
-      if (e.seen) {
-        ctx.drawImage(e.img, 0, 0, fw, fh, dx, dy, dw, dh);
-      } else {
-        // Silhouette via an offscreen canvas (scoped so it can't affect the
-        // rest of the screen): draw the frame, blacken its opaque pixels.
-        const tmp = document.createElement("canvas");
-        tmp.width = Math.ceil(dw); tmp.height = Math.ceil(dh);
-        const tctx = tmp.getContext("2d");
-        tctx.drawImage(e.img, 0, 0, fw, fh, 0, 0, dw, dh);
-        tctx.globalCompositeOperation = "source-atop";
-        tctx.fillStyle = "#2b2540";
-        tctx.fillRect(0, 0, dw, dh);
-        ctx.drawImage(tmp, dx, dy);
-      }
+    if (r.expanded) {
+      drawBestiaryExpanded(ctx, r.e, leftX, ry, rightX, r.height, bigArt, r.blurbLines);
     } else {
-      text(ctx, "?", leftX + portrait / 2, y + portrait / 2, { size: 28, color: e.seen ? CREAM : "rgba(244,213,141,0.5)", weight: "700" });
+      drawBestiaryCompact(ctx, r.e, leftX, ry, rightX, portrait, compactH);
     }
-
-    const displayName = e.seen ? e.name : "???";
-    text(ctx, displayName, nameX, y + portrait / 2, {
-      size: 22, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
-    });
-    text(ctx, e.kind.toUpperCase(), rightX, y + portrait / 2, {
-      size: 13, color: e.kind === "Boss" ? RED : DIM, align: "right", weight: "700",
-    });
-
-    y += rowH;
-  });
-
-  // Back row (extra gap so it clears the last entry's portrait).
-  const backSelected = selectedIndex === entries.length;
-  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 18, {
-    size: 22, color: backSelected ? GOLD : CREAM, align: "left", weight: backSelected ? "700" : "500",
-  });
-
-  // --- Detail panel (selected entry only) ---
-  // Full description for the highlighted creature, wrapped across as many lines
-  // as needed in a roomy panel — no squishing, no edge cut-off.
-  const sel = selectedIndex < entries.length ? entries[selectedIndex] : null;
-  if (sel) {
-    const panelX = 120, panelW = w - 240;
-    const panelY = h - 140, panelH = 92;
-
-    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
-    ctx.fillRect(panelX, panelY, panelW, panelH);
-    ctx.strokeStyle = "rgba(244, 213, 141, 0.25)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(panelX, panelY, panelW, panelH);
-
-    const padX = 20;
-    const heading = sel.seen ? sel.name : "???";
-    text(ctx, heading, panelX + padX, panelY + 22, { size: 18, color: GOLD, align: "left", weight: "700" });
-
-    const blurb = sel.seen ? sel.blurb : "Not yet encountered. Venture deeper to reveal this creature.";
-    // Wrap conservatively inside the panel padding so it never reaches an edge.
-    const lines = wrapText(ctx, blurb, panelW - padX * 2, { size: 15, weight: "500", maxLines: 3 });
-    lines.forEach((line, li) => {
-      text(ctx, line, panelX + padX, panelY + 46 + li * 20, { size: 15, color: sel.seen ? CREAM : DIM, align: "left", weight: "500" });
-    });
   }
+  ctx.restore();
 
-  text(ctx, "Up / Down: move      Esc / Backspace: back", w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
+  // Scroll affordances (only when content is hidden above/below).
+  if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
+  if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
+
+  text(ctx, "Up / Down: move      Esc / Backspace: back", w / 2, h - 20, { size: 14, color: DIM, weight: "500" });
+}
+
+// Shared creature portrait: lit box + sprite (or silhouette if unseen, or "?" if
+// no art). `animated` plays the idle loop (used in the big expanded view).
+function drawCreaturePortrait(ctx, e, x, y, box, animated, highlighted) {
+  ctx.fillStyle = "rgba(244, 213, 141, 0.06)";
+  ctx.fillRect(x, y, box, box);
+  ctx.strokeStyle = highlighted ? GOLD : "rgba(244, 213, 141, 0.3)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x, y, box, box);
+
+  if (e.img && e.img.width > 0) {
+    const frames = e.frames || 1;
+    const fw = e.img.width / frames;
+    const fh = e.img.height;
+    const pad = Math.round(box * 0.16);
+    const scale = Math.min((box - pad * 2) / fw, (box - pad * 2) / fh);
+    const dw = fw * scale, dh = fh * scale;
+    const dx = x + (box - dw) / 2;
+    const dy = y + (box - dh) / 2;
+    const frame = (animated && e.seen) ? Math.floor(performance.now() / 180) % frames : 0;
+    const sx = frame * fw;
+    if (e.seen) {
+      ctx.drawImage(e.img, sx, 0, fw, fh, dx, dy, dw, dh);
+    } else {
+      // Silhouette via a scoped offscreen canvas (frame 0), so it can't tint
+      // anything else on screen.
+      const tmp = document.createElement("canvas");
+      tmp.width = Math.max(1, Math.ceil(dw)); tmp.height = Math.max(1, Math.ceil(dh));
+      const tctx = tmp.getContext("2d");
+      tctx.drawImage(e.img, 0, 0, fw, fh, 0, 0, dw, dh);
+      tctx.globalCompositeOperation = "source-atop";
+      tctx.fillStyle = "#2b2540";
+      tctx.fillRect(0, 0, dw, dh);
+      ctx.drawImage(tmp, dx, dy);
+    }
+  } else {
+    text(ctx, "?", x + box / 2, y + box / 2, { size: box * 0.55, color: e.seen ? CREAM : "rgba(244,213,141,0.5)", weight: "700" });
+  }
+}
+
+// A collapsed creature row: small icon + name + ENEMY/BOSS tag.
+function drawBestiaryCompact(ctx, e, leftX, y, rightX, portrait, rowH) {
+  const boxY = y + (rowH - portrait) / 2;
+  drawCreaturePortrait(ctx, e, leftX, boxY, portrait, false, false);
+  const nameX = leftX + portrait + 18;
+  const name = e.seen ? e.name : "???";
+  text(ctx, name, nameX, y + rowH / 2 - 3, { size: 20, color: CREAM, align: "left", weight: "500" });
+  text(ctx, e.kind.toUpperCase(), rightX, y + rowH / 2 - 3, {
+    size: 13, color: e.kind === "Boss" ? RED : DIM, align: "right", weight: "700",
+  });
+}
+
+// The selected creature, expanded: enlarged ANIMATED artwork + name + tag +
+// wrapped blurb, all inside a highlighted panel that flows with the list.
+function drawBestiaryExpanded(ctx, e, leftX, y, rightX, rowH, bigArt, blurbLines) {
+  ctx.fillStyle = "rgba(244, 213, 141, 0.07)";
+  ctx.fillRect(leftX - 16, y, rightX - leftX + 32, rowH - 6);
+  ctx.strokeStyle = "rgba(244, 213, 141, 0.3)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(leftX - 16, y, rightX - leftX + 32, rowH - 6);
+
+  const artY = y + (rowH - bigArt) / 2 - 3;
+  drawCreaturePortrait(ctx, e, leftX, artY, bigArt, true, true);
+
+  const textX = leftX + bigArt + 22;
+  const name = e.seen ? e.name : "???";
+  text(ctx, name, textX, y + 26, { size: 24, color: GOLD, align: "left", weight: "700" });
+  text(ctx, e.kind.toUpperCase(), rightX, y + 24, {
+    size: 13, color: e.kind === "Boss" ? RED : DIM, align: "right", weight: "700",
+  });
+  blurbLines.forEach((line, li) => {
+    text(ctx, line, textX, y + 56 + li * 22, { size: 16, color: e.seen ? CREAM : DIM, align: "left", weight: "500" });
+  });
 }
 
 // --- IN-GAME HUD ----------------------------------------------------------

@@ -415,11 +415,13 @@ export class Enemy {
       this.y += (dy / len) * this.speed * dt;
     }
 
-    // Keep the body fully on the floor. The wisp chases the (already-clamped)
-    // witch so it stays in bounds on its own, but the gecko BACKS AWAY and could
-    // otherwise be shoved through the wall ring when cornered against it. Now it
-    // just slides along the wall instead, so it's always reachable.
-    const bounded = clampToPlayfield(this.x, this.y, this.radius);
+    // Keep the whole BODY (its visual footprint, not just the hitbox) on the
+    // floor. The clamp funnels every kind of movement — walk, gecko strafe,
+    // mage blink, and anything we add later — so no enemy's art can lap the wall
+    // regardless of how it moved. Uses the live sprite size, so new enemies are
+    // covered automatically; falls back to the hitbox before art has loaded.
+    const half = this.boundaryHalfExtent();
+    const bounded = clampToPlayfield(this.x, this.y, half.x, half.y);
     this.x = bounded.x;
     this.y = bounded.y;
 
@@ -516,6 +518,23 @@ export class Enemy {
         break;
       }
     }
+  }
+
+  // Per-axis half-extent used for wall clamping: the larger of the gameplay
+  // hitbox and the loaded sprite's drawn half-size, so the whole body stays off
+  // the wall. Width/height handled separately so a tall sprite isn't pushed
+  // needlessly far from the side walls. Hitbox fallback before art loads.
+  boundaryHalfExtent() {
+    const cfg = ENEMY_ANIMS[this.def.spritePrefix];
+    const key = `${this.def.spritePrefix}_${this.animState}_${this.facing}`;
+    const img = getImage(key);
+    if (img && img.width > 0 && cfg) {
+      const frames = cfg.anims[this.animState] || 1;
+      const halfW = (img.width / frames) * this.spriteScale / 2;
+      const halfH = img.height * this.spriteScale / 2;
+      return { x: Math.max(this.radius, halfW), y: Math.max(this.radius, halfH) };
+    }
+    return { x: this.radius, y: this.radius };
   }
 
   takeDamage(amount) {
@@ -622,11 +641,12 @@ function spawnOutsideView(view, margin = 40) {
 const WALL_INSET = 32; // matches game.js TILE wall ring
 const PLAYFIELD = { worldW: 2400, worldH: 1344 };
 
-function clampToPlayfield(x, y, radius = 0) {
-  const m = WALL_INSET + radius;
+function clampToPlayfield(x, y, radius = 0, radiusY = radius) {
+  const mx = WALL_INSET + radius;
+  const my = WALL_INSET + radiusY;
   return {
-    x: clamp(x, m, PLAYFIELD.worldW - m),
-    y: clamp(y, m, PLAYFIELD.worldH - m),
+    x: clamp(x, mx, PLAYFIELD.worldW - mx),
+    y: clamp(y, my, PLAYFIELD.worldH - my),
   };
 }
 
