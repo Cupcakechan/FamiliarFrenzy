@@ -427,8 +427,8 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   const portrait = 56;        // portrait box size
   const nameX = leftX + portrait + 24;
   const rightX = w - 150;
-  const rowH = 82;
-  let y = 104;
+  const rowH = 88;
+  let y = 100;
 
   entries.forEach((e, i) => {
     const selected = i === selectedIndex;
@@ -440,8 +440,8 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
       ctx.fillRect(leftX - 20, y - 8, rightX - leftX + 40, portrait + 16);
     }
 
-    // Portrait box.
-    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    // Portrait box (slightly lit so dark sprites + silhouettes stand off it).
+    ctx.fillStyle = "rgba(244, 213, 141, 0.06)";
     ctx.fillRect(leftX, y, portrait, portrait);
     ctx.strokeStyle = selected ? GOLD : "rgba(244, 213, 141, 0.3)";
     ctx.lineWidth = 1;
@@ -465,7 +465,7 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
         const tctx = tmp.getContext("2d");
         tctx.drawImage(e.img, 0, 0, fw, fh, 0, 0, dw, dh);
         tctx.globalCompositeOperation = "source-atop";
-        tctx.fillStyle = "#0a0814";
+        tctx.fillStyle = "#2b2540"; // muted purple-grey — visible against the box
         tctx.fillRect(0, 0, dw, dh);
         ctx.drawImage(tmp, dx, dy);
       }
@@ -483,10 +483,15 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
       size: 14, color: e.kind === "Boss" ? RED : DIM, align: "right", weight: "700",
     });
 
-    // Blurb (locked text when unseen).
+    // Blurb: word-wrapped to up to two FULL-SIZE lines (a single line with
+    // maxWidth would shrink long blurbs into unreadable micro-text).
     const blurb = e.seen ? e.blurb : "Not yet encountered. Venture deeper to reveal this creature.";
-    text(ctx, blurb, nameX, y + 44, {
-      size: 16, color: e.seen ? CREAM : DIM, align: "left", weight: "500", maxWidth: rightX - nameX,
+    const blurbColor = e.seen ? CREAM : DIM;
+    const blurbLines = wrapText(ctx, blurb, rightX - nameX, { size: 15, weight: "500", maxLines: 2 });
+    blurbLines.forEach((line, li) => {
+      text(ctx, line, nameX, y + 42 + li * 19, {
+        size: 15, color: blurbColor, align: "left", weight: "500",
+      });
     });
 
     y += rowH;
