@@ -24,7 +24,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -42,6 +42,7 @@ const STATE = {
   MODE_SELECT: "modeSelect",
   HOW_TO_PLAY: "howToPlay",
   GRIMOIRE: "grimoire",
+  BESTIARY: "bestiary",
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
   SETTINGS_PLACEHOLDER: "settingsPlaceholder",
@@ -55,7 +56,7 @@ const STATE = {
   VICTORY: "victory",
 };
 
-const MAIN_MENU_ITEMS = ["Play", "Grimoire", "High Scores", "Settings"];
+const MAIN_MENU_ITEMS = ["Play", "Grimoire", "Bestiary", "High Scores", "Settings"];
 const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
 const PAUSE_ITEMS = ["Resume", "Grimoire", "Settings", "Main Menu"];
@@ -102,9 +103,42 @@ const TUTORIAL_HINTS = {
   flask:       "A flask! Snag it if you're hurt.",
   spirit:      "I'm all charged — press SPACE for Spirit Imbued!",
   gecko:       "A Gutter Gecko! Dodge whatever it flings at you!",
-  boss:        "B-big wisp incoming! Dodge when it lines up a charge!",
+  boss:        "Something big is coming! Stay sharp and keep dodging!",
+  elder_wisp:  "The Elder Wisp! Watch for when it lines up a charge!",
+  watching_hand: "The Watching Hand! Don't stand where it aims to slam!",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
+
+// --- Bestiary -------------------------------------------------------------
+// Creature entries for the Bestiary screen. `id` is the seen-tracking key
+// (persisted in ff_seenEnemies); `match` decides what marks it encountered:
+//   - enemyType: an Enemy with this `type` spawned
+//   - bossName:  the active boss has this `name`
+// `spriteKey` is the asset used for the portrait (a representative idle frame);
+// unseen entries draw a black silhouette + "???" instead.
+const BESTIARY = [
+  {
+    id: "wisp", name: "Wisp", kind: "Enemy", enemyType: "wisp",
+    spriteKey: "wisp_float_s", frames: 4,
+    blurb: "A restless spirit that drifts straight at you. Harmless apart, dangerous in a crowd — they swarm.",
+  },
+  {
+    id: "gutter_gecko", name: "Gutter Gecko", kind: "Enemy", enemyType: "gutter_gecko",
+    spriteKey: "gecko_idle_s", frames: 4,
+    blurb: "A skittish lizard that keeps its distance and flings glowing balls from its pouch. Keep moving and the shots miss.",
+  },
+  {
+    id: "elder_wisp", name: "Elder Wisp", kind: "Boss", bossName: "Elder Wisp",
+    spriteKey: "elder_wisp_float_s", frames: 4,
+    blurb: "An ancient spirit that wobble-follows, then telegraphs a sudden dash. It summons lesser wisps to wear you down.",
+  },
+  {
+    id: "watching_hand", name: "The Watching Hand", kind: "Boss", bossName: "The Watching Hand",
+    spriteKey: "watching_hand_idle", frames: 6,
+    blurb: "A many-eyed hand that hops the arena and slams down — watch the red ring. As it weakens, it calls geckos to swarm you.",
+  },
+];
+
 
 // Magnet Charm: pulls nearby pickups toward the witch when in range.
 const MAGNET_PULL_SPEED = 280;  // px/s a pickup is drawn toward the player
@@ -311,8 +345,9 @@ export class Game {
         if (this.confirmPressed()) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
           else if (this.menuIndex === 1) this.openGrimoire(STATE.MAIN_MENU);
-          else if (this.menuIndex === 2) this.state = STATE.HIGHSCORES_PLACEHOLDER;
-          else if (this.menuIndex === 3) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
+          else if (this.menuIndex === 2) this.openBestiary();
+          else if (this.menuIndex === 3) this.state = STATE.HIGHSCORES_PLACEHOLDER;
+          else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
         break;
 
@@ -324,6 +359,10 @@ export class Game {
 
       case STATE.GRIMOIRE:
         this.updateGrimoire();
+        break;
+
+      case STATE.BESTIARY:
+        this.updateBestiary();
         break;
 
       case STATE.MODE_SELECT:
@@ -541,6 +580,55 @@ export class Game {
     if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
   }
 
+  // --- Bestiary -------------------------------------------------------------
+  // Seen creatures persist across runs in ff_seenEnemies (a JSON array of ids).
+  // Loaded lazily into this._seenEnemies (a Set) on first use.
+  loadSeenEnemies() {
+    if (this._seenEnemies) return this._seenEnemies;
+    let ids = [];
+    try {
+      const raw = localStorage.getItem("ff_seenEnemies");
+      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) ids = p; }
+    } catch (e) { /* storage blocked — start empty */ }
+    this._seenEnemies = new Set(ids);
+    return this._seenEnemies;
+  }
+
+  hasSeen(id) {
+    return this.loadSeenEnemies().has(id);
+  }
+
+  // Mark a creature encountered (idempotent; persists on first sight).
+  markSeen(id) {
+    const seen = this.loadSeenEnemies();
+    if (seen.has(id)) return;
+    seen.add(id);
+    try { localStorage.setItem("ff_seenEnemies", JSON.stringify([...seen])); } catch (e) { /* ignore */ }
+  }
+
+  openBestiary() {
+    this.loadSeenEnemies();
+    this.bestiaryIndex = 0;
+    this.state = STATE.BESTIARY;
+  }
+
+  updateBestiary() {
+    const count = BESTIARY.length + 1; // entries + Back
+    if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+      this.bestiaryIndex = (this.bestiaryIndex - 1 + count) % count;
+    }
+    if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+      this.bestiaryIndex = (this.bestiaryIndex + 1) % count;
+    }
+    if (this.confirmPressed()) {
+      if (this.bestiaryIndex === BESTIARY.length) { // Back row
+        this.state = STATE.MAIN_MENU; this.menuIndex = 0;
+      }
+    } else if (this.backPressed()) {
+      this.state = STATE.MAIN_MENU; this.menuIndex = 0;
+    }
+  }
+
   // Build the flat list of NAVIGABLE rows from the current expansion state.
   // (Entry detail blocks are display-only and are NOT rows.) Shared by the
   // input handler and the renderer so indexing stays in lock-step.
@@ -598,6 +686,22 @@ export class Game {
   // Each id shows at most once per run. One hint at a time; later triggers
   // queue behind the active one. Sticky hints (the movement lesson) ignore the
   // timer and are cleared by their condition via advanceHint().
+  // Enemy/boss INTRO hint — unlike the tutorial-only showHint(), these fire in
+  // BOTH modes (once per id per run) so the familiar introduces new creatures
+  // even in Endless. Shares the same dialogue bar + queue.
+  showEnemyHint(id) {
+    if (!TUTORIAL_HINTS_ENABLED) return;
+    if (this.hintsShown[id]) return;
+    this.hintsShown[id] = true;
+    const hint = { id, text: TUTORIAL_HINTS[id], timer: HINT_DURATION, sticky: false };
+    if (this.activeHint) {
+      this.hintQueue.push(hint);
+    } else {
+      this.activeHint = hint;
+      playSfx("hint");
+    }
+  }
+
   showHint(id, opts = {}) {
     if (!TUTORIAL_HINTS_ENABLED || this.gameMode !== "tutorial") return;
     if (this.hintsShown[id]) return;
@@ -681,8 +785,15 @@ export class Game {
       worldW: this.world.width, worldH: this.world.height,
     };
     if (this.tutorialWavesStarted) this.waveManager.update(dt, this.enemies, view);
-    if (this.enemies.length > 0) this.showHint("wisps");
-    if (!this.hintsShown.gecko && this.enemies.some((e) => e.type === "gutter_gecko")) this.showHint("gecko");
+    // Encounter tracking + intro hints (both modes). Wisp + gecko via presence.
+    if (this.enemies.length > 0) {
+      this.showHint("wisps"); // tutorial-only "touching hurts" lesson
+      if (this.enemies.some((e) => e.type === "wisp")) this.markSeen("wisp");
+      if (this.enemies.some((e) => e.type === "gutter_gecko")) {
+        this.markSeen("gutter_gecko");
+        this.showEnemyHint("gecko"); // both modes, once per run
+      }
+    }
     if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");
 
     for (const enemy of this.enemies) {
@@ -726,7 +837,12 @@ export class Game {
 
     // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
     const boss = this.waveManager.boss;
-    if (boss && !boss.dead) this.showHint("boss");
+    if (boss && !boss.dead) {
+      // Encounter tracking + boss-specific intro hint (both modes).
+      if (boss.name === "Elder Wisp") { this.markSeen("elder_wisp"); this.showEnemyHint("elder_wisp"); }
+      else if (boss.name === "The Watching Hand") { this.markSeen("watching_hand"); this.showEnemyHint("watching_hand"); }
+      else this.showHint("boss");
+    }
 
     // Ambient wisp chitter: the timer only ticks while something spooky is
     // alive; on expiry, play once and book the next chitter 6-14s out.
@@ -1017,6 +1133,15 @@ export class Game {
       drawHowToPlay(ctx, this.width, this.height);
       return;
     }
+    if (this.state === STATE.BESTIARY) {
+      const entries = BESTIARY.map((b) => ({
+        name: b.name, kind: b.kind, blurb: b.blurb, frames: b.frames,
+        seen: this.hasSeen(b.id),
+        img: getImage(b.spriteKey),
+      }));
+      drawBestiary(ctx, this.width, this.height, entries, this.bestiaryIndex);
+    }
+
     if (this.state === STATE.GRIMOIRE) {
       const levels = this.grimoireReturn === STATE.PAUSED ? this.upgradeLevels : null;
       drawGrimoire(ctx, this.width, this.height, this.grimoireRows(), this.grimoireIndex, levels);

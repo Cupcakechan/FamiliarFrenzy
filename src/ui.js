@@ -409,6 +409,96 @@ export function drawGrimoire(ctx, w, h, rows, selectedIndex, levels) {
     w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
 }
 
+// --- BESTIARY -------------------------------------------------------------
+// A list of creature rows with portraits. Unseen creatures (encounter-gated)
+// draw as a black silhouette + "???" until the player has met them; the
+// selected row shows its blurb beneath it. `entries` carry a `seen` flag and a
+// resolved `img` (or null) supplied by game.js's draw call.
+export function drawBestiary(ctx, w, h, entries, selectedIndex) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "BESTIARY", w / 2, 46, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+
+  const seenCount = entries.filter((e) => e.seen).length;
+  text(ctx, `${seenCount} / ${entries.length} discovered`, w / 2, 74, { size: 14, color: DIM, weight: "500" });
+
+  const leftX = 150;          // portrait left edge
+  const portrait = 52;        // portrait box size
+  const nameX = leftX + portrait + 22;
+  const rightX = w - 150;
+  const rowH = 78;
+  let y = 110;
+
+  entries.forEach((e, i) => {
+    const selected = i === selectedIndex;
+    const cy = y + portrait / 2;
+
+    // Selection highlight bar.
+    if (selected) {
+      ctx.fillStyle = "rgba(244, 213, 141, 0.08)";
+      ctx.fillRect(leftX - 20, y - 8, rightX - leftX + 40, portrait + 16);
+    }
+
+    // Portrait box.
+    ctx.fillStyle = "rgba(0,0,0,0.35)";
+    ctx.fillRect(leftX, y, portrait, portrait);
+    ctx.strokeStyle = selected ? GOLD : "rgba(244, 213, 141, 0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(leftX, y, portrait, portrait);
+
+    if (e.img && e.img.width > 0) {
+      // Use the first animation frame, scaled to fit the box.
+      const fw = e.img.width / (e.frames || 1);
+      const fh = e.img.height;
+      const scale = Math.min((portrait - 10) / fw, (portrait - 10) / fh);
+      const dw = fw * scale, dh = fh * scale;
+      const dx = leftX + (portrait - dw) / 2;
+      const dy = y + (portrait - dh) / 2;
+      if (e.seen) {
+        ctx.drawImage(e.img, 0, 0, fw, fh, dx, dy, dw, dh);
+      } else {
+        // Silhouette: draw the sprite, then overpaint its opaque pixels black
+        // via source-atop so only the shape shows.
+        ctx.save();
+        ctx.drawImage(e.img, 0, 0, fw, fh, dx, dy, dw, dh);
+        ctx.globalCompositeOperation = "source-atop";
+        ctx.fillStyle = "#080712";
+        ctx.fillRect(dx, dy, dw, dh);
+        ctx.restore();
+      }
+    } else if (!e.seen) {
+      // No art yet: a plain "?" glyph in the box.
+      text(ctx, "?", leftX + portrait / 2, cy, { size: 28, color: DIM });
+    }
+
+    // Name + kind tag.
+    const displayName = e.seen ? e.name : "???";
+    text(ctx, displayName, nameX, y + 14, {
+      size: 20, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
+    });
+    text(ctx, e.kind.toUpperCase(), rightX, y + 14, {
+      size: 12, color: e.kind === "Boss" ? RED : DIM, align: "right", weight: "700",
+    });
+
+    // Blurb (selected row only; locked text when unseen).
+    const blurb = e.seen ? e.blurb : "Not yet encountered. Venture deeper to reveal this creature.";
+    text(ctx, blurb, nameX, y + 40, {
+      size: 14, color: e.seen ? CREAM : DIM, align: "left", weight: "500", maxWidth: rightX - nameX,
+    });
+
+    y += rowH;
+  });
+
+  // Back row.
+  const backSelected = selectedIndex === entries.length;
+  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 4, {
+    size: 20, color: backSelected ? GOLD : CREAM, align: "left", weight: backSelected ? "700" : "500",
+  });
+
+  text(ctx, "Up / Down: move      Esc / Backspace: back", w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
+}
+
 // --- IN-GAME HUD ----------------------------------------------------------
 
 // --- Skinned-bar tunables (shared by HP / Spirit Imbued) -------------------
