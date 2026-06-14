@@ -34,6 +34,15 @@ const FOLLOW_OFFSET = 40;
 // During Familiar Frenzy the cat fires this fraction of its normal cooldown.
 const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 
+// --- Spirit Volley evolution (spread-shot) -------------------------------
+// Once unlocked (familiar.spreadShot = true), every attack fires a center bolt
+// PLUS two angled side bolts. The center keeps full familiar damage; the side
+// bolts deal a reduced cut (still enough to chip enemy HP). All three share the
+// familiar's pierce + evolved (Phantom Pounce) visual. Tunable:
+const SPREAD_ANGLE = 0.26;       // radians (~15 deg) between the center and each side bolt
+const SIDE_DAMAGE_SCALE = 0.5;   // side-bolt damage as a fraction of familiar damage
+                                 //   (rounded UP, floored at 1, so sides always sting)
+
 // --- Ghost imprints (visual only) ----------------------------------------
 // Spaced afterimages: drop one only after travelling IMPRINT_GAP px, then let
 // it fade over IMPRINT_LIFE. Gives "2  2  2  2" spacing, not a packed smear.
@@ -68,10 +77,11 @@ for (let i = 1; i <= RUNE_COUNT; i++) {
 
 // --- A single magic bolt -------------------------------------------------
 class Bolt {
-  constructor(x, y, targetX, targetY, speed, pierce = 0, evolved = false) {
+  constructor(x, y, targetX, targetY, speed, pierce = 0, evolved = false, damage = 1) {
     this.x = x;
     this.y = y;
     this.radius = 5;
+    this.damage = damage; // per-bolt now (side bolts of a spread deal less)
 
     const dx = targetX - x;
     const dy = targetY - y;
@@ -143,6 +153,7 @@ export class Familiar {
     this.damage = 1;
     this.pierce = 0;        // extra enemies each bolt passes through (Ghost Pounce)
     this.evolved = false;   // Phantom Pounce unlocked
+    this.spreadShot = false; // Spirit Volley unlocked (fires a 3-bolt spread)
 
     this.attackTimer = 0;
     this.bolts = [];
@@ -178,7 +189,7 @@ export class Familiar {
     if (this.attackTimer <= 0) {
       const target = this.findNearestTarget(targets);
       if (target) {
-        this.bolts.push(new Bolt(this.x, this.y, target.x, target.y, this.boltSpeed, this.pierce, this.evolved));
+        this.fireBolts(target);
         this.attackTimer = this.attackCooldown * (frenzyActive ? FRENZY_COOLDOWN_SCALE : 1);
         this.facing = dirFromVector(target.x - this.x, target.y - this.y); // face the shot
         this.startAttackAnim();
@@ -198,7 +209,7 @@ export class Familiar {
       for (const target of targets) {
         if (target.dead || bolt.hitTargets.has(target)) continue;
         if (distance(bolt.x, bolt.y, target.x, target.y) < bolt.radius + target.radius) {
-          target.takeDamage(this.damage);
+          target.takeDamage(bolt.damage);
           bolt.hitTargets.add(target);
           if (bolt.remainingPierce > 0) {
             bolt.remainingPierce -= 1; // pass through to the next enemy
@@ -232,6 +243,27 @@ export class Familiar {
     }
     for (const s of this.trail) s.life -= dt; // age them
     this.trail = this.trail.filter((s) => s.life > 0);
+  }
+
+  // Fire at a target. Normally one bolt; with Spirit Volley unlocked, a center
+  // bolt at full damage plus two reduced-damage side bolts in a narrow cone.
+  fireBolts(target) {
+    const baseAngle = Math.atan2(target.y - this.y, target.x - this.x);
+    this.spawnBolt(baseAngle, this.damage); // center bolt, full damage
+    if (this.spreadShot) {
+      const sideDmg = Math.max(1, Math.ceil(this.damage * SIDE_DAMAGE_SCALE));
+      this.spawnBolt(baseAngle - SPREAD_ANGLE, sideDmg);
+      this.spawnBolt(baseAngle + SPREAD_ANGLE, sideDmg);
+    }
+  }
+
+  // Spawn one bolt aimed along `angle`. Bolt normalizes its own velocity, so the
+  // aim point can sit any fixed distance out along the angle.
+  spawnBolt(angle, damage) {
+    const aimDist = 100;
+    const tx = this.x + Math.cos(angle) * aimDist;
+    const ty = this.y + Math.sin(angle) * aimDist;
+    this.bolts.push(new Bolt(this.x, this.y, tx, ty, this.boltSpeed, this.pierce, this.evolved, damage));
   }
 
   startAttackAnim() {
@@ -360,6 +392,7 @@ export class Familiar {
     this.attackCooldown = 1.2;
     this.pierce = 0;
     this.evolved = false;
+    this.spreadShot = false;
     this.frenzyActive = false;
     this.facing = "s";
     this.animState = "idle";

@@ -769,7 +769,7 @@ export function drawWaveBanner(ctx, w, h, wave, timer, isBoss = false) {
   text(ctx, `WAVE ${wave}`, w / 2, h / 2 - 20, { size: 52, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   ctx.globalAlpha = 1;
   if (isBoss) {
-    text(ctx, "Boss Incoming: Elder Wisp", w / 2, h / 2 + 32, { size: 24, color: RED, weight: "700" });
+    text(ctx, "Boss Incoming", w / 2, h / 2 + 32, { size: 24, color: RED, weight: "700" });
   } else {
     text(ctx, "Get ready...", w / 2, h / 2 + 30, { size: 22, color: DIM, weight: "500" });
   }
@@ -805,6 +805,56 @@ export function drawBossBar(ctx, w, h, boss) {
   ctx.strokeStyle = GOLD;
   ctx.lineWidth = 1;
   ctx.strokeRect(x, y, barW, barH);
+}
+
+// --- OFFSCREEN ENEMY INDICATORS (straggler finder) -----------------------
+// The world is larger than the viewport, so when only a few enemies remain a
+// cornered one (typically a backed-up Gutter Gecko) can sit fully off-screen.
+// For each such straggler, draw a small gold chevron pinned just inside the
+// screen edge, pointing toward it — so the player never has to wander the map
+// hunting the last enemy. Gated to low counts so it stays invisible during
+// normal swarms. Pure screen-space draw; `cam` is the camera's world top-left.
+const STRAGGLER_MAX = 3;   // show only when this few (or fewer) enemies are alive
+const CHEVRON_INSET = 30;  // px the chevron sits in from the screen edge
+export function drawOffscreenIndicators(ctx, w, h, enemies, cam) {
+  const alive = enemies.filter((e) => !e.dead);
+  if (alive.length === 0 || alive.length > STRAGGLER_MAX) return;
+
+  const cx = w / 2, cy = h / 2;
+  const halfW = w / 2 - CHEVRON_INSET;
+  const halfH = h / 2 - CHEVRON_INSET;
+  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 300);
+
+  for (const e of alive) {
+    const sx = e.x - cam.x;
+    const sy = e.y - cam.y;
+    if (sx >= 0 && sx <= w && sy >= 0 && sy <= h) continue; // on-screen — no arrow
+
+    const dx = sx - cx, dy = sy - cy;
+    const ang = Math.atan2(dy, dx);
+    // Project the center→enemy direction onto the inset-rectangle border so the
+    // chevron rides the edge nearest the enemy.
+    const tx = dx !== 0 ? halfW / Math.abs(dx) : Infinity;
+    const ty = dy !== 0 ? halfH / Math.abs(dy) : Infinity;
+    const t = Math.min(tx, ty);
+    const px = cx + dx * t;
+    const py = cy + dy * t;
+
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(ang);
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle = GOLD;
+    ctx.shadowColor = GOLD;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();      // arrowhead pointing along +x (toward the enemy)
+    ctx.moveTo(9, 0);
+    ctx.lineTo(-6, -6);
+    ctx.lineTo(-6, 6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
 }
 
 // --- PAUSE MENU -----------------------------------------------------------

@@ -35,6 +35,7 @@ export const UPGRADES = [
     name: "Restless Wisp",
     description: "Attack cooldown -15%",
     maxedStat: "-56%",
+    evolutionNotes: "Required for Spirit Volley (must be maxed).",
     tag: "speed",
     maxLevel: 5,
     apply(game) {
@@ -83,7 +84,7 @@ export const UPGRADES = [
     name: "Spirit Focus",
     description: "Spirit Imbued charges faster",
     maxedStat: "+3 per mote",
-    evolutionNotes: "Required for Spirit Bond (must be maxed).",
+    evolutionNotes: "Required for Spirit Bond and Spirit Volley (must be maxed).",
     tag: "frenzy",
     maxLevel: 3,
     apply(game) {
@@ -152,6 +153,26 @@ export const EVOLUTIONS = [
     apply(game) {
       game.spiritBondUnlocked = true;
       game.evoBannerText = "Evolution Unlocked: Spirit Bond";
+      game.evoBannerTimer = 4;
+    },
+  },
+  {
+    // NOTE: the icon system loads <id>.png, so this id MUST match Daniel's
+    // icon filename exactly. If the file is named differently, either rename
+    // it to spirit_volley.png OR change this id to match the filename.
+    id: "spirit_volley",
+    name: "Spirit Volley",
+    description: "Each attack fires a 3-bolt spread.",
+    tag: "evolution",
+    maxLevel: 1,
+    // Unlocks once BOTH Restless Wisp and Spirit Focus are maxed.
+    requires(levels) {
+      return (levels.restless_wisp || 0) >= 5 && (levels.frenzy_focus || 0) >= 3;
+    },
+    apply(game) {
+      game.familiar.spreadShot = true;
+      game.spiritVolleyUnlocked = true;
+      game.evoBannerText = "Evolution Unlocked: Spirit Volley";
       game.evoBannerTimer = 4;
     },
   },

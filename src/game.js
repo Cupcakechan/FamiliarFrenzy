@@ -24,7 +24,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawOffscreenIndicators } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -233,6 +233,7 @@ export class Game {
     // Evolution (one-shot).
     this.phantomPounceUnlocked = false;
     this.spiritBondUnlocked = false;
+    this.spiritVolleyUnlocked = false;
     this.evoBannerText = "";
     this.evoBannerTimer = 0;  // seconds the unlock banner stays on screen
     this.beatBestWave = false;  // set by updateEndlessBests() at run end
@@ -291,6 +292,7 @@ export class Game {
     this.luckLevel = 0;
     this.phantomPounceUnlocked = false;
     this.spiritBondUnlocked = false;
+    this.spiritVolleyUnlocked = false;
     this.evoBannerText = "";
     this.evoBannerTimer = 0;
     this.beatBestWave = false;
@@ -1193,6 +1195,7 @@ export class Game {
 
     switch (this.state) {
       case STATE.PLAYING:
+        drawOffscreenIndicators(ctx, this.width, this.height, this.enemies, cam);
         drawHUD(ctx, this.width, this.height, this.hudState());
         if (this.waveManager.boss && !this.waveManager.boss.dead) {
           drawBossBar(ctx, this.width, this.height, this.waveManager.boss);
@@ -1576,6 +1579,7 @@ export class Game {
     const evolutions = [
       this.phantomPounceUnlocked && "Phantom Pounce",
       this.spiritBondUnlocked && "Spirit Bond",
+      this.spiritVolleyUnlocked && "Spirit Volley",
     ].filter(Boolean);
 
     return {
@@ -1630,7 +1634,7 @@ export class Game {
       maxHealth: this.player.maxHealth,
       frenzy,
       upgrades,
-      evolution: [this.phantomPounceUnlocked && "Phantom Pounce", this.spiritBondUnlocked && "Spirit Bond"]
+      evolution: [this.phantomPounceUnlocked && "Phantom Pounce", this.spiritBondUnlocked && "Spirit Bond", this.spiritVolleyUnlocked && "Spirit Volley"]
         .filter(Boolean).join(" + ") || "None",
     };
   }

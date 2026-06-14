@@ -273,6 +273,14 @@ export class Enemy {
       this.y += (dy / len) * this.speed * dt;
     }
 
+    // Keep the body fully on the floor. The wisp chases the (already-clamped)
+    // witch so it stays in bounds on its own, but the gecko BACKS AWAY and could
+    // otherwise be shoved through the wall ring when cornered against it. Now it
+    // just slides along the wall instead, so it's always reachable.
+    const bounded = clampToPlayfield(this.x, this.y, this.radius);
+    this.x = bounded.x;
+    this.y = bounded.y;
+
     this.wobble += dt * 6;
     if (this.hitFlash > 0) this.hitFlash -= dt;
 
@@ -1098,8 +1106,8 @@ export class WatchingHand {
 
 // --- Boss selection ----------------------------------------------------------
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
-// which: "elder_wisp", "watching_hand", or "auto" (the normal alternation —
-// Elder Wisp on wave 10/30/..., Watching Hand on wave 20/40/...).
+// which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
+// random rotation — no back-to-back repeats; order varies each run).
 const DEBUG_FORCE_BOSS = false;
 const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand"
 
