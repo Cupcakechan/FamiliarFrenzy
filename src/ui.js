@@ -423,24 +423,23 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   const seenCount = entries.filter((e) => e.seen).length;
   text(ctx, `${seenCount} / ${entries.length} discovered`, w / 2, 74, { size: 14, color: DIM, weight: "500" });
 
-  const leftX = 150;          // portrait left edge
-  const portrait = 56;        // portrait box size
-  const nameX = leftX + portrait + 24;
-  const rightX = w - 150;
-  const rowH = 88;
+  // --- Compact list (portrait + name + tag; no per-row blurb) ---
+  const leftX = 200;          // portrait left edge
+  const portrait = 48;        // portrait box size
+  const nameX = leftX + portrait + 22;
+  const rightX = w - 200;
+  const rowH = 60;
   let y = 100;
 
   entries.forEach((e, i) => {
     const selected = i === selectedIndex;
-    const cy = y + portrait / 2;
 
-    // Selection highlight bar.
     if (selected) {
       ctx.fillStyle = "rgba(244, 213, 141, 0.08)";
-      ctx.fillRect(leftX - 20, y - 8, rightX - leftX + 40, portrait + 16);
+      ctx.fillRect(leftX - 20, y - 6, rightX - leftX + 40, portrait + 12);
     }
 
-    // Portrait box (slightly lit so dark sprites + silhouettes stand off it).
+    // Portrait box (lit so dark sprites + silhouettes stand off it).
     ctx.fillStyle = "rgba(244, 213, 141, 0.06)";
     ctx.fillRect(leftX, y, portrait, portrait);
     ctx.strokeStyle = selected ? GOLD : "rgba(244, 213, 141, 0.3)";
@@ -457,41 +456,27 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
       if (e.seen) {
         ctx.drawImage(e.img, 0, 0, fw, fh, dx, dy, dw, dh);
       } else {
-        // Silhouette via an OFFSCREEN canvas: draw the frame, then blacken its
-        // opaque pixels with source-atop (scoped to the temp canvas so it can't
-        // affect the rest of the screen), and blit the result in.
+        // Silhouette via an offscreen canvas (scoped so it can't affect the
+        // rest of the screen): draw the frame, blacken its opaque pixels.
         const tmp = document.createElement("canvas");
         tmp.width = Math.ceil(dw); tmp.height = Math.ceil(dh);
         const tctx = tmp.getContext("2d");
         tctx.drawImage(e.img, 0, 0, fw, fh, 0, 0, dw, dh);
         tctx.globalCompositeOperation = "source-atop";
-        tctx.fillStyle = "#2b2540"; // muted purple-grey — visible against the box
+        tctx.fillStyle = "#2b2540";
         tctx.fillRect(0, 0, dw, dh);
         ctx.drawImage(tmp, dx, dy);
       }
     } else {
-      // No art resolved: a clear "?" so the slot never looks blank/broken.
-      text(ctx, "?", leftX + portrait / 2, cy, { size: 32, color: e.seen ? CREAM : "rgba(244,213,141,0.5)", weight: "700" });
+      text(ctx, "?", leftX + portrait / 2, y + portrait / 2, { size: 28, color: e.seen ? CREAM : "rgba(244,213,141,0.5)", weight: "700" });
     }
 
-    // Name + kind tag.
     const displayName = e.seen ? e.name : "???";
-    text(ctx, displayName, nameX, y + 16, {
-      size: 24, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
+    text(ctx, displayName, nameX, y + portrait / 2, {
+      size: 22, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
     });
-    text(ctx, e.kind.toUpperCase(), rightX, y + 16, {
-      size: 14, color: e.kind === "Boss" ? RED : DIM, align: "right", weight: "700",
-    });
-
-    // Blurb: word-wrapped to up to two FULL-SIZE lines (a single line with
-    // maxWidth would shrink long blurbs into unreadable micro-text).
-    const blurb = e.seen ? e.blurb : "Not yet encountered. Venture deeper to reveal this creature.";
-    const blurbColor = e.seen ? CREAM : DIM;
-    const blurbLines = wrapText(ctx, blurb, rightX - nameX, { size: 15, weight: "500", maxLines: 2 });
-    blurbLines.forEach((line, li) => {
-      text(ctx, line, nameX, y + 42 + li * 19, {
-        size: 15, color: blurbColor, align: "left", weight: "500",
-      });
+    text(ctx, e.kind.toUpperCase(), rightX, y + portrait / 2, {
+      size: 13, color: e.kind === "Boss" ? RED : DIM, align: "right", weight: "700",
     });
 
     y += rowH;
@@ -499,9 +484,35 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
 
   // Back row.
   const backSelected = selectedIndex === entries.length;
-  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 4, {
+  text(ctx, `${backSelected ? "> " : "  "}Back`, leftX, y + 2, {
     size: 22, color: backSelected ? GOLD : CREAM, align: "left", weight: backSelected ? "700" : "500",
   });
+
+  // --- Detail panel (selected entry only) ---
+  // Full description for the highlighted creature, wrapped across as many lines
+  // as needed in a roomy panel — no squishing, no edge cut-off.
+  const sel = selectedIndex < entries.length ? entries[selectedIndex] : null;
+  if (sel) {
+    const panelX = 120, panelW = w - 240;
+    const panelY = h - 132, panelH = 84;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+    ctx.fillRect(panelX, panelY, panelW, panelH);
+    ctx.strokeStyle = "rgba(244, 213, 141, 0.25)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(panelX, panelY, panelW, panelH);
+
+    const padX = 20;
+    const heading = sel.seen ? sel.name : "???";
+    text(ctx, heading, panelX + padX, panelY + 22, { size: 18, color: GOLD, align: "left", weight: "700" });
+
+    const blurb = sel.seen ? sel.blurb : "Not yet encountered. Venture deeper to reveal this creature.";
+    // Wrap conservatively inside the panel padding so it never reaches an edge.
+    const lines = wrapText(ctx, blurb, panelW - padX * 2, { size: 15, weight: "500", maxLines: 3 });
+    lines.forEach((line, li) => {
+      text(ctx, line, panelX + padX, panelY + 46 + li * 20, { size: 15, color: sel.seen ? CREAM : DIM, align: "left", weight: "500" });
+    });
+  }
 
   text(ctx, "Up / Down: move      Esc / Backspace: back", w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
 }

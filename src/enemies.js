@@ -1100,7 +1100,7 @@ export class WatchingHand {
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal alternation —
 // Elder Wisp on wave 10/30/..., Watching Hand on wave 20/40/...).
-const DEBUG_FORCE_BOSS = true;
+const DEBUG_FORCE_BOSS = false;
 const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
