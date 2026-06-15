@@ -102,6 +102,28 @@ const ENEMY_TYPES = {
       blastDamage: 15,     // damage if you're inside at detonation
     },
   },
+  goblin_bonker: {
+    spritePrefix: "goblin",
+    spriteScale: 0.9,    // tune independently once the art is in (visual only)
+    speedMult: 0.6,      // slow bully — slower than a wisp
+    healthMult: 3.0,     // the tank: ~3x a wisp's HP
+    damage: 8,           // contact damage if you crowd it
+    fallbackOuter: "#7bbf5a", // goblin green
+    fallbackInner: "#2f5a22",
+    ranged: null,
+    // bruiser: lumbers in, plants, winds up a LOCKED club swing (a rect in
+    // front), and KNOCKS the witch back on a hit. The displacement is the point.
+    bruiser: {
+      approachRange: 72,  // plants + winds up when the witch is this close (center dist)
+      windup: 1.0,        // telegraphed wind-up seconds (dodge window)
+      recover: 0.8,       // planted recovery after the swing (escape window)
+      cooldown: 0.6,      // extra gap before it can wind up again
+      swingReach: 92,     // how far the swing rect reaches in front
+      swingWidth: 84,     // swing rect width
+      swingDamage: 10,    // low/moderate — the knockback is the punishment
+      knockback: 78,      // px the witch is shoved away from the goblin on a hit
+    },
+  },
 };
 
 // Gutter Gecko sprite strips (anthropomorphic lizard with a pouch). Unlike
@@ -132,6 +154,19 @@ for (const anim of ["idle", "attack"]) {
   }
 }
 
+// Goblin Bonker sprite strips. Only TWO anims by design: it's always either
+// advancing (walk) or planted mid-swing (attack), so no idle; death just removes
+// it, so no die. Single-row strips in assets/sprites/enemies/:
+//   goblin_walk_<dir>.png    (6 frames, loops — lumbering toward the witch)
+//   goblin_attack_<dir>.png  (6 frames, PROGRESS-DRIVEN — wind-up then swing)
+// Missing strips fall back to the goblin-green placeholder per direction.
+for (const anim of ["walk", "attack"]) {
+  for (const d of WISP_DIRS) {
+    const key = `goblin_${anim}_${d}`;
+    loadImage(key, `assets/sprites/enemies/${key}.png`);
+  }
+}
+
 // Per-prefix animation tables.
 const ENEMY_ANIMS = {
   wisp:  { anims: WISP_ANIMS, fps: WISP_FPS, looping: WISP_LOOPING },
@@ -144,6 +179,11 @@ const ENEMY_ANIMS = {
     anims:   { idle: 6, attack: 6 },
     fps:     { idle: 5, attack: 10 },
     looping: { idle: true, attack: false }, // attack (cast pose) plays once
+  },
+  goblin: {
+    anims:   { walk: 6, attack: 6 },
+    fps:     { walk: 8, attack: 10 }, // attack frame is PROGRESS-driven, fps unused for it
+    looping: { walk: true, attack: false },
   },
 };
 
@@ -246,7 +286,11 @@ loadImage("hex_rune", "assets/sprites/enemies/hex_rune.png");
 // game.js, which also marks it dead. Reusable by any future enemy/boss.
 const HAZARD_BLAST_TIME = 0.35; // brief impact flash AFTER the telegraph ends
 export class HazardZone {
-  constructor(x, y, radius, telegraph, damage) {
+  // shape "circle" (Bone Mage) uses `radius`; shape "rect" (Goblin swing) uses
+  // opts.angle/length/width. opts.knockback (px) + opts.ox/oy (the attacker's
+  // locked position) shove the witch away on a LANDED hit. opts.sfx is the
+  // detonation cue. Called with no opts -> a plain circle, exactly as before.
+  constructor(x, y, radius, telegraph, damage, opts = {}) {
     this.x = x;
     this.y = y;
     this.radius = radius;
@@ -256,21 +300,50 @@ export class HazardZone {
     this.timer = telegraph;
     this.dead = false;
     this.hasHit = false;
+
+    this.shape = opts.shape || "circle";
+    this.angle = opts.angle || 0;
+    this.length = opts.length || radius * 2; // rect reach along angle
+    this.width = opts.width || radius * 2;   // rect width across angle
+    this.knockback = opts.knockback || 0;
+    this.ox = opts.ox != null ? opts.ox : x; // knockback origin (the attacker)
+    this.oy = opts.oy != null ? opts.oy : y;
+    this.sfx = opts.sfx || "mage_blast";
+  }
+
+  // Is the witch inside the danger area right now? (expanded by her radius so a
+  // graze counts, matching the circle's reach).
+  hits(player) {
+    if (this.shape === "rect") {
+      // Un-rotate the witch into the rect's local space, then an AABB test.
+      const dx = player.x - this.x, dy = player.y - this.y;
+      const ca = Math.cos(-this.angle), sa = Math.sin(-this.angle);
+      const lx = dx * ca - dy * sa;
+      const ly = dx * sa + dy * ca;
+      return Math.abs(lx) <= this.length / 2 + player.radius &&
+             Math.abs(ly) <= this.width / 2 + player.radius;
+    }
+    return Math.hypot(player.x - this.x, player.y - this.y) <= this.radius + player.radius;
   }
 
   update(dt, player) {
     this.timer -= dt;
     if (this.phase === "telegraph") {
       if (this.timer <= 0) {
-        // Detonate: damage once if the witch is inside the ring right now.
-        if (!this.hasHit && player && !player.dead) {
-          const d = Math.hypot(player.x - this.x, player.y - this.y);
-          if (d <= this.radius + player.radius) player.takeDamage(this.damage);
+        // Detonate: damage once if the witch is inside right now. A LANDED hit
+        // (one that beat her i-frames) also knocks her back from the origin.
+        if (!this.hasHit && player && !player.dead && this.hits(player)) {
+          const landed = player.takeDamage(this.damage);
+          if (landed && this.knockback > 0 && typeof player.applyKnockback === "function") {
+            const kx = player.x - this.ox, ky = player.y - this.oy;
+            const len = Math.hypot(kx, ky) || 1;
+            player.applyKnockback(kx / len, ky / len, this.knockback);
+          }
         }
         this.hasHit = true;
         this.phase = "blast";
         this.timer = HAZARD_BLAST_TIME;
-        playSfx("mage_blast"); // missing file = silent (registry is graceful)
+        playSfx(this.sfx); // missing file = silent (registry is graceful)
       }
     } else if (this.timer <= 0) {
       this.dead = true;
@@ -278,9 +351,42 @@ export class HazardZone {
   }
 
   draw(ctx) {
+    if (this.shape === "rect") { this.drawRect(ctx); return; }
+    this.drawCircle(ctx);
+  }
+
+  // Goblin swing: a rotated danger rectangle whose fill sweeps from the goblin
+  // out to the tip as the swing loads, then a bright impact flash.
+  drawRect(ctx) {
+    const hl = this.length / 2, hw = this.width / 2;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    if (this.phase === "blast") {
+      const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME;
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = "rgba(255, 230, 180, 0.85)";
+      ctx.fillRect(-hl, -hw, this.length, this.width);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#e2536b";
+      ctx.strokeRect(-hl, -hw, this.length, this.width);
+      ctx.restore();
+      return;
+    }
+    const fill = 1 - Math.max(0, this.timer) / this.telegraph;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(226, 83, 107, ${0.45 + 0.45 * fill})`;
+    ctx.strokeRect(-hl, -hw, this.length, this.width);
+    ctx.fillStyle = `rgba(226, 83, 107, ${0.10 + 0.16 * pulse})`;
+    ctx.fillRect(-hl, -hw, this.length * fill, this.width); // sweeps outward
+    ctx.restore();
+  }
+
+  // Bone Mage cursed ground: warning ring/rune that fills, then an impact flash.
+  drawCircle(ctx) {
     const img = getImage("hex_rune");
     if (this.phase === "blast") {
-      // Bright impact flash that expands a touch and fades.
       const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME; // 0->1
       const r = this.radius * (1 + p * 0.18);
       ctx.save();
@@ -293,18 +399,13 @@ export class HazardZone {
       ctx.restore();
       return;
     }
-
-    // Telegraph: fill 0->1 as detonation nears.
     const fill = 1 - Math.max(0, this.timer) / this.telegraph;
     ctx.save();
     if (img && img.width > 0) {
-      // Sprite rune (assets/sprites/enemies/hex_rune.png): brightens as it fills.
       const dw = this.radius * 2, dh = this.radius * 2;
       ctx.globalAlpha = 0.55 + 0.4 * fill;
       ctx.drawImage(img, this.x - dw / 2, this.y - dh / 2, dw, dh);
     } else {
-      // Code-drawn warning: outer danger ring + an inner disc that grows to fill
-      // the circle (a clock for "time to blast") + a small rune cross.
       const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 120);
       ctx.lineWidth = 2;
       ctx.strokeStyle = `rgba(226, 83, 107, ${0.45 + 0.45 * fill})`;
@@ -348,14 +449,18 @@ export class Enemy {
     this.bondTickTimer = 0;     // Spirit Bond: per-enemy damage-tick cooldown
     this.blinkFx = [];          // Bone Mage phase-step poof rings (visual only)
     this.blinkCooldown = 0;     // min gap between "crowded me" blinks
+    this.attackState = "chase"; // Goblin Bonker: "chase" | "windup" | "recover"
+    this.attackTimer = 0;       // windup/recover countdown
+    this.attackCd = 0;          // gap before it can wind up again
 
     // Animation state (visual only). Start frame is randomized so a swarm
     // doesn't pulse in perfect lockstep.
     const animCfg = ENEMY_ANIMS[this.def.spritePrefix];
     this.facing = "s";
     // Resting state differs per model: the ghostly wisp floats; the grounded
-    // gecko and the Bone Mage idle.
-    this.restState = (this.def.ranged || this.def.caster) ? "idle" : "float";
+    // gecko and the Bone Mage idle; the Goblin has no rest pose (it's always
+    // advancing or mid-swing), so its "rest" is the walk loop.
+    this.restState = this.def.bruiser ? "walk" : (this.def.ranged || this.def.caster) ? "idle" : "float";
     this.animState = this.restState;
     this.animFrame = randomInt(0, animCfg.anims[this.restState] - 1);
     this.animTimer = 0;
@@ -409,6 +514,10 @@ export class Enemy {
       // --- Bone Mage: a stationary caster. It curses the ground and BLINKS to
       // reposition (no walking) — all movement is via phase-step. ---
       this.updateCaster(dt, player, len, hazards);
+    } else if (this.def.bruiser) {
+      // --- Goblin Bonker: lumber in, plant, telegraph a LOCKED club swing, and
+      // knock the witch back. (Handles its own facing + animation.) ---
+      this.updateBruiser(dt, player, len, hazards);
     } else {
       // --- Melee chaser (wisp): walk straight at the witch (unchanged) ---
       this.x += (dx / len) * this.speed * dt;
@@ -431,27 +540,32 @@ export class Enemy {
     // --- Animation (visual only) ---
     // Both types always face the witch (the gecko backs away while facing her,
     // as a flinger should).
-    this.facing = dirFromVector(dx, dy);
+    // --- Facing + animation (visual only) ---
+    // The Goblin (bruiser) drives its OWN facing + frame in updateBruiser (it
+    // LOCKS them through the wind-up/swing), so it opts out of the generic path.
+    if (!this.def.bruiser) {
+      this.facing = dirFromVector(dx, dy);
 
-    // Wisp: ATTACK while touching (reads the same proximity the contact-damage
-    // check uses; damage itself is untouched, handled in game.js), FLOAT
-    // otherwise. Gecko: ATTACK (one-shot) during the fling pose, WALK while
-    // repositioning, IDLE while holding its distance.
-    const touching = len <= this.radius + player.radius + WISP_ATTACK_VISUAL_GAP;
-    let newState;
-    if (this.def.ranged) {
-      newState = this.attackPoseTimer > 0 ? "attack" : (this.repositioning ? "walk" : "idle");
-    } else if (this.def.caster) {
-      newState = this.attackPoseTimer > 0 ? "attack" : "idle";
-    } else {
-      newState = touching ? "attack" : "float";
+      // Wisp: ATTACK while touching (reads the same proximity the contact-damage
+      // check uses; damage itself is untouched, handled in game.js), FLOAT
+      // otherwise. Gecko: ATTACK (one-shot) during the fling pose, WALK while
+      // repositioning, IDLE while holding its distance.
+      const touching = len <= this.radius + player.radius + WISP_ATTACK_VISUAL_GAP;
+      let newState;
+      if (this.def.ranged) {
+        newState = this.attackPoseTimer > 0 ? "attack" : (this.repositioning ? "walk" : "idle");
+      } else if (this.def.caster) {
+        newState = this.attackPoseTimer > 0 ? "attack" : "idle";
+      } else {
+        newState = touching ? "attack" : "float";
+      }
+      if (newState !== this.animState) {
+        this.animState = newState;
+        this.animFrame = 0;
+        this.animTimer = 0;
+      }
+      this.advanceFrames(dt);
     }
-    if (newState !== this.animState) {
-      this.animState = newState;
-      this.animFrame = 0;
-      this.animTimer = 0;
-    }
-    this.advanceFrames(dt);
   }
 
   // Bone Mage brain: blink to keep distance, curse the ground on cooldown.
@@ -495,6 +609,73 @@ export class Enemy {
     this.y = dest.y;
     this.blinkFx.push({ x: this.x, y: this.y, t: BLINK_FX_LIFE });
     this.blinkCooldown = MAGE_BLINK_COOLDOWN;
+  }
+
+  // Goblin Bonker brain: chase -> plant + wind up a LOCKED swing -> recover.
+  // The swing (telegraph, hit, knockback) is a rect HazardZone, so the "doesn't
+  // chase once committed" fairness is free. Drives its own facing + animation:
+  // WALK while advancing; a progress-driven ATTACK pose (wind-up frames, then
+  // the swing frame held through recovery) while planted.
+  updateBruiser(dt, player, len, hazards) {
+    const b = this.def.bruiser;
+    const attackFrames = ENEMY_ANIMS.goblin.anims.attack; // 6
+    if (this.attackCd > 0) this.attackCd -= dt;
+
+    if (this.attackState === "windup") {
+      this.attackTimer -= dt; // planted; facing stays locked from when it committed
+      const p = 1 - Math.max(0, this.attackTimer) / b.windup; // 0 -> 1
+      // Wind-up rides the early frames; the FINAL frame is the swing itself.
+      this.animState = "attack";
+      this.animFrame = Math.min(attackFrames - 2, Math.floor(p * (attackFrames - 1)));
+      if (this.attackTimer <= 0) {
+        this.attackState = "recover";
+        this.attackTimer = b.recover;
+        this.animFrame = attackFrames - 1; // snap to the swing frame as it connects
+      }
+      return;
+    }
+
+    if (this.attackState === "recover") {
+      this.attackTimer -= dt; // planted; hold the swing frame (winded follow-through)
+      this.animState = "attack";
+      this.animFrame = attackFrames - 1;
+      if (this.attackTimer <= 0) {
+        this.attackState = "chase";
+        this.attackCd = b.cooldown;
+      }
+      return;
+    }
+
+    // --- chase ---
+    this.facing = dirFromVector(player.x - this.x, player.y - this.y);
+    if (len > b.approachRange) {
+      this.x += ((player.x - this.x) / len) * this.speed * dt;
+      this.y += ((player.y - this.y) / len) * this.speed * dt;
+      if (this.animState !== "walk") { this.animState = "walk"; this.animFrame = 0; this.animTimer = 0; }
+      this.advanceFrames(dt);
+      return;
+    }
+    if (this.attackCd <= 0 && hazards) {
+      // In range + off cooldown: plant, LOCK the aim, spawn the swing zone in
+      // front. The HazardZone (rect) handles the telegraph, hit, and knockback.
+      const ang = Math.atan2(player.y - this.y, player.x - this.x);
+      const cx = this.x + Math.cos(ang) * (b.swingReach / 2);
+      const cy = this.y + Math.sin(ang) * (b.swingReach / 2);
+      hazards.push(new HazardZone(cx, cy, b.swingReach, b.windup, b.swingDamage, {
+        shape: "rect", angle: ang, length: b.swingReach, width: b.swingWidth,
+        knockback: b.knockback, ox: this.x, oy: this.y, sfx: "goblin_bonk",
+      }));
+      playSfx("goblin_windup"); // missing file = silent
+      this.attackState = "windup";
+      this.attackTimer = b.windup;
+      this.animState = "attack";
+      this.animFrame = 0;
+      this.animTimer = 0;
+      return;
+    }
+    // In range but still on cooldown — shuffle in place (walk loop).
+    if (this.animState !== "walk") { this.animState = "walk"; this.animFrame = 0; this.animTimer = 0; }
+    this.advanceFrames(dt);
   }
 
   // Step the current animation. Both anims loop; the non-looping branch is
@@ -933,6 +1114,9 @@ const GECKO_MAX_ALIVE = 3;        // never more than this many alive at once
 const MAGE_INTRO_WAVE = 8;        // Bone Mages join the spawn mix from this wave on
 const MAGE_SPAWN_CHANCE = 0.12;   // chance each eligible slot rolls a Bone Mage
 const MAGE_MAX_ALIVE = 2;         // never more than this many alive at once (zoning is oppressive in bulk)
+const GOBLIN_INTRO_WAVE = 6;      // Goblin Bonkers join the spawn mix from this wave on
+const GOBLIN_SPAWN_CHANCE = 0.15; // chance each eligible slot rolls a Goblin
+const GOBLIN_MAX_ALIVE = 2;       // never more than this many alive (displacement is oppressive in bulk)
 
 // ===========================================================================
 //  WATCHING HAND — second boss (Phase 1: skeleton).
@@ -1471,17 +1655,22 @@ export class WaveManager {
   // GECKO_INTRO_WAVE, at GECKO_SPAWN_CHANCE per slot, capped at
   // GECKO_MAX_ALIVE simultaneously. Everything else is a wisp.
   rollEnemyType(enemies) {
-    let geckosAlive = 0, magesAlive = 0;
+    let geckosAlive = 0, magesAlive = 0, goblinsAlive = 0;
     for (const e of enemies) {
       if (e.dead) continue;
       if (e.type === "gutter_gecko") geckosAlive += 1;
       else if (e.type === "bone_mage") magesAlive += 1;
+      else if (e.type === "goblin_bonker") goblinsAlive += 1;
     }
     // Bone Mage rolls first (rarer + capped) so its zoning pressure isn't
     // crowded out by the more common gecko roll.
     if (this.wave >= MAGE_INTRO_WAVE && magesAlive < MAGE_MAX_ALIVE &&
         Math.random() < MAGE_SPAWN_CHANCE) {
       return "bone_mage";
+    }
+    if (this.wave >= GOBLIN_INTRO_WAVE && goblinsAlive < GOBLIN_MAX_ALIVE &&
+        Math.random() < GOBLIN_SPAWN_CHANCE) {
+      return "goblin_bonker";
     }
     if (this.wave >= GECKO_INTRO_WAVE && geckosAlive < GECKO_MAX_ALIVE &&
         Math.random() < GECKO_SPAWN_CHANCE) {

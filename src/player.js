@@ -38,6 +38,9 @@ const ANIM_FPS = {
 // Which animations loop. (die plays once and holds on its last frame.)
 const LOOPING = { idle: true, walk: true, die: false };
 
+// Knockback (e.g. Goblin Bonker club): a brief impulse decays over this long.
+const KNOCK_TIME = 0.22; // seconds
+
 // Register sprites.
 for (const anim of ["idle", "walk", "die"]) {
   for (const d of DIRS) {
@@ -60,6 +63,12 @@ export class Player {
     this.invulnDuration = 1.0;
     this.invulnTimer = 0;
 
+    // Knockback impulse (Goblin Bonker club, etc.): a brief decaying shove the
+    // witch can still move against — a push, not a stun.
+    this.knockVX = 0;
+    this.knockVY = 0;
+    this.knockTimer = 0;
+
     // Animation state.
     this.facing = "s";
     this.animState = "idle"; // "idle" | "walk" | "die"
@@ -75,6 +84,16 @@ export class Player {
 
     this.x += move.x * this.speed * dt;
     this.y += move.y * this.speed * dt;
+
+    // Knockback shove on top of normal movement. Velocity decays linearly so the
+    // total displacement ≈ the requested px, and the witch keeps her own control.
+    if (this.knockTimer > 0) {
+      const k = this.knockTimer / KNOCK_TIME; // 1 -> 0
+      this.x += this.knockVX * k * dt;
+      this.y += this.knockVY * k * dt;
+      this.knockTimer -= dt;
+    }
+
     // Keep the whole circle inside the arena, minus an optional edge inset
     // (the wall-ring thickness) so the witch stays on the floor.
     const m = bounds.inset || 0;
@@ -156,6 +175,16 @@ export class Player {
     this.health = Math.min(this.maxHealth, this.health + amount);
   }
 
+  // Brief decaying shove away from a hit. dirX/dirY need not be normalized;
+  // `distance` is roughly the total px pushed. The witch keeps WASD control.
+  applyKnockback(dirX, dirY, distance) {
+    const len = Math.hypot(dirX, dirY) || 1;
+    const speed = (2 * distance) / KNOCK_TIME; // linear decay integrates to `distance`
+    this.knockVX = (dirX / len) * speed;
+    this.knockVY = (dirY / len) * speed;
+    this.knockTimer = KNOCK_TIME;
+  }
+
   get isInvulnerable() {
     return this.invulnTimer > 0;
   }
@@ -208,6 +237,9 @@ export class Player {
     this.maxHealth = 100;
     this.health = this.maxHealth;
     this.invulnTimer = 0;
+    this.knockVX = 0;
+    this.knockVY = 0;
+    this.knockTimer = 0;
     this.facing = "s";
     this.animState = "idle";
     this.animFrame = 0;

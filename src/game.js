@@ -108,6 +108,7 @@ const TUTORIAL_HINTS = {
   elder_wisp:  "The Elder Wisp! Watch for when it lines up a charge!",
   watching_hand: "The Watching Hand! Don't stand where it aims to slam!",
   bone_mage:   "A Bone Mage! It curses the ground — step off the rune!",
+  goblin_bonker: "A Goblin Bonker! Its club swing knocks you flying — dodge it.",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
 
@@ -133,6 +134,11 @@ const BESTIARY = [
     id: "bone_mage", name: "Bone Mage", kind: "Enemy", enemyType: "bone_mage",
     spriteKey: "bone_mage_idle_s", frames: 6,
     blurb: "Curses the ground from afar, then blinks away. Don't linger.",
+  },
+  {
+    id: "goblin_bonker", name: "Goblin Bonker", kind: "Enemy", enemyType: "goblin_bonker",
+    spriteKey: "goblin_walk_s", frames: 6,
+    blurb: "Winds up a heavy club swing that knocks witches back.",
   },
   {
     id: "elder_wisp", name: "Elder Wisp", kind: "Boss", bossName: "Elder Wisp",
@@ -813,6 +819,10 @@ export class Game {
       if (this.enemies.some((e) => e.type === "bone_mage")) {
         this.markSeen("bone_mage");
         this.showEnemyHint("bone_mage"); // both modes, once per run
+      }
+      if (this.enemies.some((e) => e.type === "goblin_bonker")) {
+        this.markSeen("goblin_bonker");
+        this.showEnemyHint("goblin_bonker"); // both modes, once per run
       }
     }
     if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");

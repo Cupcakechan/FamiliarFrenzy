@@ -296,6 +296,8 @@ const SFX_DEFS = {
   hand_slam:  { src: "assets/sfx/hand_slam.mp3",  volume: 0.55, voices: 2, minInterval: 0.10 },
   mage_cast:  { src: "assets/sfx/mage_cast.mp3",  volume: 0.40, voices: 2, minInterval: 0.10 },
   mage_blast: { src: "assets/sfx/mage_blast.mp3", volume: 0.50, voices: 2, minInterval: 0.08 },
+  goblin_windup: { src: "assets/sfx/goblin_windup.mp3", volume: 0.40, voices: 2, minInterval: 0.10 },
+  goblin_bonk:   { src: "assets/sfx/goblin_bonk.mp3",   volume: 0.55, voices: 2, minInterval: 0.08 },
 };
 
 const SFX_STORAGE_KEY = "ff_sfxVolume";
