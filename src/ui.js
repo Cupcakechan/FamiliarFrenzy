@@ -120,11 +120,14 @@ export function drawCrystalIcon(ctx, cx, cy, r) {
 function crystalLine(ctx, cx, y, str, { size = 16, color = GOLD } = {}) {
   ctx.font = `700 ${size}px ${BODY_FONT}`;
   const tw = ctx.measureText(str).width;
-  const r = size * 0.42;          // gem half-height
-  const gap = 6;
+  const r = size * 0.62;          // gem half-height (enlarged)
+  const gap = 8;
+  // textBaseline is "middle", which sits the caps slightly above y; nudge the
+  // gem up a touch so it lines up with the lettering rather than looking low.
+  const iconY = y - size * 0.06;
   const groupW = r * 2 + gap + tw;
   const left = cx - groupW / 2;
-  drawCrystalIcon(ctx, left + r, y, r);
+  drawCrystalIcon(ctx, left + r, iconY, r);
   text(ctx, str, left + r * 2 + gap, y, { size, color, align: "left", weight: "700" });
 }
 
@@ -1373,4 +1376,124 @@ export function drawGameOver(ctx, w, h, info) {
   ctx.globalAlpha = pulse;
   text(ctx, "R: try again      Esc: main menu", w / 2, h / 2 + 90, { size: 20, color: PURPLE });
   ctx.globalAlpha = 1;
+}
+
+// --- Closet (Wardrobe) ----------------------------------------------------
+// Corner affordance on the main menu: a crystal readout above a "Closet [C]"
+// button, anchored bottom-right. Drawn SEPARATELY from drawMenu so it never
+// disturbs the centred title/option stack. Keyboard-only, so the [C] cap is the
+// hint; pressing C opens the screen.
+export function drawClosetButton(ctx, w, h, crystals) {
+  const bw = 152, bh = 34;
+  const bx = w - 18 - bw;   // button left edge
+  const by = h - 16 - bh;   // button top edge
+
+  // Crystal total just above the button, right-aligned to its right edge.
+  ctx.font = `700 15px ${BODY_FONT}`;
+  const cstr = `${crystals}`;
+  const tw = ctx.measureText(cstr).width;
+  const rightX = bx + bw;
+  text(ctx, cstr, rightX, by - 13, { size: 15, color: GOLD, align: "right", weight: "700" });
+  drawCrystalIcon(ctx, rightX - tw - 12, by - 14, 9);
+
+  // Button box.
+  ctx.fillStyle = "rgba(155, 108, 255, 0.16)";
+  roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+  roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
+
+  text(ctx, "Closet", bx + 16, by + bh / 2, { size: 17, color: CREAM, align: "left", weight: "700" });
+
+  // Key cap "C" tucked at the right inside the box.
+  const capS = 20;
+  const capX = bx + bw - 14 - capS;
+  const capY = by + (bh - capS) / 2;
+  ctx.fillStyle = "rgba(244, 213, 141, 0.18)";
+  roundRect(ctx, capX, capY, capS, capS, 4); ctx.fill();
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
+  roundRect(ctx, capX, capY, capS, capS, 4); ctx.stroke();
+  text(ctx, "C", capX + capS / 2, capY + capS / 2 + 1, { size: 13, color: GOLD, weight: "700" });
+}
+
+// Full Closet screen: crystal total, one row per outfit (swatch, name, buff,
+// owned/equipped/cost), then a Back row. `data` comes from Game.closetData().
+export function drawCloset(ctx, w, h, data) {
+  ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "CLOSET", w / 2, 60, { size: 40, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  crystalLine(ctx, w / 2, 98, `Spirit Crystals: ${data.crystals}`, { size: 18, color: CREAM });
+
+  const startY = 150;
+  const rowH = 64;
+  const boxW = 560, boxH = 56;
+  const xL = w / 2 - boxW / 2;
+  const xR = w / 2 + boxW / 2;
+
+  data.outfits.forEach((o, i) => {
+    const cy = startY + i * rowH;
+    const selected = i === data.index;
+
+    // Row box.
+    if (selected) {
+      ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
+      roundRect(ctx, xL, cy - boxH / 2, boxW, boxH, 10); ctx.fill();
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+      roundRect(ctx, xL, cy - boxH / 2, boxW, boxH, 10); ctx.stroke();
+    } else {
+      ctx.fillStyle = "rgba(255, 255, 255, 0.04)";
+      roundRect(ctx, xL, cy - boxH / 2, boxW, boxH, 10); ctx.fill();
+    }
+
+    // Outfit portrait: the idle-south witch (frame 0 of the 4-frame strip).
+    // Falls back to the flat colour swatch if the sprite isn't loaded yet.
+    const portrait = getImage(o.spriteKey);
+    const pBox = 44;                 // portrait fit box
+    const pcx = xL + 18 + pBox / 2;  // portrait centre x
+    if (portrait && portrait.width > 0) {
+      const fw = portrait.width / 4; // idle = 4 frames
+      const fh = portrait.height;
+      const s = Math.min(pBox / fw, pBox / fh);
+      const dw = fw * s, dh = fh * s;
+      ctx.drawImage(portrait, 0, 0, fw, fh, pcx - dw / 2, cy - dh / 2, dw, dh);
+    } else {
+      const chip = 30;
+      ctx.fillStyle = o.swatch;
+      roundRect(ctx, pcx - chip / 2, cy - chip / 2, chip, chip, 6); ctx.fill();
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.35)"; ctx.lineWidth = 1.5;
+      roundRect(ctx, pcx - chip / 2, cy - chip / 2, chip, chip, 6); ctx.stroke();
+    }
+
+    // Name + buff description.
+    const textX = xL + 18 + pBox + 12;
+    text(ctx, o.name, textX, cy - 9, { size: 18, color: o.equipped ? GOLD : CREAM, align: "left", weight: "700" });
+    text(ctx, o.desc, textX, cy + 12, { size: 13, color: DIM, align: "left", weight: "500" });
+
+    // Right-side status.
+    if (o.equipped) {
+      text(ctx, "EQUIPPED", xR - 18, cy, { size: 15, color: GOLD, align: "right", weight: "700" });
+    } else if (o.owned) {
+      text(ctx, "Owned", xR - 18, cy, { size: 15, color: DIM, align: "right", weight: "700" });
+    } else {
+      const label = `Cost ${o.cost}`;
+      ctx.font = `700 16px ${BODY_FONT}`;
+      const lw = ctx.measureText(label).width;
+      const col = o.affordable ? GOLD : RED;
+      text(ctx, label, xR - 18, cy, { size: 16, color: col, align: "right", weight: "700" });
+      drawCrystalIcon(ctx, xR - 18 - lw - 12, cy - 1, 9);
+    }
+  });
+
+  // Back row.
+  const backY = startY + data.outfits.length * rowH + 4;
+  const backSel = data.index === data.outfits.length;
+  if (backSel) {
+    ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
+    roundRect(ctx, w / 2 - 90, backY - 20, 180, 40, 8); ctx.fill();
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+    roundRect(ctx, w / 2 - 90, backY - 20, 180, 40, 8); ctx.stroke();
+  }
+  text(ctx, "Back", w / 2, backY, { size: 20, color: backSel ? GOLD : DIM, weight: "700" });
+
+  text(ctx, "Up/Down move • Enter buy/equip • Esc back", w / 2, h - 26, { size: 14, color: DIM, weight: "500" });
 }

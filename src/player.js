@@ -41,11 +41,17 @@ const LOOPING = { idle: true, walk: true, die: false };
 // Knockback (e.g. Goblin Bonker club): a brief impulse decays over this long.
 const KNOCK_TIME = 0.22; // seconds
 
-// Register sprites.
-for (const anim of ["idle", "walk", "die"]) {
-  for (const d of DIRS) {
-    const key = `witch_${anim}_${d}`;
-    loadImage(key, `assets/sprites/player/${key}.png`);
+// Register sprites. The default purple set is "witch"; outfit recolors use the
+// same strips under a prefixed name (e.g. witch_red_walk_ne.png). Any recolor
+// file that's missing simply falls back to the purple frame at draw time, so
+// shipping a partial set is safe. Prefixes must match OUTFITS[*].spritePrefix.
+const WITCH_SKINS = ["witch", "witch_red", "witch_blue", "witch_gold"];
+for (const prefix of WITCH_SKINS) {
+  for (const anim of ["idle", "walk", "die"]) {
+    for (const d of DIRS) {
+      const key = `${prefix}_${anim}_${d}`;
+      loadImage(key, `assets/sprites/player/${key}.png`);
+    }
   }
 }
 
@@ -75,6 +81,7 @@ export class Player {
     this.animFrame = 0;
     this.animTimer = 0;
     this.spriteScale = 1;    // bump if the witch looks too small
+    this.spritePrefix = "witch"; // equipped-outfit skin; set by game.startGame()
     this.deathDone = false;  // true once the die animation reaches its last frame
   }
 
@@ -198,8 +205,11 @@ export class Player {
       ctx.globalAlpha = blinkOn ? 0.35 : 1;
     }
 
-    const key = `witch_${this.animState}_${this.facing}`;
-    const img = getImage(key);
+    // Prefer the equipped outfit's skin; if that recolor frame isn't loaded
+    // (missing file), fall back to the default purple set, then the circle.
+    const prefix = this.spritePrefix || "witch";
+    const img = getImage(`${prefix}_${this.animState}_${this.facing}`)
+             || getImage(`witch_${this.animState}_${this.facing}`);
 
     if (img && img.width > 0) {
       const frames = PLAYER_ANIMS[this.animState];

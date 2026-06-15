@@ -24,7 +24,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawOffscreenIndicators } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawOffscreenIndicators, drawCloset, drawClosetButton } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -43,6 +43,7 @@ const STATE = {
   HOW_TO_PLAY: "howToPlay",
   GRIMOIRE: "grimoire",
   BESTIARY: "bestiary",
+  CLOSET: "closet", // Wardrobe: buy/equip outfits with Spirit Crystals
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
   SETTINGS_PLACEHOLDER: "settingsPlaceholder",
@@ -122,6 +123,23 @@ const CRYSTAL_BASE_CHANCE = 0.40;     // endless boss crystal chance at tier 1 (
 const CRYSTAL_CHANCE_PER_TIER = 0.10; // + per endless tier beyond the first
 const CRYSTAL_CHANCE_PER_LUCK = 0.04; // + per Lucky Paws level (game.luckLevel, max 3)
 const CRYSTAL_CHANCE_CAP = 0.85;      // hard ceiling on the per-boss chance
+
+// --- Outfits (Closet) -----------------------------------------------------
+// Data-driven, like UPGRADES/ENEMY_TYPES. Default is owned + free + no buff.
+// Only the EQUIPPED outfit's buff applies; buffs never stack. `buff` keys:
+//   flaskBonus  — extra HP added per flask (base FLASK_HEAL preserved)
+//   expMult     — EXP-gain multiplier
+//   scoreMult   — score-gain multiplier
+// `swatch` is the code-drawn colour chip shown in the Closet. `spritePrefix` is
+// reserved for the in-game witch colour-swap (a later pass, once the recoloured
+// sprites + player.js land); it has no effect yet.
+const OUTFITS = {
+  default: { name: "Default Robe", cost: 0, swatch: "#9b6cff", spritePrefix: "witch",      desc: "No bonus",          buff: {} },
+  red:     { name: "Red Robe",     cost: 3, swatch: "#e0584d", spritePrefix: "witch_red",  desc: "Flasks heal +5 HP", buff: { flaskBonus: 5 } },
+  blue:    { name: "Blue Robe",    cost: 3, swatch: "#5aa0e0", spritePrefix: "witch_blue", desc: "EXP gain +5%",      buff: { expMult: 1.05 } },
+  gold:    { name: "Gold Robe",    cost: 8, swatch: "#f4d58d", spritePrefix: "witch_gold", desc: "Score gain +5%",    buff: { scoreMult: 1.05 } },
+};
+const OUTFIT_ORDER = ["default", "red", "blue", "gold"]; // Closet display order
 
 // --- Bestiary -------------------------------------------------------------
 // Creature entries for the Bestiary screen. `id` is the seen-tracking key
@@ -294,12 +312,21 @@ export class Game {
     // tally shown on the Game Over / Victory summary (reset each run).
     this.wardrobe = this.loadWardrobe();
     this.crystalsThisRun = 0;
+    this.closetIndex = 0;
+    // Fractional carries so the Blue/Gold outfit %-buffs stay accurate on small
+    // per-pickup amounts (without these, +5% on a value of 10 rounds badly).
+    this._scoreCarry = 0;
+    this._xpCarry = 0;
   }
 
   startGame(mode = "tutorial") {
     this.gameMode = mode;
     this.score = 0;
     this.player.reset(WORLD_W / 2, WORLD_H / 2);
+    // Equipped outfit drives the witch's sprite skin for this whole run (the
+    // Closet is between-runs, so it's fixed once we start). Recolors fall back
+    // to the purple set per-frame in player.draw if a file is missing.
+    this.player.spritePrefix = (OUTFITS[this.wardrobe.equipped] || OUTFITS.default).spritePrefix;
     this.familiar.reset(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
     this.enemies = [];
     this.enemyBolts = [];
@@ -338,6 +365,8 @@ export class Game {
     this.frenzyTimer = 0;
 
     this.crystalsThisRun = 0; // per-run Spirit Crystal tally (persistent total lives in this.wardrobe)
+    this._scoreCarry = 0;
+    this._xpCarry = 0;
 
     // Tutorial script + hints reset. A scripted tutorial begins with waves
     // held, the shadow veil up, and the (sticky) movement hint showing.
@@ -379,6 +408,7 @@ export class Game {
     switch (this.state) {
       case STATE.MAIN_MENU:
         this.navMenu(MAIN_MENU_ITEMS.length);
+        if (Input.wasPressed("KeyC")) { this.openCloset(); break; }
         if (this.confirmPressed()) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
           else if (this.menuIndex === 1) this.openGrimoire(STATE.MAIN_MENU);
@@ -400,6 +430,10 @@ export class Game {
 
       case STATE.BESTIARY:
         this.updateBestiary();
+        break;
+
+      case STATE.CLOSET:
+        this.updateCloset();
         break;
 
       case STATE.MODE_SELECT:
@@ -844,6 +878,11 @@ export class Game {
 
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player, this.enemyBolts, this.hazards);
+      // Goblin Bonker deals NO body-contact damage while committing its attack
+      // (leap/windup/recover) — its radial stomp is the attack's only damage, so
+      // the lunge can't also tag you. Normal contact resumes while chasing; other
+      // enemies are unaffected (only the bruiser sets attackState).
+      if (enemy.def.bruiser && enemy.attackState !== "chase") continue;
       // Contact damage uses the enemy's contactRadius when it defines one (the
       // Elder Wisp tightens it mid-dash); everything else falls back to radius.
       const cr = enemy.contactRadius != null ? enemy.contactRadius : enemy.radius;
@@ -1035,7 +1074,7 @@ export class Game {
       this.applyVacuum(flask, dt);
       if (circlesOverlap(flask.x, flask.y, flask.radius + 6, this.player.x, this.player.y, this.player.radius)) {
         flask.dead = true;
-        this.player.heal(flask.heal);
+        this.player.heal(flask.heal + (this.equippedBuff().flaskBonus || 0));
         playSfx("heal");
       }
     }
@@ -1172,8 +1211,8 @@ export class Game {
   // as a choosable card (see EVOLUTIONS in upgrades.js) once its requirements
   // are met, instead of auto-applying — so the player reads + picks it.
   collectPickup(pickup) {
-    this.xp += pickup.value;
-    this.score += SCORE_PER_PICKUP;
+    this.addXp(pickup.value);       // Blue Robe: +EXP%
+    this.addScore(SCORE_PER_PICKUP); // Gold Robe: +score%
     this.showHint("mote_pickup");
 
     // Charge the frenzy meter (only while not already frenzied / not full).
@@ -1197,6 +1236,7 @@ export class Game {
     if (this.state === STATE.MAIN_MENU) {
       drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
         ["Up / Down: move      Enter: select"], { bg: true, title: true });
+      drawClosetButton(ctx, this.width, this.height, this.wardrobe.crystals);
       return;
     }
     if (this.state === STATE.MODE_SELECT) {
@@ -1215,6 +1255,11 @@ export class Game {
         img: getImage(b.spriteKey),
       }));
       drawBestiary(ctx, this.width, this.height, entries, this.bestiaryIndex);
+      return;
+    }
+
+    if (this.state === STATE.CLOSET) {
+      drawCloset(ctx, this.width, this.height, this.closetData());
       return;
     }
 
@@ -1710,6 +1755,93 @@ export class Game {
       this.activeHint = hint;
       playSfx("hint");
     }
+  }
+
+  // --- Outfit buffs (equipped outfit only; never stack) --------------------
+  equippedBuff() {
+    const o = OUTFITS[this.wardrobe.equipped] || OUTFITS.default;
+    return o.buff || {};
+  }
+
+  // Score/XP gains route through these so the Gold/Blue %-buffs apply with a
+  // fractional carry (accurate over many small pickups). With the default robe
+  // the multiplier is 1 and the carry stays 0, so behaviour is unchanged.
+  addScore(base) {
+    this._scoreCarry += base * (this.equippedBuff().scoreMult || 1);
+    const whole = Math.floor(this._scoreCarry);
+    if (whole > 0) { this.score += whole; this._scoreCarry -= whole; }
+  }
+
+  addXp(base) {
+    this._xpCarry += base * (this.equippedBuff().expMult || 1);
+    const whole = Math.floor(this._xpCarry);
+    if (whole > 0) { this.xp += whole; this._xpCarry -= whole; }
+  }
+
+  // --- Closet (Wardrobe screen) --------------------------------------------
+  openCloset() {
+    this.closetIndex = 0;
+    this.state = STATE.CLOSET;
+  }
+
+  updateCloset() {
+    const count = OUTFIT_ORDER.length + 1; // outfit rows + Back
+    if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+      this.closetIndex = (this.closetIndex - 1 + count) % count;
+    }
+    if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+      this.closetIndex = (this.closetIndex + 1) % count;
+    }
+    if (this.confirmPressed()) {
+      if (this.closetIndex === OUTFIT_ORDER.length) { // Back row
+        this.state = STATE.MAIN_MENU; this.menuIndex = 0;
+      } else {
+        this.closetSelect();
+      }
+    } else if (this.backPressed()) {
+      this.state = STATE.MAIN_MENU; this.menuIndex = 0;
+    }
+  }
+
+  // Enter on an outfit: equip it if owned, else buy it (auto-equipping) if
+  // affordable. Persists immediately. SFX are graceful-silent if absent.
+  closetSelect() {
+    const id = OUTFIT_ORDER[this.closetIndex];
+    const o = OUTFITS[id];
+    if (!o) return;
+    if (this.wardrobe.owned.includes(id)) {
+      if (this.wardrobe.equipped !== id) {
+        this.wardrobe.equipped = id;
+        this.saveWardrobe();
+        playSfx("equip");
+      }
+    } else if (this.wardrobe.crystals >= o.cost) {
+      this.wardrobe.crystals -= o.cost;
+      this.wardrobe.owned.push(id);
+      this.wardrobe.equipped = id; // auto-equip on purchase
+      this.saveWardrobe();
+      playSfx("purchase");
+    } else {
+      playSfx("denied"); // can't afford
+    }
+  }
+
+  // View-model for the Closet renderer.
+  closetData() {
+    return {
+      crystals: this.wardrobe.crystals,
+      index: this.closetIndex,
+      outfits: OUTFIT_ORDER.map((id) => {
+        const o = OUTFITS[id];
+        return {
+          id, name: o.name, cost: o.cost, desc: o.desc, swatch: o.swatch,
+          spriteKey: `${o.spritePrefix}_idle_s`, // Closet portrait (idle-south frame 0)
+          owned: this.wardrobe.owned.includes(id),
+          equipped: this.wardrobe.equipped === id,
+          affordable: this.wardrobe.crystals >= o.cost,
+        };
+      }),
+    };
   }
 
   // Data for the Game Over screen (mode-aware).
