@@ -64,6 +64,7 @@ const CONFIRM_ITEMS = ["Yes", "No"];
 
 const SCORE_PER_PICKUP = 10;
 const OFFER_COUNT = 3; // upgrade cards shown per level-up
+const LEVEL_FLASH_TIME = 0.55; // seconds the celebratory gold bloom fades over
 const MAX_WAVES = 10;
 
 // Health flask drops (Feature 1) — both easy to tune.
@@ -212,9 +213,7 @@ export class Game {
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
     this.grimoireEntries = [];             // cached list while the screen is open
-    this.grimoireIndex = 0;                // highlighted navigable row
-    this.grimoireCategory = null;          // open category: null | "upgrades" | "evolutions"
-    this.grimoireExpanded = null;          // open entry id within the category, or null
+    this.grimoireIndex = 0;                // highlighted entry (Back = entries.length)
 
     this.player = new Player(WORLD_W / 2, WORLD_H / 2);
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
@@ -236,6 +235,7 @@ export class Game {
 
     this.pendingLevelUps = 0;
     this.offers = [];
+    this.levelFlash = 0; // celebratory bloom timer (counts down from LEVEL_FLASH_TIME)
     this.upgradeLevels = {}; // { upgradeId: currentLevel }
 
     // Upgrade-driven values (mutated by apply()); reset each run.
@@ -299,6 +299,7 @@ export class Game {
     this.xpToNext = 5;
     this.pendingLevelUps = 0;
     this.offers = [];
+    this.levelFlash = 0;
     this.upgradeLevels = {};
 
     this.magnetRange = BASE_MAGNET_RANGE;
@@ -475,6 +476,7 @@ export class Game {
         break;
 
       case STATE.LEVEL_UP:
+        if (this.levelFlash > 0) this.levelFlash = Math.max(0, this.levelFlash - dt);
         this.updateLevelUp();
         break;
 
@@ -552,14 +554,15 @@ export class Game {
   }
 
   // Pick the right music context for the current state/wave. "boss" only while
-  // a boss is alive during play; everything else shares the normal pool (Opt A).
+  // a boss is alive during play; otherwise gameplay states use the GAMEPLAY
+  // pool and menus use the MENU pool (the two pools are split in audio.js).
   updateMusic() {
     const grimoireInPlay = this.state === STATE.GRIMOIRE && this.grimoireReturn === STATE.PAUSED;
     const inPlay = this.state === STATE.PLAYING || this.state === STATE.LEVEL_UP
       || this.state === STATE.PAUSED || this.state === STATE.DYING
       || grimoireInPlay;
     const bossActive = this.waveManager.boss && !this.waveManager.boss.dead;
-    setMusicContext(inPlay && bossActive ? "boss" : "normal");
+    setMusicContext(bossActive && inPlay ? "boss" : inPlay ? "gameplay" : "menu");
   }
 
   // --- Menu helpers ------------------------------------------------------
@@ -581,15 +584,14 @@ export class Game {
   }
 
   // --- Upgrade Grimoire (read-only glossary) -----------------------------
-  // Two collapsible categories (Upgrades, Evolutions); opening one closes the
-  // other. Inside the open category, one entry's detail expands at a time.
+  // A flat, scrolling list (mirrors the Bestiary): the highlighted entry shows
+  // its detail automatically — no expand keypress. Entries are grouped under
+  // non-interactive Upgrades / Evolutions headers in the renderer.
   // `returnState` is where Back goes. Levels show only when opened from Pause.
   openGrimoire(returnState) {
     this.grimoireReturn = returnState;
     this.grimoireEntries = getGrimoireEntries();
     this.grimoireIndex = 0;
-    this.grimoireCategory = null;
-    this.grimoireExpanded = null;
     this.state = STATE.GRIMOIRE;
   }
 
@@ -624,6 +626,20 @@ export class Game {
     try { localStorage.setItem("ff_seenEnemies", JSON.stringify([...seen])); } catch (e) { /* ignore */ }
   }
 
+  // Enemy-INTRO hints (the familiar's "new creature!" banner) persist across
+  // runs in ff_enemyIntros, so each creature is introduced only the FIRST time
+  // ever — not once per run. Loaded lazily into a Set on first use.
+  loadEnemyIntros() {
+    if (this._enemyIntros) return this._enemyIntros;
+    let ids = [];
+    try {
+      const raw = localStorage.getItem("ff_enemyIntros");
+      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) ids = p; }
+    } catch (e) { /* storage blocked — start empty */ }
+    this._enemyIntros = new Set(ids);
+    return this._enemyIntros;
+  }
+
   openBestiary() {
     this.loadSeenEnemies();
     this.bestiaryIndex = 0;
@@ -647,29 +663,20 @@ export class Game {
     }
   }
 
-  // Build the flat list of NAVIGABLE rows from the current expansion state.
-  // (Entry detail blocks are display-only and are NOT rows.) Shared by the
-  // input handler and the renderer so indexing stays in lock-step.
-  grimoireRows() {
+  // Build the flat navigable list for the Grimoire: all upgrades, then all
+  // evolutions, with Back as index === entries.length. `upgradeCount` tells the
+  // renderer where to drop the "Evolutions" section header. Shared by the input
+  // handler and the renderer so indexing stays in lock-step.
+  grimoireList() {
     const upgrades = this.grimoireEntries.filter((e) => e.kind === "upgrade");
     const evolutions = this.grimoireEntries.filter((e) => e.kind === "evolution");
-    const rows = [];
-
-    rows.push({ type: "category", key: "upgrades", label: "Upgrades", open: this.grimoireCategory === "upgrades", count: upgrades.length });
-    if (this.grimoireCategory === "upgrades") {
-      for (const e of upgrades) rows.push({ type: "entry", entry: e, open: this.grimoireExpanded === e.id });
-    }
-    rows.push({ type: "category", key: "evolutions", label: "Evolutions", open: this.grimoireCategory === "evolutions", count: evolutions.length });
-    if (this.grimoireCategory === "evolutions") {
-      for (const e of evolutions) rows.push({ type: "entry", entry: e, open: this.grimoireExpanded === e.id });
-    }
-    rows.push({ type: "back" });
-    return rows;
+    return { entries: [...upgrades, ...evolutions], upgradeCount: upgrades.length };
   }
 
   updateGrimoire() {
-    const rows = this.grimoireRows();
-    const count = rows.length;
+    const { entries } = this.grimoireList();
+    const count = entries.length + 1; // entries + Back
+    const backIndex = entries.length;
 
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.grimoireIndex = (this.grimoireIndex - 1 + count) % count;
@@ -680,21 +687,7 @@ export class Game {
     if (this.grimoireIndex >= count) this.grimoireIndex = count - 1;
 
     if (this.confirmPressed()) {
-      const row = rows[this.grimoireIndex];
-      if (row.type === "back") {
-        this.closeGrimoire();
-      } else if (row.type === "category") {
-        // Accordion: toggle this category, close the other + any open entry,
-        // then keep the cursor on the category we just acted on.
-        this.grimoireCategory = this.grimoireCategory === row.key ? null : row.key;
-        this.grimoireExpanded = null;
-        const rebuilt = this.grimoireRows();
-        this.grimoireIndex = rebuilt.findIndex((r) => r.type === "category" && r.key === row.key);
-      } else if (row.type === "entry") {
-        // Accordion within the category: one entry detail open at a time.
-        const id = row.entry.id;
-        this.grimoireExpanded = this.grimoireExpanded === id ? null : id;
-      }
+      if (this.grimoireIndex === backIndex) this.closeGrimoire();
     } else if (this.backPressed()) {
       this.closeGrimoire();
     }
@@ -709,8 +702,12 @@ export class Game {
   // even in Endless. Shares the same dialogue bar + queue.
   showEnemyHint(id) {
     if (!TUTORIAL_HINTS_ENABLED) return;
-    if (this.hintsShown[id]) return;
+    const intros = this.loadEnemyIntros();
+    if (intros.has(id)) return;        // already introduced in a PRIOR run
+    if (this.hintsShown[id]) return;   // already shown this run
     this.hintsShown[id] = true;
+    intros.add(id);                    // persist — never re-introduce this creature
+    try { localStorage.setItem("ff_enemyIntros", JSON.stringify([...intros])); } catch (e) { /* ignore */ }
     const hint = { id, text: TUTORIAL_HINTS[id], timer: HINT_DURATION, sticky: false };
     if (this.activeHint) {
       this.hintQueue.push(hint);
@@ -880,12 +877,17 @@ export class Game {
       else this.showHint("boss");
     }
 
-    // Ambient wisp chitter: the timer only ticks while something spooky is
-    // alive; on expiry, play once and book the next chitter 6-14s out.
+    // Ambient creature chitter: the timer ticks while anything spooky is alive;
+    // on expiry, pick a random voice from whatever's CURRENTLY alive (each enemy
+    // type carries its own ambientSfx) and book the next chitter 6-14s out.
     if (this.enemies.length > 0 || (boss && !boss.dead)) {
       this.wispNoiseTimer -= dt;
       if (this.wispNoiseTimer <= 0) {
-        playSfx("wisp");
+        const voices = [];
+        for (const e of this.enemies) {
+          if (!e.dead && e.ambientSfx && !voices.includes(e.ambientSfx)) voices.push(e.ambientSfx);
+        }
+        if (voices.length > 0) playSfx(voices[Math.floor(Math.random() * voices.length)]);
         this.wispNoiseTimer = randomRange(WISP_NOISE_MIN_GAP, WISP_NOISE_MAX_GAP);
       }
     }
@@ -896,6 +898,7 @@ export class Game {
       const ex = clamp(boss.x + Math.cos(a) * r, TILE + WISP_R, this.world.width - TILE - WISP_R);
       const ey = clamp(boss.y + Math.sin(a) * r, TILE + WISP_R, this.world.height - TILE - WISP_R);
       this.enemies.push(new Enemy(ex, ey));
+      if (boss.name === "Elder Wisp") playSfx("elder_wisp_summon"); // missing = silent
     }
 
     // Watching Hand slam: at the impact instant, anyone inside the LOCKED ring
@@ -929,7 +932,7 @@ export class Game {
           const g = new Enemy(ex, ey, "gutter_gecko");
           this.enemies.push(g);
         }
-        playSfx("wisp"); // placeholder summon cue
+        playSfx("gecko_chitter"); // the summoned geckos materializing (missing = silent)
       }
     }
 
@@ -961,9 +964,14 @@ export class Game {
         if (!suppressRares) {
           if (tutWave === TUTORIAL_SCRIPT.guaranteedFlaskWave && !this.tutorialFlaskGiven) {
             this.tutorialFlaskGiven = true;
-            spot = this.findDropSpot(enemy.x, enemy.y, 9);
+            // Teaching flask: drop it NEAR the witch (not at an offscreen kill)
+            // so the lesson always points at a flask that's actually on-screen.
+            // Far enough out to clear the magnet pull, so it isn't auto-grabbed.
+            const fa = Math.random() * Math.PI * 2;
+            const fd = Math.min(200, Math.max(120, this.magnetRange + 30));
+            spot = this.findDropSpot(this.player.x + Math.cos(fa) * fd, this.player.y + Math.sin(fa) * fd, 9);
             this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
-            this.showHint("flask");
+            this.showHint("flask"); // always — it's the lesson, and now on-screen
           } else {
             // Lucky Paws now boosts only the RARE drops (flask + magnet); there is
             // no longer a bonus-mote roll, so it never doubles up XP.
@@ -971,7 +979,7 @@ export class Game {
             if (Math.random() < flaskChance) {
               spot = this.findDropSpot(enemy.x, enemy.y, 9);
               this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
-              this.showHint("flask");
+              if (this.isOnScreen(spot.x, spot.y)) this.showHint("flask"); // don't announce an offscreen flask
             }
           }
 
@@ -1039,6 +1047,7 @@ export class Game {
     if (this.pendingLevelUps > 0) {
       this.offers = getOffers(OFFER_COUNT, this.upgradeLevels);
       this.state = STATE.LEVEL_UP;
+      this.levelFlash = LEVEL_FLASH_TIME; // celebratory gold bloom + title pop
       playSfx("level_up");
     }
   }
@@ -1069,6 +1078,8 @@ export class Game {
 
     if (this.pendingLevelUps > 0) {
       this.offers = getOffers(OFFER_COUNT, this.upgradeLevels);
+      this.levelFlash = LEVEL_FLASH_TIME; // each stacked level pops again
+      playSfx("level_up");
     } else {
       this.offers = [];
       this.state = STATE.PLAYING;
@@ -1187,7 +1198,8 @@ export class Game {
 
     if (this.state === STATE.GRIMOIRE) {
       const levels = this.grimoireReturn === STATE.PAUSED ? this.upgradeLevels : null;
-      drawGrimoire(ctx, this.width, this.height, this.grimoireRows(), this.grimoireIndex, levels);
+      const { entries, upgradeCount } = this.grimoireList();
+      drawGrimoire(ctx, this.width, this.height, entries, this.grimoireIndex, levels, upgradeCount);
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {
@@ -1248,7 +1260,7 @@ export class Game {
 
       case STATE.LEVEL_UP:
         drawHUD(ctx, this.width, this.height, this.hudState());
-        drawUpgradeScreen(ctx, this.width, this.height, this.offers);
+        drawUpgradeScreen(ctx, this.width, this.height, this.offers, this.levelFlash / LEVEL_FLASH_TIME);
         break;
 
       case STATE.PAUSED:
@@ -1285,6 +1297,13 @@ export class Game {
     const camX = clamp(this.player.x - this.width / 2, 0, this.world.width - this.width);
     const camY = clamp(this.player.y - this.height / 2, 0, this.world.height - this.height);
     return { x: Math.round(camX), y: Math.round(camY) };
+  }
+
+  // Is a world point currently within the visible viewport (+ optional margin)?
+  isOnScreen(x, y, margin = 0) {
+    const cam = this.getCamera();
+    return x >= cam.x - margin && x <= cam.x + this.width + margin
+        && y >= cam.y - margin && y <= cam.y + this.height + margin;
   }
 
   // The Watching Hand's locked slam ring: a red→white danger circle that fades

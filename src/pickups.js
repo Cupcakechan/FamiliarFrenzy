@@ -27,6 +27,7 @@ const MOTE_BREATHE_AMOUNT = 0.14; // sprite scale swing (≈ ±7%)
 // future animated strip is provided). Missing/loading → green-orb fallback.
 const FLASK_FRAMES = 1;
 const FLASK_FPS = 6; // only used when FLASK_FRAMES > 1
+const FLASK_SPAWN_FLASH_TIME = 2.0; // seconds the "look here!" glow pulses + fades after a flask appears
 
 loadImage("mote_idle", "assets/sprites/pickups/mote_idle.png");
 loadImage("flask_idle", "assets/sprites/pickups/flask_idle.png");
@@ -122,10 +123,12 @@ export class HealthFlask {
     this.spriteScale = 0.5; // visual only; tune to match the flask art
     this.animFrame = 0;
     this.animTimer = 0;
+    this.spawnFlash = FLASK_SPAWN_FLASH_TIME; // brief attention glow on appearance
   }
 
   update(dt) {
     this.bob += dt * 4;
+    if (this.spawnFlash > 0) this.spawnFlash -= dt;
     if (FLASK_FRAMES > 1) {
       const frameDur = 1 / FLASK_FPS;
       this.animTimer += dt;
@@ -140,6 +143,22 @@ export class HealthFlask {
     const yOff = Math.sin(this.bob) * 2;
     const cy = this.y + yOff;
     const img = getImage("flask_idle");
+
+    // Spawn flash: a soft green glow that pulses + fades right after the flask
+    // appears, so it's easy to spot even in a busy or large arena.
+    if (this.spawnFlash > 0) {
+      const t = this.spawnFlash / FLASK_SPAWN_FLASH_TIME; // 1 -> 0
+      const pulse = 0.5 + 0.5 * Math.sin(this.spawnFlash * 9);
+      const haloR = this.radius * (2.4 + pulse * 0.9);
+      const a = 0.5 * t * (0.55 + 0.45 * pulse);
+      const g = ctx.createRadialGradient(this.x, cy, 0, this.x, cy, haloR);
+      g.addColorStop(0, `rgba(120, 240, 150, ${a})`);
+      g.addColorStop(1, "rgba(120, 240, 150, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, cy, haloR, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     if (img && img.width > 0) {
       // --- Sprite path (single static frame, or a strip if FLASK_FRAMES > 1) ---

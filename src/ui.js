@@ -301,16 +301,19 @@ export function drawHowToPlay(ctx, w, h) {
 
   text(ctx, "HOW TO PLAY", w / 2, h * 0.20, { size: 40, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
+  // Action -> binding pairs. The ACTION is bolded in gold and right-aligned to
+  // a center divider; the binding sits to its right in cream — so the two read
+  // as a clean two-column key list instead of one run-on line.
   const controls = [
-    "Move:  WASD / Arrow Keys",
-    "Confirm:  Enter / Space",
-    "Spirit Imbued:  Space  (when the meter is full)",
-    "Back / Pause:  Esc / Backspace",
-    "Restart:  R  (after Game Over or Victory)",
+    ["Move", "WASD / Arrow Keys"],
+    ["Confirm", "Enter / Space"],
+    ["Spirit Imbued", "Space  (when the meter is full)"],
+    ["Back / Pause", "Esc / Backspace"],
+    ["Restart", "R  (after Game Over or Victory)"],
   ];
 
   // Center the CONTROLS block (heading + lines) vertically, nudged slightly
-  // below middle to balance the title up top. Lines are center-aligned.
+  // below middle to balance the title up top.
   const lineH = 36;
   const headingGap = 16;
   const blockH = lineH + headingGap + controls.length * lineH;
@@ -318,8 +321,12 @@ export function drawHowToPlay(ctx, w, h) {
 
   text(ctx, "CONTROLS", w / 2, y, { size: 22, color: GOLD });
   y += lineH + headingGap;
-  controls.forEach((line) => {
-    text(ctx, line, w / 2, y, { size: 18, color: CREAM, weight: "500" });
+
+  const labelRight = w / 2 - 16; // bold action labels right-aligned here
+  const valueLeft = w / 2 + 16;  // bindings left-aligned here
+  controls.forEach(([action, binding]) => {
+    text(ctx, action, labelRight, y, { size: 18, color: GOLD, align: "right", weight: "700" });
+    text(ctx, binding, valueLeft, y, { size: 18, color: CREAM, align: "left", weight: "500" });
     y += lineH;
   });
 
@@ -330,83 +337,164 @@ export function drawHowToPlay(ctx, w, h) {
 }
 
 // --- UPGRADE GRIMOIRE -----------------------------------------------------
-// Read-only glossary, organized as two collapsible categories. `rows` comes
-// from game.grimoireRows() — a flat list of navigable rows:
-//   { type: "category", key, label, open, count }
-//   { type: "entry", entry, open }        // only when its category is open
-//   { type: "back" }
-// `selectedIndex` is the highlighted row. `levels` = { id: ownedLevel } when
-// opened from Pause (adds a "Current" line for upgrades), else null.
-export function drawGrimoire(ctx, w, h, rows, selectedIndex, levels) {
+// Read-only glossary that now mirrors the Bestiary: a flat, SCROLLABLE list
+// where the SELECTED entry auto-expands its detail inline (no extra keypress).
+// Entries are grouped under non-interactive "UPGRADES" / "EVOLUTIONS" headers.
+// `entries` is the flat navigable list [...upgrades, ...evolutions]; Back is
+// index === entries.length. `upgradeCount` marks where the Evolutions group
+// begins. `levels` = { id: ownedLevel } when opened from Pause (adds a
+// "Current" line for upgrades), else null.
+export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeCount) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
   text(ctx, "GRIMOIRE", w / 2, 46, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
-  const catX = 180;          // category header left edge
-  const entryX = 212;        // entry name (indented under a category)
-  const detailX = 240;       // detail label (indented under an entry)
-  const valX = detailX + 124; // detail value column (wide gap → no overlap)
-  const rightX = w - 180;    // right-aligned cap / tag
-  let y = 100;
+  // --- Layout metrics ---
+  const leftX = 200;          // row content left edge
+  const rightX = w - 200;     // tag / value right edge
+  const iconSmall = 26;       // collapsed-row icon
+  const iconBig = 46;         // expanded-row icon
+  const compactH = 44;        // collapsed row height
+  const headerH = 34;         // section header height
+  const gap = 6;              // gap between rows
+  const backIndex = entries.length;
 
-  rows.forEach((row, i) => {
-    const selected = i === selectedIndex;
+  const viewTop = 78;
+  const viewBottom = h - 40;
+  const viewH = viewBottom - viewTop;
 
-    if (row.type === "category") {
-      const arrow = row.open ? "v " : "> ";
-      text(ctx, `${arrow}${row.label}`, catX, y, {
-        size: 22, color: selected ? GOLD : CREAM, align: "left", weight: "700",
+  // Detail label/value columns (used when an entry is expanded). The value
+  // column starts past the WIDEST label so long labels ("Evolution:") never
+  // collide with their value, measured with the font text() composes.
+  const detailX = leftX + iconBig + 20;
+  ctx.font = `700 14px ${BODY_FONT}`;
+  const labelColW = Math.max(
+    ctx.measureText("Effect:").width,
+    ctx.measureText("Current:").width,
+    ctx.measureText("Evolution:").width,
+  ) + 16;
+  const valX = detailX + labelColW;
+  const buildDetail = (e) => {
+    const effectVal = e.maxedStat ? `${e.effect}  (MAXED ${e.maxedStat})` : e.effect;
+    const detail = [["Effect:", effectVal]];
+    // Evolutions show effect only; upgrades also show current level + note.
+    if (e.kind !== "evolution") {
+      if (levels && e.maxLevel !== undefined) detail.push(["Current:", `Lv. ${levels[e.id] || 0} / ${e.maxLevel}`]);
+      if (e.evolutionNotes) detail.push(["Evolution:", e.evolutionNotes]);
+    }
+    return detail.map(([label, val]) => ({
+      label, lines: wrapText(ctx, val, rightX - valX, { size: 14, weight: "500", maxLines: 4 }),
+    }));
+  };
+
+  // --- Pass 1: lay rows out in CONTENT space (headers + entries + Back). ---
+  const rows = [];
+  let cy = 0;
+  const pushHeader = (label) => { rows.push({ kind: "header", label, y: cy, height: headerH }); cy += headerH; };
+  const pushEntry = (e, ei) => {
+    const expanded = ei === selectedIndex;
+    let height = compactH;
+    let detail = null;
+    if (expanded) {
+      detail = buildDetail(e);
+      const total = detail.reduce((s, d) => s + d.lines.length * 18 + 6, 0);
+      height = 46 + total + 14; // name row + detail block + padding
+    }
+    rows.push({ kind: "entry", ei, e, expanded, detail, y: cy, height });
+    cy += height + gap;
+  };
+
+  pushHeader("UPGRADES");
+  for (let ei = 0; ei < upgradeCount; ei++) pushEntry(entries[ei], ei);
+  pushHeader("EVOLUTIONS");
+  for (let ei = upgradeCount; ei < entries.length; ei++) pushEntry(entries[ei], ei);
+  const backRow = { kind: "back", y: cy, height: 36 };
+  rows.push(backRow);
+  cy += backRow.height;
+  const contentH = cy;
+
+  // --- Scroll so the selected row (or Back) is fully visible. ---
+  const selRow = rows.find((r) =>
+    (r.kind === "entry" && r.ei === selectedIndex) || (r.kind === "back" && selectedIndex === backIndex)
+  ) || backRow;
+  const maxScroll = Math.max(0, contentH - viewH);
+  let scroll = 0;
+  if (selRow.y < scroll) scroll = selRow.y;
+  if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  scroll = Math.max(0, Math.min(maxScroll, scroll));
+
+  // --- Draw, clipped to the viewport. ---
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, viewTop, w, viewH);
+  ctx.clip();
+
+  for (const r of rows) {
+    const ry = viewTop + r.y - scroll;
+    if (ry + r.height < viewTop || ry > viewBottom) continue; // cull offscreen rows
+
+    if (r.kind === "header") {
+      text(ctx, r.label, leftX, ry + r.height - 12, { size: 14, color: DIM, align: "left", weight: "700" });
+      ctx.strokeStyle = "rgba(244, 213, 141, 0.18)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(leftX, ry + r.height - 4);
+      ctx.lineTo(rightX, ry + r.height - 4);
+      ctx.stroke();
+      continue;
+    }
+
+    if (r.kind === "back") {
+      const sel = selectedIndex === backIndex;
+      text(ctx, `${sel ? "> " : "  "}Back`, leftX, ry + 22, {
+        size: 22, color: sel ? GOLD : CREAM, align: "left", weight: sel ? "700" : "500",
       });
-      text(ctx, `${row.count}`, rightX, y, { size: 14, color: DIM, align: "right", weight: "500" });
-      y += 34;
-      return;
+      continue;
     }
 
-    if (row.type === "back") {
-      text(ctx, `${selected ? "> " : "  "}Back`, catX, y + 6, {
-        size: 20, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
-      });
-      y += 30;
-      return;
-    }
+    // Entry row — selected entries always render expanded.
+    const e = r.e;
+    if (r.expanded) {
+      ctx.fillStyle = "rgba(244, 213, 141, 0.07)";
+      ctx.fillRect(leftX - 16, ry, rightX - leftX + 32, r.height - 6);
+      ctx.strokeStyle = "rgba(244, 213, 141, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(leftX - 16, ry, rightX - leftX + 32, r.height - 6);
 
-    // Entry row (indented under its open category).
-    const e = row.entry;
-    drawUpgradeIcon(ctx, entryX - 16, y, e, { size: 22, glow: false });
-    const prefix = row.open ? "v " : (selected ? "> " : "  ");
-    text(ctx, `${prefix}${e.name}`, entryX, y, {
-      size: 18, color: selected ? GOLD : CREAM, align: "left", weight: selected ? "700" : "500",
-    });
-    if (e.kind === "evolution") {
-      text(ctx, "EVOLUTION", rightX, y, { size: 12, color: GOLD, align: "right", weight: "700" });
-    } else if (e.maxLevel !== undefined) {
-      text(ctx, `Max Lv. ${e.maxLevel}`, rightX, y, { size: 12, color: DIM, align: "right", weight: "500" });
-    }
-    y += 26;
-
-    // Expanded detail block (display-only; one open entry per category).
-    if (row.open) {
-      const effectVal = e.maxedStat ? `${e.effect}  (MAXED ${e.maxedStat})` : e.effect;
-      const detail = [["Effect:", effectVal]];
-      // Evolutions show effect only; upgrades also show current level + note.
-      if (e.kind !== "evolution") {
-        if (levels && e.maxLevel !== undefined) {
-          detail.push(["Current:", `Lv. ${levels[e.id] || 0} / ${e.maxLevel}`]);
-        }
-        if (e.evolutionNotes) detail.push(["Evolution:", e.evolutionNotes]);
+      drawUpgradeIcon(ctx, leftX + iconBig / 2, ry + 4 + iconBig / 2, e, { size: iconBig, glow: false });
+      text(ctx, e.name, detailX, ry + 22, { size: 22, color: GOLD, align: "left", weight: "700" });
+      if (e.kind === "evolution") {
+        text(ctx, "EVOLUTION", rightX, ry + 20, { size: 12, color: GOLD, align: "right", weight: "700" });
+      } else if (e.maxLevel !== undefined) {
+        text(ctx, `Max Lv. ${e.maxLevel}`, rightX, ry + 20, { size: 12, color: DIM, align: "right", weight: "500" });
       }
-      detail.forEach(([label, val]) => {
-        text(ctx, label, detailX, y, { size: 14, color: GOLD, align: "left", weight: "700" });
-        text(ctx, val, valX, y, { size: 14, color: CREAM, align: "left", weight: "500", maxWidth: rightX - valX });
-        y += 20;
-      });
-      y += 6;
+      let dy = ry + 46;
+      for (const d of r.detail) {
+        text(ctx, d.label, detailX, dy, { size: 14, color: GOLD, align: "left", weight: "700" });
+        d.lines.forEach((line, li) => {
+          text(ctx, line, valX, dy + li * 18, { size: 14, color: CREAM, align: "left", weight: "500", maxWidth: rightX - valX });
+        });
+        dy += d.lines.length * 18 + 6;
+      }
+    } else {
+      drawUpgradeIcon(ctx, leftX + iconSmall / 2, ry + compactH / 2 - 2, e, { size: iconSmall, glow: false });
+      const nameX = leftX + iconSmall + 16;
+      text(ctx, e.name, nameX, ry + compactH / 2 - 2, { size: 18, color: CREAM, align: "left", weight: "500" });
+      if (e.kind === "evolution") {
+        text(ctx, "EVOLUTION", rightX, ry + compactH / 2 - 2, { size: 12, color: GOLD, align: "right", weight: "700" });
+      } else if (e.maxLevel !== undefined) {
+        text(ctx, `Max Lv. ${e.maxLevel}`, rightX, ry + compactH / 2 - 2, { size: 12, color: DIM, align: "right", weight: "500" });
+      }
     }
-  });
+  }
+  ctx.restore();
 
-  text(ctx, "Up / Down: move      Enter: expand / collapse      Esc / Backspace: back",
-    w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
+  // Scroll affordances (only when content is hidden above/below).
+  if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
+  if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
+
+  text(ctx, "Up / Down: move      Esc / Backspace: back", w / 2, h - 20, { size: 14, color: DIM, weight: "500" });
 }
 
 // --- BESTIARY -------------------------------------------------------------
@@ -680,11 +768,15 @@ export function drawHUD(ctx, w, h, state) {
 // offers = array of upgrade objects { name, description, ... }.
 // Confirm: ENTER takes the first card; number keys pick a slot when there
 // are multiple (built in now so adding cards later needs no UI rewrite).
-export function drawUpgradeScreen(ctx, w, h, offers) {
+// `flash` (0..1) is the fading "just leveled up" celebration: 1 the instant the
+// screen appears, decaying to 0. It pops the title and washes a soft gold bloom
+// over the screen (a single fade — no strobe).
+export function drawUpgradeScreen(ctx, w, h, offers, flash = 0) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.86)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "LEVEL UP!", w / 2, h * 0.20, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  const titleSize = 38 * (1 + 0.22 * flash); // brief pop, settles to 38
+  text(ctx, "LEVEL UP!", w / 2, h * 0.20, { size: titleSize, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   const subtitle = offers.length > 1 ? "Choose an upgrade" : "New power gained";
   text(ctx, subtitle, w / 2, h * 0.20 + 48, { size: 18, color: DIM, weight: "500" });
 
@@ -697,6 +789,17 @@ export function drawUpgradeScreen(ctx, w, h, offers) {
     drawCard(ctx, x, y, cardW, cardH, up, i, offers.length);
     x += cardW + gap;
   });
+
+  // Soft gold bloom from the title area, fading out — cards stay readable.
+  if (flash > 0) {
+    ctx.save();
+    const g = ctx.createRadialGradient(w / 2, h * 0.42, 0, w / 2, h * 0.42, Math.max(w, h) * 0.62);
+    g.addColorStop(0, `rgba(244, 213, 141, ${0.4 * flash})`);
+    g.addColorStop(1, "rgba(244, 213, 141, 0)");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+    ctx.restore();
+  }
 }
 
 // Registered-once guard so each icon's loadImage() runs a single time (never

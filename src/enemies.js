@@ -60,6 +60,7 @@ const ENEMY_TYPES = {
     damage: 8,
     fallbackOuter: "#e2536b",
     fallbackInner: "#7d1f2e",
+    ambientSfx: "wisp", // creature chitter, picked at random by the scheduler
     ranged: null,
   },
   gutter_gecko: {
@@ -70,6 +71,7 @@ const ENEMY_TYPES = {
     damage: 8,        // contact damage if you do touch it
     fallbackOuter: "#5ad1d1",
     fallbackInner: "#1f6b6b",
+    ambientSfx: "gecko_chitter",
     ranged: {
       preferredRange: 280,
       slack: 40,
@@ -78,6 +80,7 @@ const ENEMY_TYPES = {
       projDamage: 8,
       projLife: 3,
       fireRange: 420,
+      fireSfx: "gecko_fling", // played when it releases a projectile
     },
   },
   bone_mage: {
@@ -88,6 +91,7 @@ const ENEMY_TYPES = {
     damage: 8,          // contact damage if you crowd it
     fallbackOuter: "#b48cff", // pale bone-violet
     fallbackInner: "#4a3b6b",
+    ambientSfx: "mage_murmur",
     ranged: null,
     // caster: stands at range, curses the GROUND (telegraph -> blast), and
     // phase-steps to reposition. The hazard zone forces the witch to move.
@@ -110,18 +114,20 @@ const ENEMY_TYPES = {
     damage: 8,           // contact damage if you crowd it
     fallbackOuter: "#7bbf5a", // goblin green
     fallbackInner: "#2f5a22",
+    ambientSfx: "goblin_grunt",
     ranged: null,
     // bruiser: lumbers in, plants, winds up a LOCKED club swing (a rect in
     // front), and KNOCKS the witch back on a hit. The displacement is the point.
     bruiser: {
       approachRange: 72,  // plants + winds up when the witch is this close (center dist)
-      windup: 1.0,        // telegraphed wind-up seconds (dodge window)
+      windup: 0.65,       // shorter wind-up: the witch must REACT now, not stroll off
       recover: 0.8,       // planted recovery after the swing (escape window)
       cooldown: 0.6,      // extra gap before it can wind up again
-      swingReach: 92,     // how far the swing rect reaches in front
-      swingWidth: 84,     // swing rect width
+      swingReach: 150,    // total forward reach of the swing rect (it lunges into this)
+      swingWidth: 96,     // swing rect width (modest widen)
       swingDamage: 10,    // low/moderate — the knockback is the punishment
       knockback: 78,      // px the witch is shoved away from the goblin on a hit
+      lunge: 60,          // px the goblin steps FORWARD into the swing (closes the gap)
     },
   },
 };
@@ -200,6 +206,9 @@ const GECKO_ATTACK_POSE_SECONDS = ENEMY_ANIMS.gecko.anims.attack / ENEMY_ANIMS.g
 const MAGE_ATTACK_POSE_SECONDS = ENEMY_ANIMS.bone_mage.anims.attack / ENEMY_ANIMS.bone_mage.fps.attack;
 const MAGE_BLINK_COOLDOWN = 1.5; // min seconds between "you crowded me" blinks
 const BLINK_FX_LIFE = 0.35;      // phase-step poof ring fade duration (seconds)
+
+// --- Goblin Bonker tuning ----
+const GOBLIN_LUNGE_TIME = 0.18;  // seconds the forward swing-step plays out over
 
 // --- A flung gecko ball ------------------------------------------------------
 // Owned by game.js (this.enemyBolts) so shots outlive their shooter. Player
@@ -435,6 +444,7 @@ export class Enemy {
     this.maxHealth = 2;
     this.health = 2;
     this.damage = this.def.damage;
+    this.ambientSfx = this.def.ambientSfx || null; // creature chitter voice (or none)
 
     this.dead = false;
     this.hitFlash = 0;
@@ -452,6 +462,8 @@ export class Enemy {
     this.attackState = "chase"; // Goblin Bonker: "chase" | "windup" | "recover"
     this.attackTimer = 0;       // windup/recover countdown
     this.attackCd = 0;          // gap before it can wind up again
+    this.swingAng = 0;          // Goblin: locked aim of the committed swing
+    this.lungeTimer = 0;        // Goblin: forward swing-step countdown
 
     // Animation state (visual only). Start frame is randomized so a swarm
     // doesn't pulse in perfect lockstep.
@@ -506,6 +518,7 @@ export class Enemy {
       this.fireTimer -= dt;
       if (this.fireTimer <= 0 && len <= r.fireRange && enemyBolts) {
         enemyBolts.push(new EnemyBolt(this.x, this.y, player.x, player.y, r.projSpeed, r.projDamage, r.projLife));
+        if (r.fireSfx) playSfx(r.fireSfx); // missing file = silent
         this.fireTimer = r.cooldown + randomRange(-0.4, 0.4);
         this.attackPoseTimer = GECKO_ATTACK_POSE_SECONDS;
       }
@@ -631,12 +644,21 @@ export class Enemy {
         this.attackState = "recover";
         this.attackTimer = b.recover;
         this.animFrame = attackFrames - 1; // snap to the swing frame as it connects
+        this.lungeTimer = GOBLIN_LUNGE_TIME; // step forward INTO the swing
       }
       return;
     }
 
     if (this.attackState === "recover") {
       this.attackTimer -= dt; // planted; hold the swing frame (winded follow-through)
+      // Lunge: a quick forward step along the LOCKED aim as the club comes down,
+      // so backing straight away isn't a free escape and the goblin stays on you.
+      if (this.lungeTimer > 0) {
+        const step = (b.lunge / GOBLIN_LUNGE_TIME) * dt;
+        this.x += Math.cos(this.swingAng) * step;
+        this.y += Math.sin(this.swingAng) * step;
+        this.lungeTimer -= dt;
+      }
       this.animState = "attack";
       this.animFrame = attackFrames - 1;
       if (this.attackTimer <= 0) {
@@ -657,8 +679,12 @@ export class Enemy {
     }
     if (this.attackCd <= 0 && hazards) {
       // In range + off cooldown: plant, LOCK the aim, spawn the swing zone in
-      // front. The HazardZone (rect) handles the telegraph, hit, and knockback.
+      // front. The rect reaches `swingReach` forward (covering the lunge), so a
+      // straight-back retreat no longer walks free. HazardZone (rect) handles the
+      // telegraph, hit, and knockback.
       const ang = Math.atan2(player.y - this.y, player.x - this.x);
+      this.swingAng = ang;
+      this.facing = dirFromVector(Math.cos(ang), Math.sin(ang));
       const cx = this.x + Math.cos(ang) * (b.swingReach / 2);
       const cy = this.y + Math.sin(ang) * (b.swingReach / 2);
       hazards.push(new HazardZone(cx, cy, b.swingReach, b.windup, b.swingDamage, {
@@ -923,6 +949,7 @@ export class Boss {
       if (this.dashCooldownTimer <= 0) {
         this.phase = "telegraph";
         this.telegraphTimer = BOSS_DASH_TELEGRAPH;
+        playSfx("elder_wisp_charge"); // dash wind-up warning (missing file = silent)
       }
     } else if (this.phase === "telegraph") {
       // Brace + aim; lock the dash direction when the wind-up ends.

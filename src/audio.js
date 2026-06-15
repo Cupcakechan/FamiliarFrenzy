@@ -25,10 +25,10 @@
       newest requested track wins.
 
    Behavior kept from before:
-   - ONE shared "normal" pool for menus + gameplay (no restart moving between
-     them), a single boss track that interrupts and returns cleanly.
-   - Crossfades over FADE_MS; a normal track loops and rotates to a different
-     random one after NORMAL_TRACK_MIN_PLAY_SECONDS.
+   - SEPARATE menu + gameplay pools (a crossfade swaps tracks when a run begins
+     / ends), a single boss track that interrupts and returns cleanly.
+   - Crossfades over FADE_MS; a track loops and rotates to a different random
+     one (from the same pool) after NORMAL_TRACK_MIN_PLAY_SECONDS.
    - Nothing plays until the first user gesture; setMusicContext() can be
      called any time (even per-frame) and is cheap + idempotent.
    - Music volume (0..100) persists in localStorage and applies live.
@@ -44,25 +44,31 @@
 // --- Asset config (all easy to change) -----------------------------------
 const MUSIC_EXT = "mp3";   // change to "ogg" if your files are .ogg
 const POOL_COUNT = 9;      // familiar_theme_01..0N
+const MENU_POOL_COUNT = 3; // the FIRST N themes are the MENU pool; the rest are gameplay
 const DEFAULT_VOLUME = 60; // 0..100
 const FADE_MS = 700;       // crossfade length between tracks
-const NORMAL_TRACK_MIN_PLAY_SECONDS = 240; // loop one normal track at least this long before rotating to a new random one
+const NORMAL_TRACK_MIN_PLAY_SECONDS = 240; // loop one track at least this long before rotating to a new random one
 const STORAGE_KEY = "ff_musicVolume";
 
 const POOL_SRCS = [];
 for (let i = 1; i <= POOL_COUNT; i++) {
   POOL_SRCS.push(`assets/music/familiar_theme_${String(i).padStart(2, "0")}.${MUSIC_EXT}`);
 }
+// Menus and gameplay now draw from SEPARATE pools so the music changes when a
+// run begins. To rebalance which themes go where, change MENU_POOL_COUNT above
+// (or reorder POOL_SRCS): menus get themes 1..N, gameplay gets the remainder.
+const MENU_SRCS = POOL_SRCS.slice(0, MENU_POOL_COUNT);
+const GAMEPLAY_SRCS = POOL_SRCS.slice(MENU_POOL_COUNT);
 const BOSS_SRC = `assets/music/boss_theme.${MUSIC_EXT}`;
 
 // --- State ---------------------------------------------------------------
 let volume = DEFAULT_VOLUME;  // 0..100
 let unlocked = false;         // true after the first user gesture
-let desiredContext = null;    // what game.js wants: "normal" | "boss" | null
+let desiredContext = null;    // what game.js wants: "menu" | "gameplay" | "boss" | null
 let currentContext = null;    // what is actually playing
 let currentSrc = null;        // active src (to avoid repeats / needless restarts)
 let retryOnGesture = false;   // a play() hit a REAL autoplay block; retry on next gesture
-let normalRotateTimer = null; // setTimeout handle for normal-track rotation
+let poolRotateTimer = null;   // setTimeout handle for menu/gameplay track rotation
 
 // --- The two persistent decks ----------------------------------------------
 // decks[active] is the incoming/playing deck; decks[1 - active] is outgoing.
@@ -109,16 +115,23 @@ export function setMusicVolume(v) {
 }
 
 // --- Track selection ------------------------------------------------------
-// Random pool track, avoiding an immediate repeat of the current one.
-function randomPoolSrc() {
-  const n = POOL_SRCS.length;
+// Random track from a given pool, avoiding an immediate repeat of the current.
+function randomPoolSrc(pool) {
+  const n = pool.length;
   if (n === 0) return null;
-  if (n === 1) return POOL_SRCS[0];
+  if (n === 1) return pool[0];
   let pick;
   do {
-    pick = POOL_SRCS[Math.floor(Math.random() * n)];
+    pick = pool[Math.floor(Math.random() * n)];
   } while (pick === currentSrc);
   return pick;
+}
+
+// Which rotating pool a context draws from.
+function poolForContext(ctx) {
+  if (ctx === "menu") return MENU_SRCS;
+  if (ctx === "gameplay") return GAMEPLAY_SRCS;
+  return POOL_SRCS; // safety fallback
 }
 
 // --- Deferred, ownership-checked pause -------------------------------------
@@ -207,32 +220,32 @@ function playSrc(src, loop) {
   startFade(gen);
 }
 
-// --- Normal-track rotation ------------------------------------------------
-// A selected normal track LOOPS seamlessly; we only rotate to a different
-// random track after NORMAL_TRACK_MIN_PLAY_SECONDS. Driven by a one-shot timer.
-function clearNormalRotation() {
-  if (normalRotateTimer) {
-    clearTimeout(normalRotateTimer);
-    normalRotateTimer = null;
+// --- Pool-track rotation --------------------------------------------------
+// A selected track LOOPS seamlessly; we only rotate to a different random one
+// (from the SAME pool as the current context) after NORMAL_TRACK_MIN_PLAY_SECONDS.
+function clearPoolRotation() {
+  if (poolRotateTimer) {
+    clearTimeout(poolRotateTimer);
+    poolRotateTimer = null;
   }
 }
 
-function scheduleNormalRotation() {
-  clearNormalRotation();
-  normalRotateTimer = setTimeout(rotateNormalTrack, NORMAL_TRACK_MIN_PLAY_SECONDS * 1000);
+function schedulePoolRotation() {
+  clearPoolRotation();
+  poolRotateTimer = setTimeout(rotatePoolTrack, NORMAL_TRACK_MIN_PLAY_SECONDS * 1000);
 }
 
-// Start a normal-pool track looping and (re)arm the rotation timer.
-function startNormalTrack(src) {
+// Start a pool track looping and (re)arm the rotation timer.
+function startPoolTrack(src) {
   playSrc(src, true);
-  scheduleNormalRotation();
+  schedulePoolRotation();
 }
 
-// Timer fired: crossfade to a DIFFERENT random normal track and re-arm.
-// No-op if we're not in normal context anymore (boss took over / stopped).
-function rotateNormalTrack() {
-  if (currentContext !== "normal") return;
-  startNormalTrack(randomPoolSrc());
+// Timer fired: crossfade to a DIFFERENT random track in the current pool and
+// re-arm. No-op if we're no longer in a rotating context (boss/stopped).
+function rotatePoolTrack() {
+  if (currentContext !== "menu" && currentContext !== "gameplay") return;
+  startPoolTrack(randomPoolSrc(poolForContext(currentContext)));
 }
 
 // Realize the desired context. Cheap + idempotent: no-ops unless the context
@@ -243,11 +256,11 @@ function applyContext() {
 
   currentContext = desiredContext;
   if (desiredContext === "boss") {
-    clearNormalRotation();      // boss interrupts the normal rotation
+    clearPoolRotation();        // boss interrupts the pool rotation
     playSrc(BOSS_SRC, true);
-  } else if (desiredContext === "normal") {
-    // Fresh normal rotation (also how we resume cleanly after a boss fight).
-    startNormalTrack(randomPoolSrc());
+  } else if (desiredContext === "menu" || desiredContext === "gameplay") {
+    // Fresh rotation in this context's pool (also how we resume after a boss).
+    startPoolTrack(randomPoolSrc(poolForContext(desiredContext)));
   } else {
     stopMusic();
   }
@@ -260,7 +273,7 @@ export function setMusicContext(ctx) {
 }
 
 export function stopMusic() {
-  clearNormalRotation();
+  clearPoolRotation();
   const gen = ++transitionGen; // invalidates all pending callbacks + fades
   if (fadeRAF) { cancelAnimationFrame(fadeRAF); fadeRAF = null; }
   currentSrc = null;
@@ -298,6 +311,14 @@ const SFX_DEFS = {
   mage_blast: { src: "assets/sfx/mage_blast.mp3", volume: 0.50, voices: 2, minInterval: 0.08 },
   goblin_windup: { src: "assets/sfx/goblin_windup.mp3", volume: 0.40, voices: 2, minInterval: 0.10 },
   goblin_bonk:   { src: "assets/sfx/goblin_bonk.mp3",   volume: 0.55, voices: 2, minInterval: 0.08 },
+  // Per-creature ambient voices (picked at random by game.js's chitter scheduler).
+  gecko_chitter: { src: "assets/sfx/gecko_chitter.mp3", volume: 0.30, voices: 3, minInterval: 0.25 },
+  mage_murmur:   { src: "assets/sfx/mage_murmur.mp3",   volume: 0.30, voices: 3, minInterval: 0.25 },
+  goblin_grunt:  { src: "assets/sfx/goblin_grunt.mp3",  volume: 0.32, voices: 3, minInterval: 0.25 },
+  // Event cues.
+  gecko_fling:       { src: "assets/sfx/gecko_fling.mp3",       volume: 0.35, voices: 4, minInterval: 0.08 },
+  elder_wisp_charge: { src: "assets/sfx/elder_wisp_charge.mp3", volume: 0.50, voices: 2, minInterval: 0.20 },
+  elder_wisp_summon: { src: "assets/sfx/elder_wisp_summon.mp3", volume: 0.45, voices: 2, minInterval: 0.15 },
 };
 
 const SFX_STORAGE_KEY = "ff_sfxVolume";
