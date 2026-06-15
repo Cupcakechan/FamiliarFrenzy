@@ -116,18 +116,24 @@ const ENEMY_TYPES = {
     fallbackInner: "#2f5a22",
     ambientSfx: "goblin_grunt",
     ranged: null,
-    // bruiser: lumbers in, plants, winds up a LOCKED club swing (a rect in
-    // front), and KNOCKS the witch back on a hit. The displacement is the point.
+    // bruiser: lumbers in, then COMMITS — a quick locked leap toward the witch
+    // (closes distance so slow kiting isn't free), immediately followed by a
+    // RADIAL ground stomp centered on its landing spot. The ring telegraphs for
+    // `windup`, then BLASTS once and KNOCKS the witch back from the center. A
+    // circle (not a front rect) means orbiting around it no longer dodges — you
+    // must leave the ring. The stomp is a circle HazardZone, so game.js handles
+    // the telegraph/hit/knockback for free.
     bruiser: {
-      approachRange: 72,  // plants + winds up when the witch is this close (center dist)
-      windup: 0.65,       // shorter wind-up: the witch must REACT now, not stroll off
-      recover: 0.8,       // planted recovery after the swing (escape window)
-      cooldown: 0.6,      // extra gap before it can wind up again
-      swingReach: 150,    // total forward reach of the swing rect (it lunges into this)
-      swingWidth: 96,     // swing rect width (modest widen)
-      swingDamage: 10,    // low/moderate — the knockback is the punishment
+      approachRange: 140,  // plants + commits when the witch is this close (center dist)
+      windup: 0.65,       // ring telegraph after the leap: the witch must clear the circle
+      recover: 0.8,       // planted recovery after the stomp (escape window)
+      cooldown: 0.6,      // extra gap before it can commit again
+      swingReach: 150,    // (legacy rect reach — retained; unused by the radial stomp)
+      swingWidth: 96,     // (legacy rect width  — retained; unused by the radial stomp)
+      swingDamage: 10,    // stomp damage — low/moderate; the knockback is the punishment
       knockback: 78,      // px the witch is shoved away from the goblin on a hit
-      lunge: 60,          // px the goblin steps FORWARD into the swing (closes the gap)
+      lunge: 120,          // px the goblin LEAPS forward into the stomp (capped at its distance to the witch)
+      stompRadius: 96,    // radial stomp danger radius (+player ~16 = ~112px). Bigger = harder to outrun.
     },
   },
 };
@@ -318,6 +324,9 @@ export class HazardZone {
     this.ox = opts.ox != null ? opts.ox : x; // knockback origin (the attacker)
     this.oy = opts.oy != null ? opts.oy : y;
     this.sfx = opts.sfx || "mage_blast";
+    // Circle look: "curse" = Bone Mage cursed ground (rune/violet), "stomp" =
+    // Goblin shockwave (green/amber, no rune). Rect ignores this.
+    this.skin = opts.skin || "curse";
   }
 
   // Is the witch inside the danger area right now? (expanded by her radius so a
@@ -394,6 +403,7 @@ export class HazardZone {
 
   // Bone Mage cursed ground: warning ring/rune that fills, then an impact flash.
   drawCircle(ctx) {
+    if (this.skin === "stomp") { this.drawStomp(ctx); return; }
     const img = getImage("hex_rune");
     if (this.phase === "blast") {
       const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME; // 0->1
@@ -429,6 +439,43 @@ export class HazardZone {
     }
     ctx.restore();
   }
+
+  // Goblin radial stomp: a warm ground ring that fills toward the slam, then a
+  // dusty shockwave flash. No rune — visually distinct from the Bone Mage curse.
+  drawStomp(ctx) {
+    ctx.save();
+    if (this.phase === "blast") {
+      const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME; // 0 -> 1
+      const r = this.radius * (1 + p * 0.22);                    // expands outward
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = "rgba(214, 184, 122, 0.55)";               // dust
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = "rgba(123, 191, 90, 0.9)";               // goblin green rim
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    // Telegraph: filled inner disc grows with the wind-up; pulsing outer rim.
+    const fill = 1 - Math.max(0, this.timer) / this.telegraph;   // 0 -> 1
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 100);
+    ctx.fillStyle = `rgba(170, 130, 70, ${0.10 + 0.20 * fill})`;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * fill, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(123, 191, 90, ${0.45 + 0.45 * pulse})`;
+    ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.stroke();
+    // A few radial cracks for "ground slam" read.
+    ctx.strokeStyle = `rgba(214, 184, 122, ${0.30 + 0.35 * fill})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + this.angle;
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(a) * this.radius * 0.25, this.y + Math.sin(a) * this.radius * 0.25);
+      ctx.lineTo(this.x + Math.cos(a) * this.radius * 0.92, this.y + Math.sin(a) * this.radius * 0.92);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 
 export class Enemy {
@@ -459,11 +506,13 @@ export class Enemy {
     this.bondTickTimer = 0;     // Spirit Bond: per-enemy damage-tick cooldown
     this.blinkFx = [];          // Bone Mage phase-step poof rings (visual only)
     this.blinkCooldown = 0;     // min gap between "crowded me" blinks
-    this.attackState = "chase"; // Goblin Bonker: "chase" | "windup" | "recover"
+    this.attackState = "chase"; // Goblin Bonker: "chase" | "leap" | "windup" | "recover"
     this.attackTimer = 0;       // windup/recover countdown
     this.attackCd = 0;          // gap before it can wind up again
-    this.swingAng = 0;          // Goblin: locked aim of the committed swing
-    this.lungeTimer = 0;        // Goblin: forward swing-step countdown
+    this.swingAng = 0;          // Goblin: locked aim of the committed swing/leap
+    this.lungeTimer = 0;        // Goblin: forward swing-step countdown (legacy; unused by stomp)
+    this.leapTimer = 0;         // Goblin: leap-step countdown (the commit hop)
+    this.leapDist = 0;          // Goblin: total px the committed leap travels
 
     // Animation state (visual only). Start frame is randomized so a swarm
     // doesn't pulse in perfect lockstep.
@@ -624,41 +673,55 @@ export class Enemy {
     this.blinkCooldown = MAGE_BLINK_COOLDOWN;
   }
 
-  // Goblin Bonker brain: chase -> plant + wind up a LOCKED swing -> recover.
-  // The swing (telegraph, hit, knockback) is a rect HazardZone, so the "doesn't
-  // chase once committed" fairness is free. Drives its own facing + animation:
-  // WALK while advancing; a progress-driven ATTACK pose (wind-up frames, then
-  // the swing frame held through recovery) while planted.
+  // Goblin Bonker brain: chase -> COMMIT (a locked forward LEAP) -> radial STOMP
+  // (telegraph + blast + knockback) -> recover. The leap closes distance so slow
+  // kiting isn't free; the stomp is a CIRCLE HazardZone centered on the landing
+  // spot, so orbiting around it no longer dodges and game.js handles the
+  // telegraph/hit/knockback. Drives its own facing + animation: WALK while
+  // advancing; a progress-driven ATTACK pose while leaping/planted.
   updateBruiser(dt, player, len, hazards) {
     const b = this.def.bruiser;
     const attackFrames = ENEMY_ANIMS.goblin.anims.attack; // 6
     if (this.attackCd > 0) this.attackCd -= dt;
 
+    if (this.attackState === "leap") {
+      // Quick committed hop along the LOCKED aim. No hazard yet — the leap
+      // itself is the tell; the stomp ring spawns where it lands.
+      const step = (this.leapDist / GOBLIN_LUNGE_TIME) * dt;
+      this.x += Math.cos(this.swingAng) * step;
+      this.y += Math.sin(this.swingAng) * step;
+      this.leapTimer -= dt;
+      this.animState = "attack";
+      this.animFrame = 0; // rear-back pose during the lunge
+      if (this.leapTimer <= 0 && hazards) {
+        // Landed: drop the radial stomp centered HERE. telegraph == windup, so
+        // it detonates exactly as the windup phase ends (same as the old swing).
+        hazards.push(new HazardZone(this.x, this.y, b.stompRadius, b.windup, b.swingDamage, {
+          shape: "circle", skin: "stomp",
+          knockback: b.knockback, ox: this.x, oy: this.y, sfx: "goblin_bonk",
+        }));
+        this.attackState = "windup";
+        this.attackTimer = b.windup;
+      }
+      return;
+    }
+
     if (this.attackState === "windup") {
       this.attackTimer -= dt; // planted; facing stays locked from when it committed
       const p = 1 - Math.max(0, this.attackTimer) / b.windup; // 0 -> 1
-      // Wind-up rides the early frames; the FINAL frame is the swing itself.
+      // Wind-up rides the early frames; the FINAL frame is the slam itself.
       this.animState = "attack";
       this.animFrame = Math.min(attackFrames - 2, Math.floor(p * (attackFrames - 1)));
       if (this.attackTimer <= 0) {
         this.attackState = "recover";
         this.attackTimer = b.recover;
-        this.animFrame = attackFrames - 1; // snap to the swing frame as it connects
-        this.lungeTimer = GOBLIN_LUNGE_TIME; // step forward INTO the swing
+        this.animFrame = attackFrames - 1; // snap to the slam frame as it connects
       }
       return;
     }
 
     if (this.attackState === "recover") {
-      this.attackTimer -= dt; // planted; hold the swing frame (winded follow-through)
-      // Lunge: a quick forward step along the LOCKED aim as the club comes down,
-      // so backing straight away isn't a free escape and the goblin stays on you.
-      if (this.lungeTimer > 0) {
-        const step = (b.lunge / GOBLIN_LUNGE_TIME) * dt;
-        this.x += Math.cos(this.swingAng) * step;
-        this.y += Math.sin(this.swingAng) * step;
-        this.lungeTimer -= dt;
-      }
+      this.attackTimer -= dt; // planted; hold the slam frame (winded follow-through)
       this.animState = "attack";
       this.animFrame = attackFrames - 1;
       if (this.attackTimer <= 0) {
@@ -678,25 +741,19 @@ export class Enemy {
       return;
     }
     if (this.attackCd <= 0 && hazards) {
-      // In range + off cooldown: plant, LOCK the aim, spawn the swing zone in
-      // front. The rect reaches `swingReach` forward (covering the lunge), so a
-      // straight-back retreat no longer walks free. HazardZone (rect) handles the
-      // telegraph, hit, and knockback.
+      // In range + off cooldown: COMMIT. Lock the aim and LEAP toward the witch
+      // (capped at the current distance so it doesn't sail past). The stomp ring
+      // spawns when the leap lands, in the "leap" branch above.
       const ang = Math.atan2(player.y - this.y, player.x - this.x);
       this.swingAng = ang;
       this.facing = dirFromVector(Math.cos(ang), Math.sin(ang));
-      const cx = this.x + Math.cos(ang) * (b.swingReach / 2);
-      const cy = this.y + Math.sin(ang) * (b.swingReach / 2);
-      hazards.push(new HazardZone(cx, cy, b.swingReach, b.windup, b.swingDamage, {
-        shape: "rect", angle: ang, length: b.swingReach, width: b.swingWidth,
-        knockback: b.knockback, ox: this.x, oy: this.y, sfx: "goblin_bonk",
-      }));
-      playSfx("goblin_windup"); // missing file = silent
-      this.attackState = "windup";
-      this.attackTimer = b.windup;
+      this.leapDist = Math.min(b.lunge, len); // don't overshoot the witch's spot
+      this.leapTimer = GOBLIN_LUNGE_TIME;
+      this.attackState = "leap";
       this.animState = "attack";
       this.animFrame = 0;
       this.animTimer = 0;
+      playSfx("goblin_windup"); // the lunge tell (missing file = silent)
       return;
     }
     // In range but still on cooldown — shuffle in place (walk loop).
@@ -866,6 +923,11 @@ const BOSS_DASH_COOLDOWN = 5;    // seconds between dashes
 const BOSS_DASH_TELEGRAPH = 0.85; // wind-up warning before the dash (more time to dodge)
 const BOSS_DASH_DURATION = 0.45; // length of the dash burst (reach = SPEED * DURATION)
 const BOSS_DASH_SPEED = 640;     // dash velocity (640 * 0.45 = ~288px reach; slower charge than 720)
+const BOSS_DASH_CONTACT_RADIUS = 22; // tighter body hitbox DURING the dash only (radius
+                                 // stays 30 for bolt targeting). The dash barrels through
+                                 // at 640px/s, so the full 30 swept a too-wide corridor;
+                                 // 22 (+player ~16 = ~38px) narrows it. Bump toward 26 if
+                                 // the dash now feels like it passes through you.
 const BOSS_SUMMON_COOLDOWN = 13;     // base seconds between summon waves (was 9)
 const BOSS_SUMMON_JITTER = 4;        // + up to this many seconds, so summons aren't clockwork
 const BOSS_SUMMON_BATCH = 3;         // wisps queued per summon wave
@@ -1023,6 +1085,14 @@ export class Boss {
     this.health -= amount;
     this.hitFlash = 0.08;
     if (this.health <= 0) this.dead = true;
+  }
+
+  // Player-contact hitbox. Full `radius` normally (a fair, hittable body), but
+  // tighter while DASHING so the fast sweep doesn't clip the witch from a
+  // distance. game.js prefers this over `radius` for contact damage only;
+  // bolt-targeting and Spirit Bond still use the full `radius`.
+  get contactRadius() {
+    return this.phase === "dashing" ? BOSS_DASH_CONTACT_RADIUS : this.radius;
   }
 
   draw(ctx) {

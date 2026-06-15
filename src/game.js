@@ -826,7 +826,10 @@ export class Game {
 
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player, this.enemyBolts, this.hazards);
-      if (circlesOverlap(enemy.x, enemy.y, enemy.radius, this.player.x, this.player.y, this.player.radius)) {
+      // Contact damage uses the enemy's contactRadius when it defines one (the
+      // Elder Wisp tightens it mid-dash); everything else falls back to radius.
+      const cr = enemy.contactRadius != null ? enemy.contactRadius : enemy.radius;
+      if (circlesOverlap(enemy.x, enemy.y, cr, this.player.x, this.player.y, this.player.radius)) {
         this.player.takeDamage(enemy.damage);
       }
     }
