@@ -33,6 +33,7 @@ loadImage("upgrade_card", "assets/sprites/ui/upgrade_card.png"); // 240x150 leve
 // draw time, so re-authoring a bar at a new width needs no code change.
 loadImage("health_bar", "assets/sprites/ui/health_bar.png"); // 263x24 HP bar frame
 loadImage("spirit_bar", "assets/sprites/ui/spirit_bar.png"); // 263x24 Spirit Imbued frame (docked under HP)
+loadImage("spirit_crystal", "assets/sprites/ui/spirit_crystal.png"); // small crystal icon; code-drawn gem fallback
 
 // --- Shared helpers -------------------------------------------------------
 // Pass `maxWidth` to auto-shrink the font (proportionally, never squished) so
@@ -70,6 +71,61 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.arcTo(x, y + h, x, y, r);
   ctx.arcTo(x, y, x + w, y, r);
   ctx.closePath();
+}
+
+// Spirit Crystal icon. Draws spirit_crystal.png centered at (cx, cy) at 2*r
+// tall if present; otherwise a code-drawn faceted gem (icy violet). Reused by
+// the summary screens now and the Closet in Phase 2.
+export function drawCrystalIcon(ctx, cx, cy, r) {
+  const img = getImage("spirit_crystal");
+  if (img && img.width > 0) {
+    const dh = r * 2;
+    const dw = (img.width / img.height) * dh;
+    ctx.drawImage(img, Math.round(cx - dw / 2), Math.round(cy - r), dw, dh);
+    return;
+  }
+  ctx.save();
+  // Gem body (diamond).
+  ctx.fillStyle = "#8be0ff";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx + r * 0.8, cy - r * 0.15);
+  ctx.lineTo(cx, cy + r);
+  ctx.lineTo(cx - r * 0.8, cy - r * 0.15);
+  ctx.closePath();
+  ctx.fill();
+  // Top facet highlight.
+  ctx.fillStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx + r * 0.8, cy - r * 0.15);
+  ctx.lineTo(cx - r * 0.8, cy - r * 0.15);
+  ctx.closePath();
+  ctx.fill();
+  // Thin violet outline for definition on light/dark alike.
+  ctx.strokeStyle = "rgba(123, 92, 255, 0.85)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - r);
+  ctx.lineTo(cx + r * 0.8, cy - r * 0.15);
+  ctx.lineTo(cx, cy + r);
+  ctx.lineTo(cx - r * 0.8, cy - r * 0.15);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.restore();
+}
+
+// Centered "[gem] <str>" group: the gem sits just left of the text, the whole
+// group optically centered on `cx`. Used for the run-summary crystal line.
+function crystalLine(ctx, cx, y, str, { size = 16, color = GOLD } = {}) {
+  ctx.font = `700 ${size}px ${BODY_FONT}`;
+  const tw = ctx.measureText(str).width;
+  const r = size * 0.42;          // gem half-height
+  const gap = 6;
+  const groupW = r * 2 + gap + tw;
+  const left = cx - groupW / 2;
+  drawCrystalIcon(ctx, left + r, y, r);
+  text(ctx, str, left + r * 2 + gap, y, { size, color, align: "left", weight: "700" });
 }
 
 // --- MENUS ----------------------------------------------------------------
@@ -1120,6 +1176,10 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
   text(ctx, row1, w / 2, 186, { size: 17, color: GOLD, weight: "700" });
   text(ctx, row2, w / 2, 212, { size: 16, color: CREAM, weight: "500" });
 
+  if (summary.crystalsEarned > 0) {
+    crystalLine(ctx, w / 2, 238, `Spirit Crystals earned: ${summary.crystalsEarned}`, { size: 16, color: GOLD });
+  }
+
   // Menu options.
   const startY = 280;
   const lineH = 50;
@@ -1292,6 +1352,10 @@ export function drawGameOver(ctx, w, h, info) {
     }
     text(ctx, `Best wave: ${info.bestWave}      Best score: ${info.bestScore}`, w / 2, h / 2 + 86, { size: 15, color: DIM, weight: "500" });
 
+    if (info.crystalsEarned > 0) {
+      crystalLine(ctx, w / 2, h / 2 + 106, `Spirit Crystals earned: ${info.crystalsEarned}`, { size: 16, color: GOLD });
+    }
+
     ctx.globalAlpha = pulse;
     text(ctx, "R: new endless run      Esc: main menu", w / 2, h / 2 + 124, { size: 18, color: PURPLE });
     ctx.globalAlpha = 1;
@@ -1301,6 +1365,10 @@ export function drawGameOver(ctx, w, h, info) {
   text(ctx, "GAME OVER", w / 2, h / 2 - 50, { size: 56, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
   text(ctx, `Final Score: ${info.score}`, w / 2, h / 2 + 10, { size: 24, color: GOLD });
   text(ctx, `Reached Wave ${info.wave}`, w / 2, h / 2 + 44, { size: 20, color: DIM, weight: "500" });
+
+  if (info.crystalsEarned > 0) {
+    crystalLine(ctx, w / 2, h / 2 + 66, `Spirit Crystals earned: ${info.crystalsEarned}`, { size: 16, color: GOLD });
+  }
 
   ctx.globalAlpha = pulse;
   text(ctx, "R: try again      Esc: main menu", w / 2, h / 2 + 90, { size: 20, color: PURPLE });

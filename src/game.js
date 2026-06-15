@@ -110,8 +110,18 @@ const TUTORIAL_HINTS = {
   watching_hand: "The Watching Hand! Don't stand where it aims to slam!",
   bone_mage:   "A Bone Mage! It curses the ground — step off the rune!",
   goblin_bonker: "A Goblin Bonker! Its club swing knocks you flying — dodge it.",
+  spirit_crystal: "A Spirit Crystal! Spend these in the Closet between runs.",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
+
+// --- Spirit Crystals (meta currency) — Wardrobe/Closet feature, Phase 1 ------
+// First boss defeated EVER is a guaranteed crystal (+ the familiar tip). After
+// that, only ENDLESS bosses can drop one, on a chance that scales with depth and
+// Lucky Paws. Tutorial bosses after the first-ever give nothing (not farmable).
+const CRYSTAL_BASE_CHANCE = 0.40;     // endless boss crystal chance at tier 1 (wave 10)
+const CRYSTAL_CHANCE_PER_TIER = 0.10; // + per endless tier beyond the first
+const CRYSTAL_CHANCE_PER_LUCK = 0.04; // + per Lucky Paws level (game.luckLevel, max 3)
+const CRYSTAL_CHANCE_CAP = 0.85;      // hard ceiling on the per-boss chance
 
 // --- Bestiary -------------------------------------------------------------
 // Creature entries for the Bestiary screen. `id` is the seen-tracking key
@@ -278,6 +288,12 @@ export class Game {
     // Familiar Frenzy meter.
     this.frenzyCharge = 0;  // motes banked toward FRENZY_MOTES
     this.frenzyTimer = 0;   // > 0 while frenzy is active
+
+    // Spirit Crystals (persistent meta currency for the Closet/Wardrobe).
+    // Loaded once at boot; survives runs. `crystalsThisRun` is the per-run
+    // tally shown on the Game Over / Victory summary (reset each run).
+    this.wardrobe = this.loadWardrobe();
+    this.crystalsThisRun = 0;
   }
 
   startGame(mode = "tutorial") {
@@ -320,6 +336,8 @@ export class Game {
 
     this.frenzyCharge = 0;
     this.frenzyTimer = 0;
+
+    this.crystalsThisRun = 0; // per-run Spirit Crystal tally (persistent total lives in this.wardrobe)
 
     // Tutorial script + hints reset. A scripted tutorial begins with waves
     // held, the shadow veil up, and the (sticky) movement hint showing.
@@ -951,6 +969,7 @@ export class Game {
         if (enemy.isBoss) {
           this.bossesDefeated += 1;
           this.pendingLevelUps += 1; // boss kill grants a free upgrade choice
+          this.awardBossCrystal();   // + a Spirit Crystal (guaranteed first-ever, else endless chance)
         }
         // Drops are placed on non-overlapping spots near the kill (see
         // findDropSpot), so a mote + flask from the same enemy don't stack.
@@ -1623,6 +1642,76 @@ export class Game {
     }
   }
 
+  // --- Spirit Crystals / Wardrobe persistence ------------------------------
+  // One namespaced JSON blob (ff_wardrobe), same try/catch + safe-default
+  // pattern as the high-score code. `owned`/`equipped` are seeded now so Phase 2
+  // (the Closet screen) needs no migration; Phase 1 only touches crystals +
+  // firstBossClaimed. Any missing/corrupt field falls back to its default.
+  loadWardrobe() {
+    const def = { crystals: 0, owned: ["default"], equipped: "default", firstBossClaimed: false };
+    try {
+      const raw = localStorage.getItem("ff_wardrobe");
+      if (!raw) return def;
+      const p = JSON.parse(raw);
+      if (!p || typeof p !== "object") return def;
+      return {
+        crystals: Number.isFinite(p.crystals) ? Math.max(0, Math.floor(p.crystals)) : 0,
+        owned: Array.isArray(p.owned) && p.owned.includes("default") ? p.owned : ["default"],
+        equipped: typeof p.equipped === "string" ? p.equipped : "default",
+        firstBossClaimed: p.firstBossClaimed === true,
+      };
+    } catch (e) {
+      return def;
+    }
+  }
+
+  saveWardrobe() {
+    try {
+      localStorage.setItem("ff_wardrobe", JSON.stringify(this.wardrobe));
+    } catch (e) {
+      /* localStorage unavailable — progression just won't persist this session */
+    }
+  }
+
+  // Called once per boss death (from the kill loop). First boss EVER is a
+  // guaranteed crystal + the familiar tip; after that only ENDLESS bosses roll
+  // a chance that scales with depth + Lucky Paws. Tutorial bosses past the
+  // first-ever award nothing, so replaying Tutorial can't farm crystals.
+  awardBossCrystal() {
+    let earned = 0;
+    if (!this.wardrobe.firstBossClaimed) {
+      earned = 1;
+      this.wardrobe.firstBossClaimed = true;
+      this.queueFamiliarTip("spirit_crystal"); // once-ever, both modes
+    } else if (this.gameMode === "endless") {
+      const tier = this.waveManager.endlessTier() + 1; // wave 10 -> 1, 20 -> 2, ...
+      const chance = clamp(
+        CRYSTAL_BASE_CHANCE + (tier - 1) * CRYSTAL_CHANCE_PER_TIER + this.luckLevel * CRYSTAL_CHANCE_PER_LUCK,
+        0,
+        CRYSTAL_CHANCE_CAP
+      );
+      if (Math.random() < chance) earned = 1;
+    }
+    if (earned > 0) {
+      this.wardrobe.crystals += earned;
+      this.crystalsThisRun += earned;
+      this.saveWardrobe();
+    }
+  }
+
+  // Enqueue a familiar dialogue line in BOTH modes (the existing showHint() is
+  // tutorial-only). Used for the first-ever Spirit Crystal tip.
+  queueFamiliarTip(id) {
+    if (!TUTORIAL_HINTS_ENABLED) return;
+    const hint = { id, text: TUTORIAL_HINTS[id], timer: HINT_DURATION, sticky: false };
+    if (this.activeHint) {
+      this.hintQueue.push(hint);
+    } else {
+      this.activeHint = hint;
+      playSfx("hint");
+    }
+  }
+
   // Data for the Game Over screen (mode-aware).
   gameOverSummary() {
     let bestWave = 0;
@@ -1653,6 +1742,7 @@ export class Game {
       // overwritten in updateEndlessBests()).
       beatBestWave: this.gameMode === "endless" && this.beatBestWave,
       beatBestScore: this.gameMode === "endless" && this.beatBestScore,
+      crystalsEarned: this.crystalsThisRun, // Spirit Crystals gained this run
     };
   }
 
@@ -1669,6 +1759,7 @@ export class Game {
       enemiesDefeated: this.enemiesDefeated,
       upgradesChosen: this.upgradesChosen,
       timeText: `${mm}:${ss}`,
+      crystalsEarned: this.crystalsThisRun, // Spirit Crystals gained this run
     };
   }
 
