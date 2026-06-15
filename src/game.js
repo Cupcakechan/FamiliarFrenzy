@@ -134,10 +134,10 @@ const CRYSTAL_CHANCE_CAP = 0.85;      // hard ceiling on the per-boss chance
 // reserved for the in-game witch colour-swap (a later pass, once the recoloured
 // sprites + player.js land); it has no effect yet.
 const OUTFITS = {
-  default: { name: "Default Robe", cost: 0, swatch: "#9b6cff", spritePrefix: "witch",      desc: "No bonus",          buff: {} },
-  red:     { name: "Red Robe",     cost: 3, swatch: "#e0584d", spritePrefix: "witch_red",  desc: "Flasks heal +5 HP", buff: { flaskBonus: 5 } },
-  blue:    { name: "Blue Robe",    cost: 3, swatch: "#5aa0e0", spritePrefix: "witch_blue", desc: "EXP gain +5%",      buff: { expMult: 1.05 } },
-  gold:    { name: "Gold Robe",    cost: 8, swatch: "#f4d58d", spritePrefix: "witch_gold", desc: "Score gain +5%",    buff: { scoreMult: 1.05 } },
+  default: { name: "Apprentice Robe", cost: 0, swatch: "#9b6cff", spritePrefix: "witch",      desc: "No bonus",          buff: {} },
+  red:     { name: "Emberheart Robe", cost: 3, swatch: "#e0584d", spritePrefix: "witch_red",  desc: "Flasks heal +5 HP", buff: { flaskBonus: 5 } },
+  blue:    { name: "Sage's Weave",    cost: 3, swatch: "#5aa0e0", spritePrefix: "witch_blue", desc: "EXP gain +5%",      buff: { expMult: 1.05 } },
+  gold:    { name: "Gilded Mantle",   cost: 8, swatch: "#f4d58d", spritePrefix: "witch_gold", desc: "Score gain +5%",    buff: { scoreMult: 1.05 } },
 };
 const OUTFIT_ORDER = ["default", "red", "blue", "gold"]; // Closet display order
 
@@ -878,11 +878,10 @@ export class Game {
 
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player, this.enemyBolts, this.hazards);
-      // Goblin Bonker deals NO body-contact damage while committing its attack
-      // (leap/windup/recover) — its radial stomp is the attack's only damage, so
-      // the lunge can't also tag you. Normal contact resumes while chasing; other
-      // enemies are unaffected (only the bruiser sets attackState).
-      if (enemy.def.bruiser && enemy.attackState !== "chase") continue;
+      // Goblin Bonker deals NO body-contact damage at all — its radial stomp is
+      // its only damage. The `enemy.def &&` guard matters because bosses are
+      // separate classes with no `def`, so reading `.bruiser` on them would throw.
+      if (enemy.def && enemy.def.bruiser) continue;
       // Contact damage uses the enemy's contactRadius when it defines one (the
       // Elder Wisp tightens it mid-dash); everything else falls back to radius.
       const cr = enemy.contactRadius != null ? enemy.contactRadius : enemy.radius;
