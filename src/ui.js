@@ -1415,22 +1415,39 @@ export function drawClosetButton(ctx, w, h, crystals) {
   text(ctx, "C", capX + capS / 2, capY + capS / 2 + 1, { size: 13, color: GOLD, weight: "700" });
 }
 
-// Full Closet screen: crystal total, one row per outfit (swatch, name, buff,
-// owned/equipped/cost), then a Back row. `data` comes from Game.closetData().
+// Full Closet screen: crystal total, an Outfits/Collars tab toggle, one row per
+// item in the active tab (portrait, name, effect, owned/equipped/cost), then a
+// Back row. `data` comes from Game.closetData().
 export function drawCloset(ctx, w, h, data) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "CLOSET", w / 2, 60, { size: 40, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
-  crystalLine(ctx, w / 2, 98, `Spirit Crystals: ${data.crystals}`, { size: 18, color: CREAM });
+  text(ctx, "CLOSET", w / 2, 50, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  crystalLine(ctx, w / 2, 82, `Spirit Crystals: ${data.crystals}`, { size: 17, color: CREAM });
 
-  const startY = 150;
-  const rowH = 64;
-  const boxW = 560, boxH = 56;
+  // Tab toggle (Outfits | Collars); A/D switches (hint in the footer).
+  const tabLabels = ["Outfits", "Collars"];
+  const tabY = 110, tabGap = 150;
+  tabLabels.forEach((label, ti) => {
+    const tx = w / 2 + (ti === 0 ? -tabGap / 2 : tabGap / 2);
+    const active = ti === data.tab;
+    if (active) {
+      ctx.fillStyle = "rgba(244, 213, 141, 0.16)";
+      roundRect(ctx, tx - 62, tabY - 16, 124, 32, 8); ctx.fill();
+      ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+      roundRect(ctx, tx - 62, tabY - 16, 124, 32, 8); ctx.stroke();
+    }
+    text(ctx, label, tx, tabY, { size: 17, color: active ? GOLD : DIM, weight: "700" });
+  });
+
+  const rowsData = data.tab === 0 ? data.outfits : data.collars;
+  const startY = 162;
+  const rowH = 58;
+  const boxW = 560, boxH = 52;
   const xL = w / 2 - boxW / 2;
   const xR = w / 2 + boxW / 2;
 
-  data.outfits.forEach((o, i) => {
+  rowsData.forEach((o, i) => {
     const cy = startY + i * rowH;
     const selected = i === data.index;
 
@@ -1445,11 +1462,11 @@ export function drawCloset(ctx, w, h, data) {
       roundRect(ctx, xL, cy - boxH / 2, boxW, boxH, 10); ctx.fill();
     }
 
-    // Outfit portrait: the idle-south witch (frame 0 of the 4-frame strip).
-    // Falls back to the flat colour swatch if the sprite isn't loaded yet.
+    // Portrait: idle-south frame 0 of the witch (outfits) or cat (collars),
+    // a 4-frame strip. Falls back to the flat colour swatch if not loaded.
     const portrait = getImage(o.spriteKey);
-    const pBox = 44;                 // portrait fit box
-    const pcx = xL + 18 + pBox / 2;  // portrait centre x
+    const pBox = 42;
+    const pcx = xL + 18 + pBox / 2;
     if (portrait && portrait.width > 0) {
       const fw = portrait.width / 4; // idle = 4 frames
       const fh = portrait.height;
@@ -1464,7 +1481,7 @@ export function drawCloset(ctx, w, h, data) {
       roundRect(ctx, pcx - chip / 2, cy - chip / 2, chip, chip, 6); ctx.stroke();
     }
 
-    // Name + buff description.
+    // Name + effect description.
     const textX = xL + 18 + pBox + 12;
     text(ctx, o.name, textX, cy - 9, { size: 18, color: o.equipped ? GOLD : CREAM, align: "left", weight: "700" });
     text(ctx, o.desc, textX, cy + 12, { size: 13, color: DIM, align: "left", weight: "500" });
@@ -1485,8 +1502,8 @@ export function drawCloset(ctx, w, h, data) {
   });
 
   // Back row.
-  const backY = startY + data.outfits.length * rowH + 4;
-  const backSel = data.index === data.outfits.length;
+  const backY = startY + rowsData.length * rowH + 2;
+  const backSel = data.index === rowsData.length;
   if (backSel) {
     ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
     roundRect(ctx, w / 2 - 90, backY - 20, 180, 40, 8); ctx.fill();
@@ -1495,5 +1512,5 @@ export function drawCloset(ctx, w, h, data) {
   }
   text(ctx, "Back", w / 2, backY, { size: 20, color: backSel ? GOLD : DIM, weight: "700" });
 
-  text(ctx, "Up/Down move • Enter buy/equip • Esc back", w / 2, h - 26, { size: 14, color: DIM, weight: "500" });
+  text(ctx, "A/D switch tab • Up/Down move • Enter • Esc back", w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
 }

@@ -125,7 +125,7 @@ const ENEMY_TYPES = {
     // the telegraph/hit/knockback for free.
     bruiser: {
       approachRange: 140,  // plants + commits when the witch is this close (center dist)
-      windup: 0.65,       // ring telegraph after the leap: the witch must clear the circle
+      windup: 0.55,       // ring telegraph after the leap: the witch must clear the circle
       recover: 0.8,       // planted recovery after the stomp (escape window)
       cooldown: 0.6,      // extra gap before it can commit again
       swingReach: 150,    // (legacy rect reach — retained; unused by the radial stomp)

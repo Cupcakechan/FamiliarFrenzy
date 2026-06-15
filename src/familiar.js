@@ -43,6 +43,40 @@ const SPREAD_ANGLE = 0.26;       // radians (~15 deg) between the center and eac
 const SIDE_DAMAGE_SCALE = 0.5;   // side-bolt damage as a fraction of familiar damage
                                  //   (rounded UP, floored at 1, so sides always sting)
 
+// --- Collar attack styles (Familiar Collars) -----------------------------
+// A collar swaps the familiar's whole attack: "rune" (default), "moonbeam"
+// (a brief straight beam burst), or "alchemist" (lobbed flasks -> DoT puddles).
+// Generic upgrades (damage, cooldown, frenzy) carry over to all styles. The two
+// SHAPE upgrades reinterpret per style:
+//   spread (Spirit Volley) -> rune cone / beam multi-target / +1 flask
+//   pierce (Ghost/Phantom)  -> rune pass-through / beam +width / puddle +radius
+const MOONBEAM_LENGTH = 260;       // reach (≈ attackRange)
+const MOONBEAM_WIDTH = 14;         // base beam thickness (px)
+const MOONBEAM_PIERCE_WIDTH = 4;   // + width per pierce level ("strikes more")
+const MOONBEAM_LIFE = 0.15;        // active burst window (seconds)
+const MOONBEAM_SIDE_WIDTH = 0.7;   // spread side-beam width as a fraction of the main
+
+const FLASK_SHOT_SPEED = 420;      // thrown-flask travel speed (px/s)
+const FLASK_THROW_SCALE = 0.7;     // flask sprite draw scale
+const PUDDLE_RADIUS = 44;          // base puddle radius (px); hitbox == this
+const PUDDLE_PIERCE_RADIUS = 3;    // + radius per pierce level ("reaches more")
+const PUDDLE_DURATION = 3.0;       // seconds a puddle lasts
+const PUDDLE_TICK_INTERVAL = 0.5;  // seconds between DoT ticks
+const PUDDLE_TICK_SCALE = 0.5;     // per-tick dmg = ceil(familiar.damage * this), min 1
+const PUDDLE_MAX = 3;              // simultaneous puddle cap (oldest drops off)
+const PUDDLE_FADE = 0.6;           // seconds over which a dying puddle fades out
+
+// Shortest distance from point (px,py) to segment (ax,ay)->(bx,by). Used for the
+// Moon Beam's capsule hit test (no projectile, so the pierce upgrade never applies).
+function pointSegDist(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = ax + t * dx, cy = ay + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
 // --- Ghost imprints (visual only) ----------------------------------------
 // Spaced afterimages: drop one only after travelling IMPRINT_GAP px, then let
 // it fade over IMPRINT_LIFE. Gives "2  2  2  2" spacing, not a packed smear.
@@ -51,13 +85,22 @@ const IMPRINT_LIFE = 0.45;      // seconds an imprint takes to fade out
 const IMPRINT_MAX = 6;          // safety cap on simultaneous imprints
 const IMPRINT_ALPHA_MAX = 0.40; // opacity of a fresh imprint
 
-// Registers 8 dirs x 2 anims = 16 strips (missing ones fall back gracefully).
-for (const anim of ["idle", "attack"]) {
-  for (const d of DIRS) {
-    const key = `familiar_${anim}_${d}`;
-    loadImage(key, `assets/sprites/familiar/${key}.png`);
+// Registers the default cat + collar recolors: skins x 2 anims x 8 dirs.
+// Recolor prefixes must match COLLARS[*].spritePrefix in game.js. Missing files
+// fall back to the default cat per-frame at draw time — never a crash.
+const FAMILIAR_SKINS = ["familiar", "familiar_moonbeam", "familiar_alchemist"];
+for (const prefix of FAMILIAR_SKINS) {
+  for (const anim of ["idle", "attack"]) {
+    for (const d of DIRS) {
+      const key = `${prefix}_${anim}_${d}`;
+      loadImage(key, `assets/sprites/familiar/${key}.png`);
+    }
   }
 }
+
+// Collar attack art (code-drawn fallbacks render until these exist).
+loadImage("flask_throw", "assets/sprites/projectiles/flask_throw.png");
+loadImage("puddle", "assets/sprites/projectiles/puddle.png");
 
 // --- Rune projectile sprite pool (visual only) ---------------------------
 // Each bolt picks one rune at spawn and keeps it for its whole lifetime.
@@ -141,9 +184,141 @@ class Bolt {
   }
 }
 
+// --- Moon Beam: a brief straight beam burst ------------------------------
+// Not a projectile — a short-lived line that hits each overlapping enemy ONCE
+// (tracked), so the pierce upgrade never applies. Pierce instead widens it.
+class Beam {
+  constructor(x, y, angle, length, width, damage) {
+    this.x = x; this.y = y;
+    this.ex = x + Math.cos(angle) * length;
+    this.ey = y + Math.sin(angle) * length;
+    this.width = width;
+    this.damage = damage;
+    this.life = MOONBEAM_LIFE;
+    this.maxLife = MOONBEAM_LIFE;
+    this.dead = false;
+    this.hitTargets = new Set();
+  }
+
+  update(dt) {
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+
+  draw(ctx) {
+    const a = Math.max(0, this.life / this.maxLife); // 1 -> 0
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.globalAlpha = a;
+    ctx.shadowColor = "#b18cff";
+    ctx.shadowBlur = 16;
+    ctx.strokeStyle = "#c9a8ff";
+    ctx.lineWidth = this.width;
+    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.ex, this.ey); ctx.stroke();
+    // Bright inner core.
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+    ctx.lineWidth = Math.max(2, this.width * 0.35);
+    ctx.beginPath(); ctx.moveTo(this.x, this.y); ctx.lineTo(this.ex, this.ey); ctx.stroke();
+    ctx.restore();
+  }
+}
+
+// --- Alchemist: a thrown flask that lands and leaves a puddle -------------
+class FlaskShot {
+  constructor(x, y, tx, ty, tickDamage, puddleRadius) {
+    this.x = x; this.y = y;
+    this.tx = tx; this.ty = ty;
+    this.radius = 6;
+    const dx = tx - x, dy = ty - y;
+    const len = Math.hypot(dx, dy) || 1;
+    this.vx = (dx / len) * FLASK_SHOT_SPEED;
+    this.vy = (dy / len) * FLASK_SHOT_SPEED;
+    this.travel = len / FLASK_SHOT_SPEED; // seconds to reach the landing point
+    this.spin = 0;
+    this.landed = false;
+    this.dead = false;
+    this.tickDamage = tickDamage;   // carried to the puddle it spawns
+    this.puddleRadius = puddleRadius;
+  }
+
+  update(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.spin += dt * 12;
+    this.travel -= dt;
+    if (this.travel <= 0) { this.landed = true; this.dead = true; }
+  }
+
+  draw(ctx) {
+    const img = getImage("flask_throw");
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.spin);
+    if (img && img.width > 0) {
+      const dw = img.width * FLASK_THROW_SCALE;
+      const dh = img.height * FLASK_THROW_SCALE;
+      ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    } else {
+      ctx.shadowColor = "#7bd45a"; ctx.shadowBlur = 8;
+      ctx.fillStyle = "#9be86a";
+      ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+// --- Alchemist puddle: a ground DoT zone that damages ENEMIES -------------
+// Borrows the HazardZone circle look but is familiar-owned and hits the enemy
+// list (HazardZone itself stays player-targeted). Never touches the witch.
+class Puddle {
+  constructor(x, y, radius, tickDamage) {
+    this.x = x; this.y = y;
+    this.radius = radius;       // gameplay hitbox == visible splash
+    this.tickDamage = tickDamage;
+    this.life = PUDDLE_DURATION;
+    this.tickTimer = PUDDLE_TICK_INTERVAL;
+    this.dead = false;
+  }
+
+  update(dt, targets) {
+    this.life -= dt;
+    if (this.life <= 0) { this.dead = true; return; }
+    this.tickTimer -= dt;
+    if (this.tickTimer <= 0) {
+      this.tickTimer += PUDDLE_TICK_INTERVAL;
+      for (const t of targets) {
+        if (t.dead) continue;
+        if (distance(this.x, this.y, t.x, t.y) <= this.radius + t.radius) {
+          t.takeDamage(this.tickDamage);
+        }
+      }
+    }
+  }
+
+  draw(ctx) {
+    const fade = this.life < PUDDLE_FADE ? this.life / PUDDLE_FADE : 1;
+    const pulse = 0.9 + 0.1 * Math.sin(performance.now() / 200);
+    const img = getImage("puddle");
+    ctx.save();
+    ctx.globalAlpha = 0.7 * fade;
+    if (img && img.width > 0) {
+      const d = this.radius * 2;
+      ctx.drawImage(img, this.x - this.radius, this.y - this.radius, d, d);
+    } else {
+      const r = this.radius * pulse;
+      ctx.fillStyle = "#7bd45a";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(155, 232, 106, 0.9)";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 export class Familiar {
   constructor(x, y) {
-    this.x = x;
     this.y = y;
     this.radius = 9;
 
@@ -158,6 +333,13 @@ export class Familiar {
     this.attackTimer = 0;
     this.bolts = [];
     this.frenzyActive = false;
+
+    // Collar attack style + skin (set by game.startGame from the equipped collar).
+    this.attackStyle = "rune";      // "rune" | "moonbeam" | "alchemist"
+    this.spritePrefix = "familiar"; // collar recolor prefix (e.g. familiar_moonbeam)
+    this.beams = [];        // Moon Beam bursts (short-lived)
+    this.flaskShots = [];   // Alchemist flasks in flight
+    this.puddles = [];      // Alchemist ground DoT zones
 
     // Animation.
     this.facing = "s";
@@ -189,7 +371,9 @@ export class Familiar {
     if (this.attackTimer <= 0) {
       const target = this.findNearestTarget(targets);
       if (target) {
-        this.fireBolts(target);
+        if (this.attackStyle === "moonbeam") this.fireMoonBeam(target, targets);
+        else if (this.attackStyle === "alchemist") this.fireFlask(target, targets);
+        else this.fireBolts(target);
         this.attackTimer = this.attackCooldown * (frenzyActive ? FRENZY_COOLDOWN_SCALE : 1);
         this.facing = dirFromVector(target.x - this.x, target.y - this.y); // face the shot
         this.startAttackAnim();
@@ -221,6 +405,34 @@ export class Familiar {
       }
     }
     this.bolts = this.bolts.filter((b) => !b.dead);
+
+    // --- Moon Beam bursts: hit each overlapping enemy ONCE (capsule test) ---
+    for (const beam of this.beams) {
+      beam.update(dt);
+      if (beam.dead) continue;
+      for (const t of targets) {
+        if (t.dead || beam.hitTargets.has(t)) continue;
+        if (pointSegDist(t.x, t.y, beam.x, beam.y, beam.ex, beam.ey) <= beam.width / 2 + t.radius) {
+          t.takeDamage(beam.damage);
+          beam.hitTargets.add(t);
+        }
+      }
+    }
+    this.beams = this.beams.filter((b) => !b.dead);
+
+    // --- Alchemist flasks: travel, then break into a puddle on landing ---
+    for (const fs of this.flaskShots) {
+      fs.update(dt);
+      if (fs.landed) {
+        if (this.puddles.length >= PUDDLE_MAX) this.puddles.shift(); // drop the oldest
+        this.puddles.push(new Puddle(fs.tx, fs.ty, fs.puddleRadius, fs.tickDamage));
+      }
+    }
+    this.flaskShots = this.flaskShots.filter((f) => !f.dead);
+
+    // --- Alchemist puddles: tick DoT onto enemies standing in them ---
+    for (const p of this.puddles) p.update(dt, targets);
+    this.puddles = this.puddles.filter((p) => !p.dead);
 
     this.updateAnimation(dt);
 
@@ -264,6 +476,53 @@ export class Familiar {
     const tx = this.x + Math.cos(angle) * aimDist;
     const ty = this.y + Math.sin(angle) * aimDist;
     this.bolts.push(new Bolt(this.x, this.y, tx, ty, this.boltSpeed, this.pierce, this.evolved, damage));
+  }
+
+  // --- Moon Beam Collar -----------------------------------------------------
+  // A primary beam at the target; with Spirit Volley, two thinner beams at the
+  // next-nearest DISTINCT targets (reduced damage). Pierce widens the beam
+  // instead of passing through (a beam already hits everything on its line).
+  fireMoonBeam(target, targets) {
+    const width = MOONBEAM_WIDTH + this.pierce * MOONBEAM_PIERCE_WIDTH;
+    this.spawnBeam(target, width, this.damage);
+    if (this.spreadShot) {
+      const sideDmg = Math.max(1, Math.ceil(this.damage * SIDE_DAMAGE_SCALE));
+      for (const t of this.findExtraTargets(targets, target, 2)) {
+        this.spawnBeam(t, width * MOONBEAM_SIDE_WIDTH, sideDmg);
+      }
+    }
+  }
+
+  spawnBeam(target, width, damage) {
+    const angle = Math.atan2(target.y - this.y, target.x - this.x);
+    this.beams.push(new Beam(this.x, this.y, angle, MOONBEAM_LENGTH, width, damage));
+  }
+
+  // --- Alchemist Collar -----------------------------------------------------
+  // Lob a flask at the target; with Spirit Volley, +1 flask at the next-nearest
+  // distinct target (reduced puddle damage). Pierce grows the puddle radius.
+  fireFlask(target, targets) {
+    const radius = PUDDLE_RADIUS + this.pierce * PUDDLE_PIERCE_RADIUS;
+    const tick = Math.max(1, Math.ceil(this.damage * PUDDLE_TICK_SCALE));
+    this.spawnFlask(target.x, target.y, tick, radius);
+    if (this.spreadShot) {
+      const sideTick = Math.max(1, Math.ceil(this.damage * PUDDLE_TICK_SCALE * SIDE_DAMAGE_SCALE));
+      for (const t of this.findExtraTargets(targets, target, 1)) {
+        this.spawnFlask(t.x, t.y, sideTick, radius);
+      }
+    }
+  }
+
+  spawnFlask(tx, ty, tickDamage, puddleRadius) {
+    this.flaskShots.push(new FlaskShot(this.x, this.y, tx, ty, tickDamage, puddleRadius));
+  }
+
+  // Up to `n` nearest in-range targets, excluding the primary, for collar spread.
+  findExtraTargets(targets, exclude, n) {
+    return targets
+      .filter((t) => !t.dead && t !== exclude && distance(this.x, this.y, t.x, t.y) <= this.attackRange)
+      .sort((a, b) => distance(this.x, this.y, a.x, a.y) - distance(this.x, this.y, b.x, b.y))
+      .slice(0, n);
   }
 
   startAttackAnim() {
@@ -313,8 +572,11 @@ export class Familiar {
   // afterimages (low alpha). Wrapped in save/restore so globalAlpha + shadow
   // never leak out and dim anything else on screen.
   drawCat(ctx, x, y, facing, animState, animFrame, alpha) {
-    const key = `familiar_${animState}_${facing}`;
-    const img = getImage(key);
+    // Prefer the equipped collar's recolor; fall back to the default cat per
+    // frame (so a partial recolor set never breaks), then the placeholder.
+    const prefix = this.spritePrefix || "familiar";
+    const img = getImage(`${prefix}_${animState}_${facing}`)
+             || getImage(`familiar_${animState}_${facing}`);
 
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -357,7 +619,10 @@ export class Familiar {
   }
 
   draw(ctx) {
+    for (const p of this.puddles) p.draw(ctx);   // ground DoT, beneath everything
     for (const bolt of this.bolts) bolt.draw(ctx);
+    for (const beam of this.beams) beam.draw(ctx);
+    for (const fs of this.flaskShots) fs.draw(ctx);
 
     // --- Ghost imprints: spaced, fading afterimages behind the cat ---
     for (const s of this.trail) {
@@ -394,6 +659,11 @@ export class Familiar {
     this.evolved = false;
     this.spreadShot = false;
     this.frenzyActive = false;
+    this.attackStyle = "rune";      // game.startGame overrides from the equipped collar
+    this.spritePrefix = "familiar";
+    this.beams = [];
+    this.flaskShots = [];
+    this.puddles = [];
     this.facing = "s";
     this.animState = "idle";
     this.animFrame = 0;

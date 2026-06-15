@@ -141,6 +141,19 @@ const OUTFITS = {
 };
 const OUTFIT_ORDER = ["default", "red", "blue", "gold"]; // Closet display order
 
+// --- Collars (Closet) -----------------------------------------------------
+// A collar swaps the familiar's whole attack style (see familiar.js). Default
+// is owned + free. `attackStyle` drives the attack; `spritePrefix` is the cat
+// recolor (familiar_<collar>_*); `swatch` is the fallback accent if the recolor
+// portrait is missing; `cooldown` is the base fire interval (Restless Wisp then
+// scales it). Collars cost more than outfits — they change the whole attack.
+const COLLARS = {
+  default:   { name: "Spirit Collar",   cost: 0,  attackStyle: "rune",      spritePrefix: "familiar",           cooldown: 1.2, swatch: "#b18cff", desc: "Rune bolts" },
+  moonbeam:  { name: "Moon Beam Collar", cost: 10, attackStyle: "moonbeam",  spritePrefix: "familiar_moonbeam",  cooldown: 1.3, swatch: "#b18cff", desc: "Fires a purple beam" },
+  alchemist: { name: "Alchemist Collar", cost: 12, attackStyle: "alchemist", spritePrefix: "familiar_alchemist", cooldown: 1.5, swatch: "#7bd45a", desc: "Throws acid flasks" },
+};
+const COLLAR_ORDER = ["default", "moonbeam", "alchemist"];
+
 // --- Bestiary -------------------------------------------------------------
 // Creature entries for the Bestiary screen. `id` is the seen-tracking key
 // (persisted in ff_seenEnemies); `match` decides what marks it encountered:
@@ -313,6 +326,7 @@ export class Game {
     this.wardrobe = this.loadWardrobe();
     this.crystalsThisRun = 0;
     this.closetIndex = 0;
+    this.closetTab = 0; // 0 = Outfits, 1 = Collars
     // Fractional carries so the Blue/Gold outfit %-buffs stay accurate on small
     // per-pickup amounts (without these, +5% on a value of 10 rounds badly).
     this._scoreCarry = 0;
@@ -328,6 +342,12 @@ export class Game {
     // to the purple set per-frame in player.draw if a file is missing.
     this.player.spritePrefix = (OUTFITS[this.wardrobe.equipped] || OUTFITS.default).spritePrefix;
     this.familiar.reset(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
+    // Equipped collar drives the familiar's attack style, skin, and base fire
+    // rate for the run (set after reset, which defaults them to the rune).
+    const collar = COLLARS[this.wardrobe.collarEquipped] || COLLARS.default;
+    this.familiar.attackStyle = collar.attackStyle;
+    this.familiar.spritePrefix = collar.spritePrefix;
+    this.familiar.attackCooldown = collar.cooldown;
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
@@ -1692,7 +1712,7 @@ export class Game {
   // (the Closet screen) needs no migration; Phase 1 only touches crystals +
   // firstBossClaimed. Any missing/corrupt field falls back to its default.
   loadWardrobe() {
-    const def = { crystals: 0, owned: ["default"], equipped: "default", firstBossClaimed: false };
+    const def = { crystals: 0, owned: ["default"], equipped: "default", collarsOwned: ["default"], collarEquipped: "default", firstBossClaimed: false };
     try {
       const raw = localStorage.getItem("ff_wardrobe");
       if (!raw) return def;
@@ -1702,6 +1722,8 @@ export class Game {
         crystals: Number.isFinite(p.crystals) ? Math.max(0, Math.floor(p.crystals)) : 0,
         owned: Array.isArray(p.owned) && p.owned.includes("default") ? p.owned : ["default"],
         equipped: typeof p.equipped === "string" ? p.equipped : "default",
+        collarsOwned: Array.isArray(p.collarsOwned) && p.collarsOwned.includes("default") ? p.collarsOwned : ["default"],
+        collarEquipped: typeof p.collarEquipped === "string" ? p.collarEquipped : "default",
         firstBossClaimed: p.firstBossClaimed === true,
       };
     } catch (e) {
@@ -1780,11 +1802,27 @@ export class Game {
   // --- Closet (Wardrobe screen) --------------------------------------------
   openCloset() {
     this.closetIndex = 0;
+    this.closetTab = 0;
     this.state = STATE.CLOSET;
   }
 
+  // Active tab's order/table/owned-array/equipped-key in one place.
+  closetTabRefs() {
+    return this.closetTab === 0
+      ? { order: OUTFIT_ORDER, table: OUTFITS, owned: this.wardrobe.owned, equippedKey: "equipped" }
+      : { order: COLLAR_ORDER, table: COLLARS, owned: this.wardrobe.collarsOwned, equippedKey: "collarEquipped" };
+  }
+
   updateCloset() {
-    const count = OUTFIT_ORDER.length + 1; // outfit rows + Back
+    const { order } = this.closetTabRefs();
+    const count = order.length + 1; // rows + Back
+    // Left/Right toggles the tab (only two), resetting the row cursor.
+    if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA") ||
+        Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
+      this.closetTab = this.closetTab === 0 ? 1 : 0;
+      this.closetIndex = 0;
+      return;
+    }
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.closetIndex = (this.closetIndex - 1 + count) % count;
     }
@@ -1792,7 +1830,7 @@ export class Game {
       this.closetIndex = (this.closetIndex + 1) % count;
     }
     if (this.confirmPressed()) {
-      if (this.closetIndex === OUTFIT_ORDER.length) { // Back row
+      if (this.closetIndex === order.length) { // Back row
         this.state = STATE.MAIN_MENU; this.menuIndex = 0;
       } else {
         this.closetSelect();
@@ -1802,22 +1840,23 @@ export class Game {
     }
   }
 
-  // Enter on an outfit: equip it if owned, else buy it (auto-equipping) if
-  // affordable. Persists immediately. SFX are graceful-silent if absent.
+  // Enter on a row: equip it if owned, else buy it (auto-equipping) if
+  // affordable. Works for either tab. Persists immediately; SFX graceful-silent.
   closetSelect() {
-    const id = OUTFIT_ORDER[this.closetIndex];
-    const o = OUTFITS[id];
-    if (!o) return;
-    if (this.wardrobe.owned.includes(id)) {
-      if (this.wardrobe.equipped !== id) {
-        this.wardrobe.equipped = id;
+    const { order, table, owned, equippedKey } = this.closetTabRefs();
+    const id = order[this.closetIndex];
+    const item = table[id];
+    if (!item) return;
+    if (owned.includes(id)) {
+      if (this.wardrobe[equippedKey] !== id) {
+        this.wardrobe[equippedKey] = id;
         this.saveWardrobe();
         playSfx("equip");
       }
-    } else if (this.wardrobe.crystals >= o.cost) {
-      this.wardrobe.crystals -= o.cost;
-      this.wardrobe.owned.push(id);
-      this.wardrobe.equipped = id; // auto-equip on purchase
+    } else if (this.wardrobe.crystals >= item.cost) {
+      this.wardrobe.crystals -= item.cost;
+      owned.push(id); // mutates the wardrobe array (owned/collarsOwned) in place
+      this.wardrobe[equippedKey] = id; // auto-equip on purchase
       this.saveWardrobe();
       playSfx("purchase");
     } else {
@@ -1825,21 +1864,24 @@ export class Game {
     }
   }
 
-  // View-model for the Closet renderer.
+  // View-model for the Closet renderer (both tabs + which is active).
   closetData() {
+    const rows = (order, table, owned, equippedId) => order.map((id) => {
+      const o = table[id];
+      return {
+        id, name: o.name, cost: o.cost, desc: o.desc, swatch: o.swatch,
+        spriteKey: `${o.spritePrefix}_idle_s`, // portrait: witch- or familiar-idle-south frame 0
+        owned: owned.includes(id),
+        equipped: equippedId === id,
+        affordable: this.wardrobe.crystals >= o.cost,
+      };
+    });
     return {
       crystals: this.wardrobe.crystals,
+      tab: this.closetTab,
       index: this.closetIndex,
-      outfits: OUTFIT_ORDER.map((id) => {
-        const o = OUTFITS[id];
-        return {
-          id, name: o.name, cost: o.cost, desc: o.desc, swatch: o.swatch,
-          spriteKey: `${o.spritePrefix}_idle_s`, // Closet portrait (idle-south frame 0)
-          owned: this.wardrobe.owned.includes(id),
-          equipped: this.wardrobe.equipped === id,
-          affordable: this.wardrobe.crystals >= o.cost,
-        };
-      }),
+      outfits: rows(OUTFIT_ORDER, OUTFITS, this.wardrobe.owned, this.wardrobe.equipped),
+      collars: rows(COLLAR_ORDER, COLLARS, this.wardrobe.collarsOwned, this.wardrobe.collarEquipped),
     };
   }
 
