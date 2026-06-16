@@ -220,7 +220,7 @@ const GOBLIN_LUNGE_TIME = 0.18;  // seconds the forward swing-step plays out ove
 // Owned by game.js (this.enemyBolts) so shots outlive their shooter. Player
 // collision/i-frames are handled in game.js; this is just motion + visuals.
 export class EnemyBolt {
-  constructor(x, y, targetX, targetY, speed, damage, life) {
+  constructor(x, y, targetX, targetY, speed, damage, life, opts = {}) {
     this.x = x;
     this.y = y;
     this.radius = 5;
@@ -235,6 +235,14 @@ export class EnemyBolt {
     this.life = life;
     this.dead = false;
     this.spin = randomRange(0, Math.PI * 2); // wobble phase (visual only)
+
+    // Visual style. Default = the Gutter Gecko ball (spinning sage orb). The Bee
+    // passes opts to make a velocity-oriented amber stinger. Additive only —
+    // existing callers (no opts) are unchanged.
+    this.sprite = opts.sprite || "lizard_projectile";
+    this.drawScale = opts.scale || GECKO_BALL_SCALE;
+    this.fallbackColor = opts.color || null;       // null = teal gecko fallback
+    this.orient = opts.orient || "spin";           // "spin" (quarter-turn) | "velocity"
   }
 
   update(dt) {
@@ -246,32 +254,56 @@ export class EnemyBolt {
   }
 
   draw(ctx) {
-    const img = getImage("lizard_projectile");
+    const img = getImage(this.sprite);
 
     if (img && img.width > 0) {
-      // --- Sprite ball: soft sage halo for readability on the dark floor,
-      // then the art spun in exact quarter-turn steps (pixel-grid safe). ---
-      const dw = img.width * GECKO_BALL_SCALE;
-      const dh = img.height * GECKO_BALL_SCALE;
-      const haloR = this.radius * 2.4;
-      const g = ctx.createRadialGradient(this.x, this.y, 0, this.x, this.y, haloR);
-      g.addColorStop(0, "rgba(140, 200, 150, 0.30)");
-      g.addColorStop(1, "rgba(140, 200, 150, 0)");
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, haloR, 0, Math.PI * 2);
-      ctx.fill();
-
-      const quarter = Math.floor(this.spin / (Math.PI / 2)) % 4; // 0..3
+      const dw = img.width * this.drawScale;
+      const dh = img.height * this.drawScale;
       ctx.save();
       ctx.translate(this.x, this.y);
-      ctx.rotate(quarter * (Math.PI / 2));
+      if (this.orient === "velocity") {
+        // Point along travel (sprite authored facing EAST). Small colored glow.
+        ctx.rotate(Math.atan2(this.vy, this.vx));
+        ctx.shadowColor = this.fallbackColor || "rgba(244, 197, 66, 0.7)";
+        ctx.shadowBlur = 8;
+      } else {
+        // --- Gecko ball: soft sage halo, then art spun in quarter-turn steps. ---
+        const haloR = this.radius * 2.4;
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, haloR);
+        g.addColorStop(0, "rgba(140, 200, 150, 0.30)");
+        g.addColorStop(1, "rgba(140, 200, 150, 0)");
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(0, 0, haloR, 0, Math.PI * 2);
+        ctx.fill();
+        const quarter = Math.floor(this.spin / (Math.PI / 2)) % 4; // 0..3
+        ctx.rotate(quarter * (Math.PI / 2));
+      }
       ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
       ctx.restore();
       return;
     }
 
-    // --- Fallback "ball": teal glowing orb with a bright core. ---
+    // --- Velocity-oriented fallback: a pointed amber dart. ---
+    if (this.orient === "velocity") {
+      const col = this.fallbackColor || "#f4c542";
+      ctx.save();
+      ctx.translate(this.x, this.y);
+      ctx.rotate(Math.atan2(this.vy, this.vx));
+      ctx.shadowColor = col;
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(10, 0);
+      ctx.lineTo(-6, -4);
+      ctx.lineTo(-6, 4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      return;
+    }
+
+    // --- Gecko fallback "ball": teal glowing orb with a bright core. ---
     const r = this.radius + Math.sin(this.spin) * 1;
     ctx.save();
     ctx.shadowColor = "#5ad1d1";
@@ -1611,16 +1643,299 @@ export class WatchingHand {
   }
 }
 
+// ===========================================================================
+//  Boss: Hive Warden — the projectile-pattern boss (Elder Wisp = dash,
+//  Watching Hand = slam, Hive Warden = stingers). Hovers at mid-range,
+//  telegraphs, then fires LOCKED stinger patterns (no release tracking — the
+//  pattern is set the instant it starts charging, so it's readable/dodgeable).
+//  Shares the standard boss surface (x, y, radius, health, maxHealth, damage,
+//  dead, isBoss, name, hitFlash, takeDamage(), update(dt, player, enemyBolts),
+//  draw(ctx)). Stingers are EnemyBolts pushed into the game-owned array, so
+//  game.js handles their motion + player collision exactly like gecko balls.
+//  8-dir FLY art (6 frames) reused for hover AND charge; release = code flash.
+// ===========================================================================
+const BEE_HEALTH = 50;            // base; ×tier like the other bosses
+const BEE_DAMAGE = 16;            // incidental body contact (the threat is stingers)
+const BEE_RADIUS = 28;
+const BEE_SPEED = 95;             // hover / reposition drift speed (px/s)
+const BEE_HOVER_MIN = 240;        // preferred mid-range band from the player
+const BEE_HOVER_MAX = 340;
+const BEE_HOVER_TIME = 1.6;       // drift/reposition before the next charge
+const BEE_CHARGE_TIME = 0.7;      // wind-up; aim/pattern LOCK at charge start
+const BEE_RELEASE_TIME = 0.18;    // brief yellow flash window when stingers fire
+const BEE_RECOVER_TIME = 0.6;     // vulnerable beat after firing
+const BEE_CONE_CHANCE = 0.35;     // cone is easy to kite, so it's the MINORITY; the
+                                  //   radial burst is the main threat (favored + may repeat)
+const BEE_FLY_FRAMES = 6;
+const BEE_FLY_FPS = 8;
+
+// Stinger patterns (fired as EnemyBolts with the velocity-oriented amber style).
+const STINGER_DAMAGE = 12;
+const STINGER_LIFE = 2.5;
+const STINGER_OPTS = { sprite: "bee_stinger", color: "#f4c542", orient: "velocity", scale: 1.1 };
+const CONE_COUNT = 5;
+const CONE_SPREAD = 0.87;         // total fan radians (~50°): ±25°, ~12.5° apart
+const CONE_SPEED = 250;
+const BURST_COUNT = 8;            // even radial ring, rotated to the locked aim
+const BURST_SPEED = 210;
+
+// 8-dir fly strips (6 frames each) + the stinger. Missing → graceful fallback.
+for (const d of WISP_DIRS) {
+  loadImage(`bee_fly_${d}`, `assets/sprites/enemies/bee_fly_${d}.png`);
+}
+loadImage("bee_stinger", "assets/sprites/projectiles/bee_stinger.png");
+
+export class HiveWarden {
+  constructor(x, y, tier = 1) {
+    this.x = x;
+    this.y = y;
+    this.radius = BEE_RADIUS;
+    this.tier = tier;
+
+    this.maxHealth = BEE_HEALTH * tier;
+    this.health = this.maxHealth;
+    this.damage = BEE_DAMAGE + (tier - 1) * 5;
+
+    this.dead = false;
+    this.hitFlash = 0;
+    this.isBoss = true;
+    this.name = "Hive Warden";
+
+    this.phase = "hover";         // "hover" | "charge" | "release" | "recover"
+    this.phaseTimer = BEE_HOVER_TIME;
+    this.hoverTarget = { x, y };
+    this._needTarget = true;      // pick a real hover spot on the first update
+    this.bob = Math.random() * Math.PI * 2;
+
+    this.attack = "cone";         // pattern chosen for the current charge
+    this.lastAttack = null;
+    this.aimAngle = 0;            // LOCKED at charge start (no release tracking)
+    this.released = false;
+    this.flashTimer = 0;          // yellow release flash
+
+    this.facing = "s";
+    this.animFrame = randomInt(0, BEE_FLY_FRAMES - 1);
+    this.animTimer = 0;
+    this.spriteScale = 1.0;       // tune to the fly art's native size (radius 28)
+  }
+
+  update(dt, player, enemyBolts) {
+    if (this.hitFlash > 0) this.hitFlash -= dt;
+    if (this.flashTimer > 0) this.flashTimer -= dt;
+    this.bob += dt * 2.4;
+    if (this._needTarget) { this.pickHoverTarget(player); this._needTarget = false; }
+
+    this.phaseTimer -= dt;
+
+    if (this.phase === "hover") {
+      this.driftToward(this.hoverTarget, dt, BEE_SPEED);
+      if (this.phaseTimer <= 0) {
+        // Choose + LOCK the pattern and aim now; they won't change during release.
+        this.attack = this.pickAttack();
+        this.aimAngle = Math.atan2(player.y - this.y, player.x - this.x);
+        this.phase = "charge";
+        this.phaseTimer = BEE_CHARGE_TIME;
+        this.released = false;
+        playSfx("bee_charge"); // missing file = silent
+      }
+    } else if (this.phase === "charge") {
+      // Hold (bob only); the aim stays locked — this is the readable wind-up.
+      if (this.phaseTimer <= 0) {
+        this.phase = "release";
+        this.phaseTimer = BEE_RELEASE_TIME;
+        this.flashTimer = BEE_RELEASE_TIME;
+      }
+    } else if (this.phase === "release") {
+      if (!this.released) {
+        this.firePattern(enemyBolts);
+        this.released = true;
+        playSfx("bee_sting"); // missing file = silent
+      }
+      if (this.phaseTimer <= 0) {
+        this.phase = "recover";
+        this.phaseTimer = BEE_RECOVER_TIME;
+      }
+    } else { // recover
+      if (this.phaseTimer <= 0) {
+        this.pickHoverTarget(player);
+        this.phase = "hover";
+        this.phaseTimer = BEE_HOVER_TIME;
+      }
+    }
+
+    // Facing: drift direction while hovering, the locked aim otherwise.
+    if (this.phase === "hover") {
+      const dx = this.hoverTarget.x - this.x, dy = this.hoverTarget.y - this.y;
+      if (Math.abs(dx) > 1 || Math.abs(dy) > 1) this.facing = dirFromVector(dx, dy);
+    } else {
+      this.facing = dirFromVector(Math.cos(this.aimAngle), Math.sin(this.aimAngle));
+    }
+
+    // Fly loop (always animates — it's a hovering bee).
+    const frameDur = 1 / BEE_FLY_FPS;
+    this.animTimer += dt;
+    while (this.animTimer >= frameDur) {
+      this.animTimer -= frameDur;
+      this.animFrame = (this.animFrame + 1) % BEE_FLY_FRAMES;
+    }
+  }
+
+  pickHoverTarget(player) {
+    const ang = Math.random() * Math.PI * 2;
+    const dist = randomRange(BEE_HOVER_MIN, BEE_HOVER_MAX);
+    const c = clampToPlayfield(
+      player.x + Math.cos(ang) * dist,
+      player.y + Math.sin(ang) * dist,
+      this.radius
+    );
+    this.hoverTarget = { x: c.x, y: c.y };
+  }
+
+  driftToward(target, dt, speed) {
+    const dx = target.x - this.x, dy = target.y - this.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 2) return;
+    const step = Math.min(len, speed * dt);
+    this.x += (dx / len) * step;
+    this.y += (dy / len) * step;
+  }
+
+  pickAttack() {
+    // Burst (radial ring) is the main threat and MAY repeat; the easy-to-kite
+    // cone is the minority and never doubles up (no back-to-back free lulls).
+    let a = Math.random() < BEE_CONE_CHANCE ? "cone" : "burst";
+    if (a === "cone" && this.lastAttack === "cone") a = "burst";
+    this.lastAttack = a;
+    return a;
+  }
+
+  firePattern(enemyBolts) {
+    if (!enemyBolts) return;
+    if (this.attack === "cone") {
+      const half = CONE_SPREAD / 2;
+      const stepA = CONE_COUNT > 1 ? CONE_SPREAD / (CONE_COUNT - 1) : 0;
+      for (let i = 0; i < CONE_COUNT; i++) {
+        this.spawnStinger(enemyBolts, this.aimAngle - half + stepA * i, CONE_SPEED);
+      }
+    } else { // burst: even radial ring, index 0 points at the locked aim
+      const stepA = (Math.PI * 2) / BURST_COUNT;
+      for (let i = 0; i < BURST_COUNT; i++) {
+        this.spawnStinger(enemyBolts, this.aimAngle + stepA * i, BURST_SPEED);
+      }
+    }
+  }
+
+  spawnStinger(enemyBolts, angle, speed) {
+    const tx = this.x + Math.cos(angle) * 100;
+    const ty = this.y + Math.sin(angle) * 100;
+    enemyBolts.push(new EnemyBolt(this.x, this.y, tx, ty, speed, STINGER_DAMAGE, STINGER_LIFE, STINGER_OPTS));
+  }
+
+  takeDamage(amount) {
+    this.health -= amount;
+    this.hitFlash = 0.08;
+    if (this.health <= 0) this.dead = true;
+  }
+
+  // The Hive Warden has no summon mechanic — stub keeps game.js's shared
+  // boss-summon call (boss.consumeSummon()) a safe no-op, same as the Hand.
+  consumeSummon() {
+    return false;
+  }
+
+  draw(ctx) {
+    ctx.save();
+    const flash = this.hitFlash > 0;
+    const bobY = Math.sin(this.bob) * 3;
+
+    // --- Charge telegraph (code-drawn, UNDER the body) ---
+    if (this.phase === "charge") {
+      const t = 1 - this.phaseTimer / BEE_CHARGE_TIME; // 0 -> 1 across the wind-up
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 80);
+      ctx.save();
+      ctx.globalAlpha = 0.22 + 0.26 * t;
+      ctx.fillStyle = "#f4d54a";
+      ctx.beginPath();
+      ctx.arc(this.x, this.y + bobY, this.radius + 6 + t * 10, 0, Math.PI * 2);
+      ctx.fill();
+      // Faint aim guide so the pattern direction reads.
+      ctx.globalAlpha = (0.18 + 0.22 * pulse) * t;
+      ctx.strokeStyle = "#ffe27a";
+      ctx.lineWidth = 2;
+      if (this.attack === "cone") {
+        const half = CONE_SPREAD / 2, r = 150;
+        for (const s of [-1, 1]) {
+          ctx.beginPath();
+          ctx.moveTo(this.x, this.y + bobY);
+          ctx.lineTo(this.x + Math.cos(this.aimAngle + s * half) * r, this.y + bobY + Math.sin(this.aimAngle + s * half) * r);
+          ctx.stroke();
+        }
+      } else {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y + bobY, this.radius + 20, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // --- Body: directional fly sprite, or fallback amber bee ---
+    const img = getImage(`bee_fly_${this.facing}`);
+    if (img && img.width > 0) {
+      const fw = img.width / BEE_FLY_FRAMES;
+      const fh = img.height;
+      const dw = fw * this.spriteScale;
+      const dh = fh * this.spriteScale;
+      const sx = (Math.floor(this.animFrame) % BEE_FLY_FRAMES) * fw;
+      const dx = Math.round(this.x - dw / 2);
+      const dy = Math.round(this.y - dh / 2 + bobY);
+      ctx.drawImage(img, sx, 0, fw, fh, dx, dy, dw, dh);
+      if (flash) {
+        ctx.globalAlpha = 0.55;
+        ctx.globalCompositeOperation = "lighter";
+        ctx.drawImage(img, sx, 0, fw, fh, dx, dy, dw, dh);
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+      }
+    } else {
+      const cy = this.y + bobY;
+      ctx.shadowColor = "#f4c542";
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = flash ? "#fff3c0" : "#e0a92e";
+      ctx.beginPath(); ctx.arc(this.x, cy, this.radius, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#3a2a10"; // stripes
+      ctx.fillRect(this.x - this.radius * 0.7, cy - 5, this.radius * 1.4, 4);
+      ctx.fillRect(this.x - this.radius * 0.5, cy + 5, this.radius * 1.0, 4);
+      ctx.fillStyle = "#f4d58d"; // eyes
+      ctx.beginPath(); ctx.arc(this.x - 8, cy - 7, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(this.x + 8, cy - 7, 3, 0, Math.PI * 2); ctx.fill();
+    }
+
+    // --- Release flash (yellow burst, OVER the body) ---
+    if (this.flashTimer > 0) {
+      const k = this.flashTimer / BEE_RELEASE_TIME;
+      ctx.globalAlpha = 0.5 * k;
+      ctx.fillStyle = "#fff04a";
+      ctx.beginPath();
+      ctx.arc(this.x, this.y + bobY, this.radius + 8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+  }
+}
+
 // --- Boss selection ----------------------------------------------------------
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
 // random rotation — no back-to-back repeats; order varies each run).
 const DEBUG_FORCE_BOSS = false;
-const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand"
+const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
 // shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).
-const BOSS_TYPES = ["elder_wisp", "watching_hand"];
+const BOSS_TYPES = ["elder_wisp", "watching_hand", "hive_warden"];
 
 export class WaveManager {
   constructor(maxWaves = 10) {
@@ -1725,9 +2040,9 @@ export class WaveManager {
     // the ORDER varies run to run (true random can repeat or starve a type).
     let type = DEBUG_BOSS_TYPE;
     if (type === "auto") type = this.drawBossFromBag();
-    return type === "watching_hand"
-      ? new WatchingHand(pos.x, pos.y, tier)
-      : new Boss(pos.x, pos.y, tier);
+    return type === "watching_hand" ? new WatchingHand(pos.x, pos.y, tier)
+         : type === "hive_warden"   ? new HiveWarden(pos.x, pos.y, tier)
+         : new Boss(pos.x, pos.y, tier);
   }
 
   // Shuffled-bag boss draw. Refills + shuffles when empty. Avoids an immediate

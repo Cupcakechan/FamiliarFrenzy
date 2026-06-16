@@ -65,8 +65,9 @@ const PUDDLE_TICK_INTERVAL = 0.5;  // seconds between DoT ticks
 const PUDDLE_TICK_SCALE = 0.5;     // per-tick dmg = ceil(familiar.damage * this), min 1
 const PUDDLE_MAX = 3;              // simultaneous puddle cap (oldest drops off)
 const PUDDLE_FADE = 0.6;           // seconds over which a dying puddle fades out
-const PUDDLE_FLASH = 0.9;          // white-flash duration on each DoT tick (vs ~0.1 for a
-                                   //   normal hit) so the acid damage reads clearly
+const PUDDLE_FLASH = 0.9;          // white-flash duration on each DoT tick. >0.5 (the tick
+                                   //   interval) keeps them lit the whole time they're in
+                                   //   the acid, so the damage reads clearly.
 
 // Shortest distance from point (px,py) to segment (ax,ay)->(bx,by). Used for the
 // Moon Beam's capsule hit test (no projectile, so the pierce upgrade never applies).

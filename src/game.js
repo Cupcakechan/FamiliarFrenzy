@@ -32,10 +32,23 @@ const TILE = 32;
 loadImage("dungeon_tiles", "assets/tiles/Main_Dungeon.png");
 loadImage("floor_props", "assets/tiles/floor_props.png");
 
-// Floor prop density (seeded per cell). Rows 0-2 = floor variants, row 3 = rune circles.
-// Dial these up/down to taste: ~0.05 very subtle · ~0.10 subtle · ~0.22 busy.
-const PROP_VARIANT_CHANCE = 0.09;  // cracks / moss / rune-tinted floor
-const PROP_CIRCLE_CHANCE = 0.003;  // rune-circle seals (a few across the map)
+// Floor decoration — TWO independent seeded bands, each with its own frequency:
+//   • Runes   — subtle glyphs, common (atmospheric floor texture).
+//   • Objects — bold clutter (skull, bones, barrels, moss…), RARE (occasional points of interest).
+// Density and variety are separate dials: CHANCE = how often a band appears per floor tile;
+// COUNT = how many distinct sprites it draws from (more = less repetition, SAME density).
+//
+// floor_props.png layout (4 cols × 32px cells), filled in reading order (left→right, top→bottom):
+//   cells 0–19  (rows 0–4) = RUNES
+//   cells 20–31 (rows 5–7) = OBJECTS
+const PROP_COLS = 4;           // sheet width in cells
+
+const RUNE_CHANCE = 0.1;      // how often a rune appears (per floor tile)
+const RUNE_COUNT  = 20;        // distinct rune cells, starting at cell 0 (rows 0–4)
+
+const OBJECT_CHANCE = 0.005;   // how often a bold object appears — keep this LOW
+const OBJECT_START  = 20;      // first object cell index (row 5)
+const OBJECT_COUNT  = 12;      // distinct object cells (rows 5–7)
 
 const STATE = {
   MAIN_MENU: "mainMenu",
@@ -111,6 +124,7 @@ const TUTORIAL_HINTS = {
   boss:        "Something big is coming! Stay sharp and keep dodging!",
   elder_wisp:  "The Elder Wisp! Watch for when it lines up a charge!",
   watching_hand: "The Watching Hand! Don't stand where it aims to slam!",
+  hive_warden: "Careful — that buzz means stingers are coming!",
   bone_mage:   "A Bone Mage! It curses the ground — step off the rune!",
   goblin_bonker: "A Goblin Bonker! Its club swing knocks you flying — dodge it.",
   spirit_crystal: "A Spirit Crystal! Spend these in the Wardrobe between runs.",
@@ -193,6 +207,11 @@ const BESTIARY = [
     id: "watching_hand", name: "The Watching Hand", kind: "Boss", bossName: "The Watching Hand",
     spriteKey: "watching_hand_idle", frames: 6,
     blurb: "Hops and slams — mind the red ring. Calls geckos when weak.",
+  },
+  {
+    id: "hive_warden", name: "Hive Warden", kind: "Boss", bossName: "Hive Warden",
+    spriteKey: "bee_fly_s", frames: 6,
+    blurb: "Charges up and fires sharp stinger volleys.",
   },
 ];
 
@@ -989,6 +1008,7 @@ export class Game {
       // Encounter tracking + boss-specific intro hint (both modes).
       if (boss.name === "Elder Wisp") { this.markSeen("elder_wisp"); this.showEnemyHint("elder_wisp"); }
       else if (boss.name === "The Watching Hand") { this.markSeen("watching_hand"); this.showEnemyHint("watching_hand"); }
+      else if (boss.name === "Hive Warden") { this.markSeen("hive_warden"); this.showEnemyHint("hive_warden"); }
       else this.showHint("boss");
     }
 
@@ -1663,15 +1683,21 @@ export class Game {
         // Interior: base floor (2x2 block by parity) first...
         ctx.drawImage(sheet, (1 + (tx % 2)) * TILE, (1 + (ty % 2)) * TILE, TILE, TILE, dx, dy, TILE, TILE);
 
-        // ...then a seeded prop on top (props have soft edges, so the floor shows through).
+        // ...then a seeded decoration on top. Two independent bands sharing one roll: a rare
+        // bold object takes priority, otherwise a common subtle rune. (Drawn on a dark tile
+        // background that matches the floor.)
         if (props) {
           const roll = tileRand(tx, ty, 1);
-          if (roll < PROP_CIRCLE_CHANCE) {
-            const i = Math.floor(tileRand(tx, ty, 2) * 4); // row 3 = rune circles
-            ctx.drawImage(props, i * TILE, 3 * TILE, TILE, TILE, dx, dy, TILE, TILE);
-          } else if (roll < PROP_CIRCLE_CHANCE + PROP_VARIANT_CHANCE) {
-            const k = Math.floor(tileRand(tx, ty, 3) * 12); // rows 0-2 = 12 floor variants
-            ctx.drawImage(props, (k % 4) * TILE, Math.floor(k / 4) * TILE, TILE, TILE, dx, dy, TILE, TILE);
+          if (roll < OBJECT_CHANCE) {
+            const k = OBJECT_START + Math.floor(tileRand(tx, ty, 2) * OBJECT_COUNT); // bold objects
+            const sx = (k % PROP_COLS) * TILE;
+            const sy = Math.floor(k / PROP_COLS) * TILE;
+            ctx.drawImage(props, sx, sy, TILE, TILE, dx, dy, TILE, TILE);
+          } else if (roll < OBJECT_CHANCE + RUNE_CHANCE) {
+            const k = Math.floor(tileRand(tx, ty, 3) * RUNE_COUNT); // subtle runes
+            const sx = (k % PROP_COLS) * TILE;
+            const sy = Math.floor(k / PROP_COLS) * TILE;
+            ctx.drawImage(props, sx, sy, TILE, TILE, dx, dy, TILE, TILE);
           }
         }
       }
