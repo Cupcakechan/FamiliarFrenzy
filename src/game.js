@@ -1501,10 +1501,10 @@ export class Game {
     this.drawSlamMarker(ctx); // Watching Hand telegraph: on the floor, under actors
     this.drawSummonGlow(ctx);  // Watching Hand summon telegraph
     for (const hz of this.hazards) hz.draw(ctx); // Bone Mage cursed ground (under actors)
+    this.familiar.drawPuddles(ctx); // Alchemist puddles: ground layer, beneath pickups + enemies
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
     for (const magnet of this.magnets) magnet.draw(ctx);
-    this.familiar.drawPuddles(ctx); // Alchemist puddles: above items, below enemies
     for (const enemy of this.enemies) enemy.draw(ctx);
     for (const bolt of this.enemyBolts) bolt.draw(ctx);
     this.familiar.draw(ctx);
