@@ -319,6 +319,9 @@ const SFX_DEFS = {
   gecko_fling:       { src: "assets/sfx/gecko_fling.mp3",       volume: 0.35, voices: 4, minInterval: 0.08 },
   elder_wisp_charge: { src: "assets/sfx/elder_wisp_charge.mp3", volume: 0.50, voices: 2, minInterval: 0.20 },
   elder_wisp_summon: { src: "assets/sfx/elder_wisp_summon.mp3", volume: 0.45, voices: 2, minInterval: 0.15 },
+  // Hive Warden (bee boss): a grunt on the wind-up, a shot when the stinger volley fires.
+  bee_charge: { src: "assets/sfx/bee_charge.mp3", volume: 0.45, voices: 2, minInterval: 0.20 },
+  bee_sting:  { src: "assets/sfx/bee_sting.mp3",  volume: 0.50, voices: 3, minInterval: 0.10 },
 };
 
 const SFX_STORAGE_KEY = "ff_sfxVolume";
