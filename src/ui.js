@@ -1402,7 +1402,7 @@ export function drawClosetButton(ctx, w, h, crystals) {
   ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
   roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
 
-  text(ctx, "Closet", bx + 16, by + bh / 2, { size: 17, color: CREAM, align: "left", weight: "700" });
+  text(ctx, "Wardrobe", bx + 16, by + bh / 2, { size: 17, color: CREAM, align: "left", weight: "700" });
 
   // Key cap "C" tucked at the right inside the box.
   const capS = 20;
@@ -1422,12 +1422,12 @@ export function drawCloset(ctx, w, h, data) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "CLOSET", w / 2, 50, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
-  crystalLine(ctx, w / 2, 82, `Spirit Crystals: ${data.crystals}`, { size: 17, color: CREAM });
+  text(ctx, "WARDROBE", w / 2, 54, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  crystalLine(ctx, w / 2, 96, `Spirit Crystals: ${data.crystals}`, { size: 17, color: CREAM });
 
   // Tab toggle (Outfits | Collars); A/D switches (hint in the footer).
   const tabLabels = ["Outfits", "Collars"];
-  const tabY = 110, tabGap = 150;
+  const tabY = 136, tabGap = 150;
   tabLabels.forEach((label, ti) => {
     const tx = w / 2 + (ti === 0 ? -tabGap / 2 : tabGap / 2);
     const active = ti === data.tab;
@@ -1441,8 +1441,8 @@ export function drawCloset(ctx, w, h, data) {
   });
 
   const rowsData = data.tab === 0 ? data.outfits : data.collars;
-  const startY = 162;
-  const rowH = 58;
+  const startY = 190;
+  const rowH = 60;
   const boxW = 560, boxH = 52;
   const xL = w / 2 - boxW / 2;
   const xR = w / 2 + boxW / 2;

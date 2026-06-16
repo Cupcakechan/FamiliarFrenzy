@@ -50,7 +50,7 @@ const SIDE_DAMAGE_SCALE = 0.5;   // side-bolt damage as a fraction of familiar d
 // SHAPE upgrades reinterpret per style:
 //   spread (Spirit Volley) -> rune cone / beam multi-target / +1 flask
 //   pierce (Ghost/Phantom)  -> rune pass-through / beam +width / puddle +radius
-const MOONBEAM_LENGTH = 260;       // reach (≈ attackRange)
+const MOONBEAM_LENGTH = 210;       // reach (shorter = hits fewer in a line)
 const MOONBEAM_WIDTH = 14;         // base beam thickness (px)
 const MOONBEAM_PIERCE_WIDTH = 4;   // + width per pierce level ("strikes more")
 const MOONBEAM_LIFE = 0.15;        // active burst window (seconds)
@@ -619,7 +619,6 @@ export class Familiar {
   }
 
   draw(ctx) {
-    for (const p of this.puddles) p.draw(ctx);   // ground DoT, beneath everything
     for (const bolt of this.bolts) bolt.draw(ctx);
     for (const beam of this.beams) beam.draw(ctx);
     for (const fs of this.flaskShots) fs.draw(ctx);
@@ -646,6 +645,12 @@ export class Familiar {
 
     // The real cat on top, full opacity.
     this.drawCat(ctx, this.x, this.y, this.facing, this.animState, this.animFrame, 1);
+  }
+
+  // Drawn separately by game.js on the GROUND layer (above items, below enemies)
+  // so puddles never paint over the creatures wading through them.
+  drawPuddles(ctx) {
+    for (const p of this.puddles) p.draw(ctx);
   }
 
   reset(x, y) {

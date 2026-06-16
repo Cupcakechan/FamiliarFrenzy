@@ -111,7 +111,7 @@ const TUTORIAL_HINTS = {
   watching_hand: "The Watching Hand! Don't stand where it aims to slam!",
   bone_mage:   "A Bone Mage! It curses the ground — step off the rune!",
   goblin_bonker: "A Goblin Bonker! Its club swing knocks you flying — dodge it.",
-  spirit_crystal: "A Spirit Crystal! Spend these in the Closet between runs.",
+  spirit_crystal: "A Spirit Crystal! Spend these in the Wardrobe between runs.",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
 
@@ -149,7 +149,7 @@ const OUTFIT_ORDER = ["default", "red", "blue", "gold"]; // Closet display order
 // scales it). Collars cost more than outfits — they change the whole attack.
 const COLLARS = {
   default:   { name: "Spirit Collar",   cost: 0,  attackStyle: "rune",      spritePrefix: "familiar",           cooldown: 1.2, swatch: "#b18cff", desc: "Rune bolts" },
-  moonbeam:  { name: "Moon Beam Collar", cost: 10, attackStyle: "moonbeam",  spritePrefix: "familiar_moonbeam",  cooldown: 1.3, swatch: "#b18cff", desc: "Fires a purple beam" },
+  moonbeam:  { name: "Moon Beam Collar", cost: 10, attackStyle: "moonbeam",  spritePrefix: "familiar_moonbeam",  cooldown: 1.6, swatch: "#b18cff", desc: "Fires a purple beam" },
   alchemist: { name: "Alchemist Collar", cost: 12, attackStyle: "alchemist", spritePrefix: "familiar_alchemist", cooldown: 1.5, swatch: "#7bd45a", desc: "Throws acid flasks" },
 };
 const COLLAR_ORDER = ["default", "moonbeam", "alchemist"];
@@ -1463,6 +1463,7 @@ export class Game {
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
     for (const magnet of this.magnets) magnet.draw(ctx);
+    this.familiar.drawPuddles(ctx); // Alchemist puddles: above items, below enemies
     for (const enemy of this.enemies) enemy.draw(ctx);
     for (const bolt of this.enemyBolts) bolt.draw(ctx);
     this.familiar.draw(ctx);
