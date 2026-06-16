@@ -24,7 +24,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawOffscreenIndicators, drawCloset, drawClosetButton } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
@@ -43,6 +43,7 @@ const STATE = {
   HOW_TO_PLAY: "howToPlay",
   GRIMOIRE: "grimoire",
   BESTIARY: "bestiary",
+  ARCHIVE: "archive", // Arcane Archive hub (Grimoire + Bestiary)
   CLOSET: "closet", // Wardrobe: buy/equip outfits with Spirit Crystals
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
@@ -57,7 +58,8 @@ const STATE = {
   VICTORY: "victory",
 };
 
-const MAIN_MENU_ITEMS = ["Play", "Grimoire", "Bestiary", "High Scores", "Settings"];
+const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings"];
+const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Back"]; // Arcane Archive hub
 const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
 const PAUSE_ITEMS = ["Resume", "Grimoire", "Settings", "Main Menu"];
@@ -428,11 +430,10 @@ export class Game {
     switch (this.state) {
       case STATE.MAIN_MENU:
         this.navMenu(MAIN_MENU_ITEMS.length);
-        if (Input.wasPressed("KeyC")) { this.openCloset(); break; }
         if (this.confirmPressed()) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
-          else if (this.menuIndex === 1) this.openGrimoire(STATE.MAIN_MENU);
-          else if (this.menuIndex === 2) this.openBestiary();
+          else if (this.menuIndex === 1) this.openCloset();           // Wardrobe
+          else if (this.menuIndex === 2) this.openArchive();          // Arcane Archive
           else if (this.menuIndex === 3) this.state = STATE.HIGHSCORES_PLACEHOLDER;
           else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
@@ -450,6 +451,10 @@ export class Game {
 
       case STATE.BESTIARY:
         this.updateBestiary();
+        break;
+
+      case STATE.ARCHIVE:
+        this.updateArchive();
         break;
 
       case STATE.CLOSET:
@@ -670,6 +675,7 @@ export class Game {
   closeGrimoire() {
     this.state = this.grimoireReturn || STATE.MAIN_MENU;
     if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
+    else if (this.state === STATE.ARCHIVE) this.archiveIndex = 0; // land back on "Grimoire"
   }
 
   // --- Bestiary -------------------------------------------------------------
@@ -712,10 +718,42 @@ export class Game {
     return this._enemyIntros;
   }
 
-  openBestiary() {
+  openBestiary(returnState) {
     this.loadSeenEnemies();
+    this.bestiaryReturn = returnState || STATE.ARCHIVE;
     this.bestiaryIndex = 0;
     this.state = STATE.BESTIARY;
+  }
+
+  closeBestiary() {
+    this.state = this.bestiaryReturn || STATE.MAIN_MENU;
+    if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
+    else if (this.state === STATE.ARCHIVE) this.archiveIndex = 1; // land back on "Bestiary"
+  }
+
+  // --- Arcane Archive hub ---------------------------------------------------
+  // A small hub that holds the Grimoire + Bestiary. Both back out to here; the
+  // hub backs out to the main menu (with "Arcane Archive" re-highlighted).
+  openArchive() {
+    this.archiveIndex = 0;
+    this.state = STATE.ARCHIVE;
+  }
+
+  updateArchive() {
+    const count = ARCHIVE_ITEMS.length; // Grimoire, Bestiary, Back
+    if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+      this.archiveIndex = (this.archiveIndex - 1 + count) % count;
+    }
+    if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+      this.archiveIndex = (this.archiveIndex + 1) % count;
+    }
+    if (this.confirmPressed()) {
+      if (this.archiveIndex === 0) this.openGrimoire(STATE.ARCHIVE);
+      else if (this.archiveIndex === 1) this.openBestiary(STATE.ARCHIVE);
+      else { this.state = STATE.MAIN_MENU; this.menuIndex = 2; } // Back -> highlight Arcane Archive
+    } else if (this.backPressed()) {
+      this.state = STATE.MAIN_MENU; this.menuIndex = 2;
+    }
   }
 
   updateBestiary() {
@@ -727,11 +765,9 @@ export class Game {
       this.bestiaryIndex = (this.bestiaryIndex + 1) % count;
     }
     if (this.confirmPressed()) {
-      if (this.bestiaryIndex === BESTIARY.length) { // Back row
-        this.state = STATE.MAIN_MENU; this.menuIndex = 0;
-      }
+      if (this.bestiaryIndex === BESTIARY.length) this.closeBestiary(); // Back row
     } else if (this.backPressed()) {
-      this.state = STATE.MAIN_MENU; this.menuIndex = 0;
+      this.closeBestiary();
     }
   }
 
@@ -1255,7 +1291,12 @@ export class Game {
     if (this.state === STATE.MAIN_MENU) {
       drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
         ["Up / Down: move      Enter: select"], { bg: true, title: true });
-      drawClosetButton(ctx, this.width, this.height, this.wardrobe.crystals);
+      drawCrystalTotal(ctx, this.width, this.height, this.wardrobe.crystals);
+      return;
+    }
+    if (this.state === STATE.ARCHIVE) {
+      drawMenu(ctx, this.width, this.height, "Arcane Archive", ARCHIVE_ITEMS, this.archiveIndex,
+        ["Up/Down move • Enter select • Esc back"], { bg: true });
       return;
     }
     if (this.state === STATE.MODE_SELECT) {

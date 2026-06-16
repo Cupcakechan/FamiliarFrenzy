@@ -1378,41 +1378,18 @@ export function drawGameOver(ctx, w, h, info) {
   ctx.globalAlpha = 1;
 }
 
-// --- Closet (Wardrobe) ----------------------------------------------------
-// Corner affordance on the main menu: a crystal readout above a "Closet [C]"
-// button, anchored bottom-right. Drawn SEPARATELY from drawMenu so it never
-// disturbs the centred title/option stack. Keyboard-only, so the [C] cap is the
-// hint; pressing C opens the screen.
-export function drawClosetButton(ctx, w, h, crystals) {
-  const bw = 152, bh = 34;
-  const bx = w - 18 - bw;   // button left edge
-  const by = h - 16 - bh;   // button top edge
-
-  // Crystal total just above the button, right-aligned to its right edge.
-  ctx.font = `700 15px ${BODY_FONT}`;
+// --- Main-menu crystal readout --------------------------------------------
+// Wardrobe is now a main-menu item, so the old corner button is retired. This
+// keeps an at-a-glance Spirit Crystal total in the top-right corner. Drawn
+// SEPARATELY from drawMenu so it never disturbs the centred title/option stack.
+export function drawCrystalTotal(ctx, w, h, crystals) {
   const cstr = `${crystals}`;
+  ctx.font = `700 16px ${BODY_FONT}`;
   const tw = ctx.measureText(cstr).width;
-  const rightX = bx + bw;
-  text(ctx, cstr, rightX, by - 13, { size: 15, color: GOLD, align: "right", weight: "700" });
-  drawCrystalIcon(ctx, rightX - tw - 12, by - 14, 9);
-
-  // Button box.
-  ctx.fillStyle = "rgba(155, 108, 255, 0.16)";
-  roundRect(ctx, bx, by, bw, bh, 8); ctx.fill();
-  ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
-  roundRect(ctx, bx, by, bw, bh, 8); ctx.stroke();
-
-  text(ctx, "Wardrobe", bx + 16, by + bh / 2, { size: 17, color: CREAM, align: "left", weight: "700" });
-
-  // Key cap "C" tucked at the right inside the box.
-  const capS = 20;
-  const capX = bx + bw - 14 - capS;
-  const capY = by + (bh - capS) / 2;
-  ctx.fillStyle = "rgba(244, 213, 141, 0.18)";
-  roundRect(ctx, capX, capY, capS, capS, 4); ctx.fill();
-  ctx.strokeStyle = GOLD; ctx.lineWidth = 1;
-  roundRect(ctx, capX, capY, capS, capS, 4); ctx.stroke();
-  text(ctx, "C", capX + capS / 2, capY + capS / 2 + 1, { size: 13, color: GOLD, weight: "700" });
+  const rightX = w - 20;
+  const cy = 28;
+  text(ctx, cstr, rightX, cy, { size: 16, color: GOLD, align: "right", weight: "700" });
+  drawCrystalIcon(ctx, rightX - tw - 12, cy - 1, 9);
 }
 
 // Full Closet screen: crystal total, an Outfits/Collars tab toggle, one row per
