@@ -1931,7 +1931,7 @@ export class HiveWarden {
 // which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
 // random rotation — no back-to-back repeats; order varies each run).
 const DEBUG_FORCE_BOSS = true;
-const DEBUG_BOSS_TYPE = "hive_warden"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden"
+const DEBUG_BOSS_TYPE = "elder_wisp"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
 // shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).

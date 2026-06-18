@@ -31,6 +31,10 @@ import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume,
 const TILE = 32;
 loadImage("dungeon_tiles", "assets/tiles/Main_Dungeon.png");
 loadImage("floor_props", "assets/tiles/floor_props.png");
+// Wood / wooden-structure theme art — mirrors the stone sheets' layout exactly
+// (floor_wood.png = 4×4 wall+floor; floor_props_wood.png = 4×8, same band cells).
+loadImage("wood_tiles", "assets/tiles/floor_wood.png");
+loadImage("wood_props", "assets/tiles/floor_props_wood.png");
 
 // Floor decoration — TWO independent seeded bands, each with its own frequency:
 //   • Runes   — subtle glyphs, common (atmospheric floor texture).
@@ -49,6 +53,17 @@ const RUNE_COUNT  = 20;        // distinct rune cells, starting at cell 0 (rows 
 const OBJECT_CHANCE = 0.005;   // how often a bold object appears — keep this LOW
 const OBJECT_START  = 20;      // first object cell index (row 5)
 const OBJECT_COUNT  = 12;      // distinct object cells (rows 5–7)
+
+// Arena floor THEMES — the arena's whole visual floor (base tiles + prop sheet) rotates
+// between these as you progress through "sections" of the dungeon. VISUAL ONLY: the
+// renderer just samples a different sheet — cell layout, parity, the seeded bands, and
+// the world are all unchanged. Both prop sheets share the SAME band layout (cells 0–19
+// runes / 20–31 objects), so the constants above drive every theme. Order = the cycle;
+// add a 3rd entry and the picker keeps working (alternation becomes a rotation).
+const THEMES = [
+  { id: "stone", tiles: "dungeon_tiles", props: "floor_props", arriveLine: "The cold stone returns..." },
+  { id: "wood",  tiles: "wood_tiles",    props: "wood_props",  arriveLine: "The dungeon shifts beneath us..." },
+];
 
 const STATE = {
   MAIN_MENU: "mainMenu",
@@ -373,6 +388,11 @@ export class Game {
     this.enemyBolts = [];
     this.hazards = [];
     this.waveManager.reset(mode === "endless");
+    // Arena theme resets to stone each run, then advances as bosses fall: a boss kill
+    // QUEUES the next theme; it swaps in cleanly at the next wave's start (helpers below).
+    this.themeIndex = 0;
+    this.queuedThemeIndex = null;
+    this._lastWaveSeen = this.waveManager.wave;
     this.pickups = [];
     this.flasks = [];
     this.magnets = [];
@@ -862,6 +882,36 @@ export class Game {
     if (this.activeHint) playSfx("hint"); // queued hint rotating in
   }
 
+  // A familiar line that MAY recur within a run (no once-per-run dedup) — used for
+  // arena theme shifts. Reuses the same dialogue bar/queue as the hint system.
+  sayFamiliar(text) {
+    if (!TUTORIAL_HINTS_ENABLED || !text) return;
+    const line = { id: "_themeShift", text, timer: HINT_DURATION, sticky: false };
+    if (this.activeHint) this.hintQueue.push(line);
+    else { this.activeHint = line; playSfx("hint"); }
+  }
+
+  // Boss kill → queue the NEXT theme in the cycle (alternates with two; rotates with
+  // more). Applied later at a wave boundary, never now — keeps the swap out of combat.
+  queueNextTheme() {
+    if (THEMES.length < 2) return;
+    this.queuedThemeIndex = (this.themeIndex + 1) % THEMES.length;
+  }
+
+  // Apply a queued theme at the START of a new wave only. Called every play frame after
+  // the wave manager updates; acts only when the wave number actually ticks over.
+  applyQueuedThemeOnWaveChange() {
+    const w = this.waveManager.wave;
+    if (this._lastWaveSeen === undefined) this._lastWaveSeen = w;
+    if (w === this._lastWaveSeen) return;
+    this._lastWaveSeen = w;
+    if (this.queuedThemeIndex == null) return;
+    this.themeIndex = this.queuedThemeIndex;
+    this.queuedThemeIndex = null;
+    const theme = THEMES[this.themeIndex];
+    if (theme) this.sayFamiliar(theme.arriveLine); // "The dungeon shifts beneath us..."
+  }
+
   updateHints(dt) {
     const h = this.activeHint;
     if (!h) return;
@@ -927,6 +977,9 @@ export class Game {
       worldW: this.world.width, worldH: this.world.height,
     };
     if (this.tutorialWavesStarted) this.waveManager.update(dt, this.enemies, view);
+    // Swap to a queued arena theme at the start of a new wave (visual only). No-op until
+    // a boss falls and queues one; never fires mid-combat (acts on the wave tick).
+    this.applyQueuedThemeOnWaveChange();
     // Encounter tracking + intro hints (both modes). Wisp + gecko via presence.
     if (this.enemies.length > 0) {
       this.showHint("wisps"); // tutorial-only "touching hurts" lesson
@@ -1084,6 +1137,7 @@ export class Game {
           this.bossesDefeated += 1;
           this.pendingLevelUps += 1; // boss kill grants a free upgrade choice
           this.awardBossCrystal();   // + a Spirit Crystal (guaranteed first-ever, else endless chance)
+          this.queueNextTheme();     // queue the next arena theme (applied at the next wave's start)
         }
         // Drops are placed on non-overlapping spots near the kill (see
         // findDropSpot), so a mote + flask from the same enemy don't stack.
@@ -1649,7 +1703,11 @@ export class Game {
   // Draw the floor everywhere with a stone wall ring around the world edge.
   // Only the tiles inside the camera viewport are drawn (cheap culling).
   drawTiledArena(ctx, sheet, W, H) {
-    const props = getImage("floor_props");
+    // The active arena theme picks the base tiles + prop sheet (visual only). Missing
+    // themed art falls back to the stone sheet/props, so the game runs before art lands.
+    const theme = THEMES[this.themeIndex] || THEMES[0];
+    sheet = getImage(theme.tiles) || sheet;
+    const props = getImage(theme.props) || getImage("floor_props");
     const cam = this.getCamera();
     const lastX = Math.floor(W / TILE) - 1; // 74
     const lastY = Math.floor(H / TILE) - 1; // 41
