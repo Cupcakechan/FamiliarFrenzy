@@ -1,11 +1,12 @@
 # Familiar Frenzy — Project Handoff
 
-Last updated: **2026-06-16** — merged the **1.6.0** bundle in (the Hive Warden boss
-+ the two-band floor-decoration system).
-Covers all post-launch work through the **1.6.0** release.
-**1.2.0–1.5.0 are all SHIPPED/LIVE.** **1.6.0 ("The Hive Warden") was built + tested
-this session and is being packaged/published (`package_itch.bat 1.6.0` + an itch
-devlog post); treat it as shipped unless Daniel says otherwise.**
+Last updated: **2026-06-19** — added the **1.7.0** ("The Shifting Dungeon") release
+and the entire **1.8.0** mouse-support cycle.
+Covers all post-launch work through **1.8.0**.
+**1.2.0–1.7.0 are all SHIPPED/LIVE.** **1.8.0 (mouse everywhere + the Bone Mage fix)
+was built + tested this session but is NOT yet shipped — three mouse gaps remain
+(the Wardrobe has no clickable elements; Settings + High Scores need a clickable
+Back; see §12). Finish those, then package 1.8.0.**
 
 > Versioning note: the Spirit Crystals / Wardrobe / Collars bundle shipped as
 > **1.5.0**, not 1.4.0. 1.4.0 was the prior asset-completion release (Spirit
@@ -50,6 +51,13 @@ anything. Update it at the end of any session that completes work.
     `pickAttack` guard prevents two CONES in a row, not two bursts); `STINGER_OPTS`
     draw `scale = 1.1` (bigger stingers; the hitbox stays the shared `EnemyBolt`
     radius 5 — visual is intentionally a touch forgiving).
+    **Pronggeist (1.7.0):** a heavy spectral charger — `healthMult = 2.0` (tanky),
+    `PRONG_INTRO_WAVE = 7`. **Bone Mage (1.8.0 fix):** the caster blink is now
+    DIRECTION-AWARE — `base = len > c.fireRange ? toward : toward + Math.PI` (retreat
+    when too close, approach when too far) — plus `MAGE_BLINK_COOLDOWN = 2.5` (was
+    1.5); caster tuning to preserve: `damage 8`, `fireRange 460`, `preferredRange 300`,
+    `blinkRange 150`, `blinkDist 200`, `blastRadius 70`, `blastDamage 15`,
+    `telegraph 1.1`, `castCooldown 3.5`, `speedMult 0`. `MAGE_INTRO_WAVE = 8`.
   * `audio.js`: `POOL_COUNT = 9` (NEVER lower — §8); `MENU_POOL_COUNT = 3`
     (menu pool = themes 01-03, gameplay = 04-09); `DEFAULT_VOLUME = 60`;
     `DEFAULT_SFX_VOLUME = 50`.
@@ -61,7 +69,19 @@ anything. Update it at the end of any session that completes work.
     `RUNE_CHANCE = 0.07` / `RUNE_COUNT = 20` (subtle runes, sheet cells 0-19);
     `OBJECT_CHANCE = 0.012` / `OBJECT_START = 20` / `OBJECT_COUNT = 12` (rare bold
     objects, cells 20-31). These two independent seeded bands REPLACED the old single
-    `PROP_VARIANT_CHANCE`/`PROP_CIRCLE_CHANCE` pool (see §3/§5).
+    `PROP_VARIANT_CHANCE`/`PROP_CIRCLE_CHANCE` pool (see §3/§5). **Emberheart Robe
+    rework (1.7.0):** the outfit is now an EMERGENCY auto-heal — `EMBER_TRIGGER = 0.25`
+    (fires once per run when HP drops below 25%) → `EMBER_HEAL_TO = 0.50` (heals up to
+    50%). `OUTFIT_ORDER = ["default", "blue", "gold", "red"]` (Wardrobe lists outfits
+    in price order).
+  * `settings.js` (NEW, 1.7.0): Display & Accessibility — keys `ff_reducedFlash` +
+    `ff_highVisWarnings`; `REDUCED_FLASH_MULT = 0.4` (dampens screen-flash intensity
+    when Reduced Flash is on). get/set pairs are imported by `game.js`.
+  * `input.js` (mouse, 1.8.0): keyboard stays primary; the mouse only mirrors menu
+    selection/confirm. Exposes `mouseX/Y`, `mouseMoved`, `mouseClicked`, `mouseHeld`
+    (held across frames for drags; cleared on window `mouseup`/`blur`), `wheelDelta`
+    (cleared each `endFrame`). Hit-testing maps client px through the canvas's live
+    bounding rect, so it's correct at any display scale.
   * `pickups.js`: `FLASK_SPAWN_FLASH_TIME = 2.0`.
   * `familiar.js`: `RUNE_COUNT 14`, `RUNE_SCALE 0.5`, `spriteScale 0.55`;
     Spirit Volley `SIDE_DAMAGE_SCALE 0.5`, `SPREAD_ANGLE 0.26`. **Collar constants
@@ -85,6 +105,10 @@ anything. Update it at the end of any session that completes work.
   ready-to-paste **AI_USAGE.md** row;
   the git checkpoint block (NO `cd` lines). **Daniel tests first and decides when to
   commit — never commit for him.**
+* **Workflow reminder: copy the changed files to the OUTPUT folder and ATTACH them
+  (present) BEFORE writing the summary.** It is easy to `node --check` files in the
+  workspace and then forget to actually send them — that has happened; do the
+  copy-out + attach as the first step of the delivery, not the last.
 
 ```bash
 git add .
@@ -114,10 +138,26 @@ Implemented and tested:
   unseen), **Wardrobe** (Outfits/Collars tabs — buy/equip with crystals), Settings
   (music + SFX sliders), High Scores, Pause, Confirm-Quit, Victory, Game Over,
   Name Entry.
+* **Mouse support (1.8.0):** keyboard-primary; the mouse is ADDITIVE and drives the
+  SAME selections the keys do. Clickable: Main Menu, Mode Select, Arcane Archive, the
+  **level-up cards**, Pause, Confirm-Quit, Victory, Game Over (two regions), and the
+  High Scores / How to Play / Endless screens (click anywhere to return). **Grimoire +
+  Bestiary** scroll by mouse wheel with a **draggable right-side scrollbar** (grab the
+  thumb / click the track); keyboard still drives the highlight. **Settings** sliders
+  drag/click and the toggles click Off/On; hover highlights the row. A custom **sprite
+  cursor** (`assets/sprites/ui/cursor.png`) shows on menus and is HIDDEN during active
+  play (PLAYING/DYING). **STILL PENDING (see §12):** the **Wardrobe** has NO clickable
+  elements yet, and **Settings + High Scores need a clickable Back**.
+* **Display & Accessibility (1.7.0, in Settings):** **Reduced Flash** (dampens
+  screen-flash intensity, `REDUCED_FLASH_MULT 0.4`) and **High Visibility Warnings**
+  (clearer enemy telegraphs), persisted via `settings.js` (`ff_reducedFlash`,
+  `ff_highVisWarnings`).
 * **World/combat:** 2400x1344 world, player-following camera, tiled dungeon arena
   + wall collision; wave system; boss kill grants a free upgrade. **Floor decoration
   (1.6.0)** scatters two independent seeded bands across the stone — common subtle
   **runes** + rare bold **objects** (bones, skulls, mushrooms, candles, moss…); §5.
+  **Rotating arena floor themes (1.7.0):** the dungeon floor cycles through visual
+  themes as a run progresses (palette/tileset variations layered over the §5 bands).
 * **Spirit Crystals (meta currency, 1.5.0):** earned from bosses and persisted in
   `ff_wardrobe`. The first-ever boss kill grants a guaranteed crystal (+ a familiar
   tip); subsequent **Endless** bosses have a scaling chance
@@ -128,7 +168,8 @@ Implemented and tested:
   name decoupled — see §9). Two tabs:
   * **Outfits** — recolor the witch + a small passive buff (applied at run start via
     `equippedBuff()` with fractional carries `_scoreCarry`/`_xpCarry`): Apprentice
-    Robe (0◆, no buff), Emberheart Robe (3◆, flask heal +5), Sage's Weave (3◆, EXP
+    Robe (0◆, no buff), Emberheart Robe (3◆, **1.7.0**: emergency auto-heal — HP<25%
+    → heal to 50%, once/run), Sage's Weave (3◆, EXP
     ×1.05), Gilded Mantle (8◆, score ×1.05). Witch skin via `player.spritePrefix`.
   * **Collars** — swap the familiar's whole attack (see Familiar below): Spirit
     Collar (0◆, rune), Moon Beam Collar (10◆), Alchemist Collar (12◆).
@@ -172,6 +213,10 @@ Implemented and tested:
     (`GOBLIN_LUNGE_TIME`), then drops a radial **stomp HazardZone** (green) which is
     its ONLY damage. **No body-contact damage** (suppressed via the boss-safe bruiser
     guard in game.js). Knockback on stomp. `windup 0.55` (Daniel-tuned). `spriteScale 0.9`.
+  * **Pronggeist (1.7.0)** — a heavy spectral charger introduced ~Wave 7
+    (`PRONG_INTRO_WAVE 7`); tanky at `healthMult 2.0`. (Re-verify its exact movement/
+    attack from `enemies.js` `ENEMY_TYPES` next session — behaviour wasn't re-checked
+    for this handoff.)
 * **HazardZone (reusable telegraph → blast, in enemies.js):** circle + rotated-rect,
   optional knockback, i-frame-safe, code-drawn fallback. Damages the **player**.
   Owned by `game.this.hazards`. (The Alchemist `Puddle` is a SEPARATE familiar-owned
@@ -205,8 +250,12 @@ familiar-frenzy/
                  #   OUTFITS + COLLARS tables, ff_wardrobe persistence (Spirit
                  #   Crystals), awardBossCrystal, equippedBuff, Wardrobe (closet*)
                  #   + Arcane Archive nav, drawWorld order; floor-decoration bands
-                 #   (RUNE_*/OBJECT_*) in drawTiledArena's seeded prop scatter
-    input.js     # keyboard (held + one-frame presses)
+                 #   (RUNE_*/OBJECT_*) in drawTiledArena's seeded prop scatter;
+                 #   MOUSE (1.8.0): mouseMenu/zoneAt helpers + per-screen click zones
+                 #   (this.menuZones); list scroll state (grimoire/bestiary
+                 #   Scroll/MaxScroll/FollowSel/Scrollbar); settings.js get/set imports
+    input.js     # keyboard (held + one-frame presses) + MOUSE (1.8.0): mouseX/Y,
+                 #   mouseMoved / mouseClicked / mouseHeld (drag) / wheelDelta
     player.js    # witch (+ applyKnockback) + spritePrefix outfit recolor
     familiar.js  # ghost cat + attack styles: Bolt (rune, +Spirit Volley spread),
                  #   Beam (Moon Beam), FlaskShot + Puddle (Alchemist DoT); collar
@@ -221,10 +270,15 @@ familiar-frenzy/
     ui.js        # all screens/HUD; drawGrimoire, drawBestiary, drawUpgradeScreen,
                  #   drawCloset (Wardrobe: Outfits/Collars tabs), drawCrystalTotal
                  #   (main-menu corner readout), drawCrystalIcon, drawSkinnedBar, etc.
-                 #   Arcane Archive reuses drawMenu (no dedicated screen fn)
+                 #   Arcane Archive reuses drawMenu (no dedicated screen fn).
+                 #   MOUSE (1.8.0): most draws return clickable {zones}; drawScrollbar
+                 #   (draggable list scrollbar); drawSettings returns slider/toggle
+                 #   zones. NOTE: drawCloset does NOT return zones yet (§12 pending).
     assets.js    # loadImage/getImage with graceful fallback
     utils.js     # math helpers; dirFromVector; pointSegmentDistance (Spirit Bond)
     audio.js     # dual-deck music (menu/gameplay/boss) + SFX registry (§8)
+    settings.js  # NEW (1.7.0): Reduced Flash + High Visibility Warnings toggles
+                 #   (ff_reducedFlash / ff_highVisWarnings; REDUCED_FLASH_MULT)
   assets/
     fonts/ tiles/ music/ sfx/
     backgrounds/background_main.png   # 960x540, menu + mode-select backdrop
@@ -234,7 +288,7 @@ familiar-frenzy/
       pickups/   projectiles/   # rune_*, flask_throw.png, puddle.png
       upgrades/  # <id>.png 32x32
       enemies/   ui/   # + spirit_crystal.png
-        menu_button.png  upgrade_card.png  health_bar.png  spirit_bar.png  title_main.png
+        menu_button.png  upgrade_card.png  health_bar.png  spirit_bar.png  title_main.png  cursor.png
   README.md  CREDITS.md  AI_USAGE.md  PROJECT_HANDOFF.md  .gitignore
   builds/      # packaging output (gitignored)
 ```
@@ -269,6 +323,8 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
 * **Goblin Bonker:** 8 dirs, 6-frame strips, **WALK + ATTACK only** —
   `goblin_walk_<dir>.png`, `goblin_attack_<dir>.png`. Attack is PROGRESS-DRIVEN
   (leap → stomp wind-up → recover). `spriteScale 0.9`.
+* **Pronggeist (1.7.0):** confirm strip layout / dirs / `spriteScale` from
+  `ENEMY_TYPES` + its sprite files next session (not re-verified here).
 * **The Watching Hand boss:** sprite-driven. `watching_hand_*`.
 * **The Hive Warden boss (1.6.0):** `bee_fly_<dir>.png` — 8 dirs, 6-frame strips,
   reused for hover + charge (facing via `dirFromVector`). `spriteScale 1.0` (tune to
@@ -280,6 +336,9 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
   visible splash, single frame — code does fade+pulse; drawn at 2×radius so the
   visible splash ≈ the hitbox; semi-transparent toxic green, code circle fallback).
 * **Upgrade icons:** `assets/sprites/upgrades/<id>.png` (32x32), filename = internal id.
+* **Cursor (1.8.0):** `assets/sprites/ui/cursor.png` — the menu pointer, set on
+  `#game-canvas` via CSS; hidden in-play by toggling `canvas.style.cursor` to "none"
+  during PLAYING/DYING (reverts to the CSS sprite on menus).
 * **Floor decoration (1.6.0):** `assets/tiles/floor_props.png` — a **128x256** sheet,
   4 cols × 8 rows of 32px cells on a dark **`#131523`** background (NOT transparent —
   props are dark-backed to match the floor). Reading order (left→right, top→bottom):
@@ -288,6 +347,9 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
   the old separate rune-circle band was retired/folded into the runes. To add props:
   paint cells + bump `RUNE_COUNT`/`OBJECT_START`/`OBJECT_COUNT`. (`tileRand(x,y,seed)`
   hashes coords for a stable, flicker-free, per-tile scatter — not `Math.random`.)
+* **Rotating floor themes (1.7.0):** the arena floor cycles palette/tileset themes as
+  a run progresses (`game.js` floor/world draw); confirm the exact theme list + switch
+  cadence from code next session.
 
 > **Art status:** all creature/boss/player/familiar sprite sets through 1.4.0 are
 > final. **1.5.0 art (witch outfit recolors, familiar collar recolors,
@@ -309,7 +371,43 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
 ## 6. Post-Launch Work Log (newest first)
 
 ```txt
-1.6.0 (built + tested 2026-06-16; packaging/publishing) — "The Hive Warden":
+1.8.0 (built + tested 2026-06-19; NOT yet shipped — 3 mouse gaps remain, see §12) —
+  "feedback polish / mouse everywhere":
+  - Bone Mage fix: the caster blink is now DIRECTION-AWARE (retreat when too close,
+    approach when too far) + an approach trigger; MAGE_BLINK_COOLDOWN 1.5 -> 2.5.
+  - Custom sprite cursor (assets/sprites/ui/cursor.png) on the canvas, HIDDEN during
+    active play (PLAYING/DYING) by toggling canvas.style.cursor; reverts to the CSS
+    sprite on menus. (style.css sets the sprite cursor on #game-canvas.)
+  - Mouse support across the menus (keyboard-primary, mouse additive — same selection):
+    Main Menu, Mode Select, Arcane Archive, level-up cards, Pause, Confirm-Quit,
+    Victory, Game Over (two click regions), High Scores / How to Play / Endless
+    (click-anywhere-returns). Reusable game.js helpers mouseMenu(zones) / zoneAt(zones);
+    draws return clickable {zones}; hover gated on mouseMoved so it never fights keys.
+  - Grimoire + Bestiary: mouse-wheel FREE-SCROLL + a slim right-side SCROLLBAR you can
+    DRAG (grab the thumb) or click the track to jump; keyboard still follows the
+    selection (followSel model: wheel/drag => free, arrows/click => snap). drawScrollbar
+    reports thumb/track geometry; draws return {zones, scroll, maxScroll, scrollbar}.
+  - Settings: volume sliders DRAG (or click to set) + toggles click Off/On; hover
+    highlights the row; keyboard unchanged. drawSettings returns slider/toggle zones.
+  - input.js gained mouse: mouseX/Y, mouseMoved, mouseClicked, mouseHeld (held for
+    drags; cleared on window mouseup/blur), wheelDelta (cleared each endFrame).
+  - PENDING to finish 1.8.0 (see §12): Wardrobe (STATE.CLOSET) has NO clickable
+    elements; Settings + High Scores need a clickable Back.
+
+1.7.0 (SHIPPED) — "The Shifting Dungeon":
+  - Rotating arena floor themes — the dungeon floor cycles visual themes as a run
+    progresses (layered over the 1.6.0 decoration bands).
+  - Pronggeist — a new heavy spectral charger enemy (~Wave 7, PRONG_INTRO_WAVE 7;
+    healthMult 2.0). (Re-verify exact behaviour from enemies.js.)
+  - Emberheart Robe reworked into an EMERGENCY auto-heal (EMBER_TRIGGER 0.25 -> heal
+    to EMBER_HEAL_TO 0.50, once per run).
+  - Display & Accessibility toggles (NEW settings.js): Reduced Flash
+    (REDUCED_FLASH_MULT 0.4) + High Visibility Warnings; keys ff_reducedFlash /
+    ff_highVisWarnings.
+  - Bestiary added to the Pause menu.
+  - Wardrobe outfits re-ordered by price (OUTFIT_ORDER).
+
+1.6.0 (SHIPPED 2026-06-16) — "The Hive Warden":
   - The Hive Warden, a 3rd boss (projectile/stinger-pattern; HiveWarden class) added
     to BOSS_TYPES. hover→charge→release→recover; aim/pattern lock at charge; Cone
     Volley (kitable, ~35%) + Spread Burst (8-bolt radial ring, the main threat, ~65%,
@@ -435,6 +533,12 @@ Main menu = Play / Wardrobe / Arcane Archive / High Scores / Settings.
   "Arcane Archive" re-highlighted. The Pause-menu Grimoire path is unaffected
   (`grimoireReturn = STATE.PAUSED`).
 
+**Mouse (1.8.0):** every screen above is click-driven via `this.menuZones` (set in
+render, hit-tested next frame) EXCEPT **`STATE.CLOSET` (Wardrobe)** — it has NO click
+zones yet (keyboard only; `drawCloset` returns nothing). `STATE.SETTINGS_PLACEHOLDER`
+and `STATE.HIGHSCORES_PLACEHOLDER` are otherwise clickable but lack an on-screen
+**Back** (Esc/Backspace only). These three are the §12 pending fixes.
+
 Flow: `DYING -> (endless + qualifies) -> NAME_ENTRY -> GAME_OVER`, else `GAME_OVER`.
 Bests in `ff_bestEndlessWave/Score`; scores in `ff_highscores`.
 
@@ -466,23 +570,70 @@ are functional screens with misleading names; `ENDLESS_PLACEHOLDER` is dead.
 player-facing, newest-first markdown entry for Daniel to post. **Standing
 convention: entries ALWAYS include tasteful emojis** (section headers + key bullets)
 matching the witch/spirit theme. Live posts: 1.4.0 ("The Coven Grows"), 1.5.0
-("Crystals & Collars"), 1.6.0 ("The Hive Warden").
+("Crystals & Collars"), 1.6.0 ("The Hive Warden"), 1.7.0 ("The Shifting Dungeon").
+**1.8.0 is drafted below (NOT yet posted — finish the §12 mouse gaps first, then post
+on package).**
+
+### Devlog 8 — ready-to-paste draft (1.8.0)
+
+````markdown
+## 🖱️ Familiar Frenzy 1.8.0 — Point, Click, Conjure
+
+The coven heard you — **Familiar Frenzy is now mouse-friendly**. ✨
+
+### 🐭 Mouse around the menus
+- 🎯 Click through the **Main Menu, Mode Select, Arcane Archive**, and the
+  **level-up cards** — no keyboard required.
+- ⏸️ **Pause, Victory, and Game Over** are clickable too.
+- 🕯️ A custom **spirit cursor** now lights your way through the menus, and politely
+  vanishes once the frenzy begins.
+
+### 📜 Scrollable Grimoire & Bestiary
+- 🖱️ **Scroll** the Grimoire and Bestiary with your mouse wheel.
+- 🎚️ A **draggable scrollbar** rides the right edge — grab the thumb or click the
+  track to fly through your spells and your foes.
+
+### 🔊 A friendlier Settings screen
+- 🎛️ **Drag the volume sliders** and **click** the accessibility toggles directly.
+
+### 🦴 Bone Mage, behave
+- 🛠️ Fixed the **Bone Mage's** blink so it keeps its distance instead of teleporting
+  into your lap — a fairer, more readable fight.
+
+⌨️ Every keyboard control still works exactly as before — the mouse just rides
+alongside. Happy haunting! 👻
+````
+
+(Add a "👗 Click into the Wardrobe" bullet once the §12 Wardrobe-mouse fix lands.)
 
 ---
 
 ## 12. Current Backlog / Next Steps
 
 ```txt
-DONE — 1.5.0 shipped 2026-06-15. 1.6.0 ("The Hive Warden" + two-band floor
-  decoration) built + tested 2026-06-16; packaging/publishing now.
+DONE — 1.5.0 / 1.6.0 / 1.7.0 all SHIPPED. 1.8.0 (mouse everywhere + Bone Mage fix)
+  built + tested 2026-06-19 but NOT yet shipped — the three mouse gaps below close it.
 
-1.6.0 LOOSE ENDS (art/files Daniel is finishing — code fallbacks render meanwhile):
-  - bee_charge.mp3 + bee_sting.mp3 in assets/sfx/ (the two boss SFX clips).
-  - bee_stinger.png in assets/sprites/projectiles/ (amber dart fallback renders).
-  - Hive Warden spriteScale (1.0) is a GUESS — tune to the native bee_fly art size.
-  - Any remaining floor-prop cells (objects/runes) Daniel still wants to draw.
+>>> PENDING — FINISH 1.8.0 (do these next; the rest of the mouse pass is done) <<<
+  1. WARDROBE (STATE.CLOSET) has NO clickable elements — it was missed in the mouse
+     pass. Add, mirroring the other screens: click the Outfits/Collars TABS, click an
+     entry to select it, click to buy/equip the selected entry, and a clickable BACK.
+     Pattern: drawCloset returns clickable {zones}; the CLOSET handler hit-tests
+     this.menuZones (mouseMenu/zoneAt); hover gated on mouseMoved; tabs + buy/equip are
+     discrete click targets. Keyboard stays primary. (Internals stay closet* — §9.)
+  2. SETTINGS (STATE.SETTINGS_PLACEHOLDER) needs a clickable BACK text — sliders +
+     toggles already click/drag, but only Esc/Backspace returns today. Add a "Back" hit
+     zone (like the Grimoire/Bestiary Back row) that returns to settingsReturn.
+  3. HIGH SCORES (STATE.HIGHSCORES_PLACEHOLDER) needs a clickable BACK text (today it's
+     click-anywhere-returns; a clear Back reads better + matches the rest).
+  THEN: re-verify DEBUG flags, run package_itch.bat 1.8.0, post the §11 devlog 8
+  (add the Wardrobe bullet once fix #1 lands).
 
-NEXT (pick one with Daniel):
+OPTIONAL POLISH (1.8.0+, only if Daniel wants):
+  - Scrollbar / slider grab-band widths are one-number tunables if anything feels
+    fiddly to grab (in the list handlers / drawVolumeSlider).
+
+NEXT CONTENT (pick one with Daniel, after 1.8.0 ships):
   - Next content beat — one new gameplay system at a time (prior candidates: a
     Skeleton Mage area-control enemy [HazardZone is reusable], or a 3rd Spirit
     Grimoire / familiar evolution). Confirm direction first.
@@ -503,7 +654,8 @@ WHEN READY (housekeeping):
 PERSISTENCE KEYS:
   ff_musicVolume, ff_sfxVolume, ff_highscores, ff_bestEndlessWave/Score,
   ff_seenEnemies (Bestiary), ff_enemyIntros (intro banners), ff_wardrobe (crystals +
-  owned/equipped outfits & collars). A "reset progress" should clear ff_seenEnemies,
+  owned/equipped outfits & collars), ff_reducedFlash + ff_highVisWarnings (1.7.0
+  Display & Accessibility toggles). A "reset progress" should clear ff_seenEnemies,
   ff_enemyIntros, and consider ff_wardrobe.
 
 BALANCE WATCH (only if Daniel reports it):
@@ -524,8 +676,10 @@ external libraries, or build tooling; data-driven tables over subclasses
 ## 13. First Response Required from Next Claude
 
 1. Confirm this handoff was read.
-2. Briefly summarize current state (note 1.5.0 is shipped/live; **1.6.0 was built +
-   tested and is being published** — treat as shipped unless Daniel says otherwise).
+2. Briefly summarize current state (1.5.0 / 1.6.0 / 1.7.0 are shipped/live; **1.8.0 —
+   mouse everywhere + the Bone Mage fix — was built + tested but is NOT yet shipped:
+   the Wardrobe still needs mouse support, and Settings + High Scores need a clickable
+   Back, per §12. Those three are the immediate priority unless Daniel redirects.**).
 3. Verify `DEBUG_FORCE_BOSS` and `DEBUG_BOSS_TYPE` from `enemies.js` (don't trust
    this doc) and report.
 4. Note any stale-looking handoff items.

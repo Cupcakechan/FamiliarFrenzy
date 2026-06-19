@@ -305,6 +305,8 @@ export class Game {
     this.settingsIndex = 0;                // selected Settings row: 0 music, 1 sfx
     this.settingsDragging = null;          // row of the slider being dragged, or null
     this.settingsZones = null;             // hit zones fed back from the last Settings render
+    this.closetZones = null;               // Wardrobe hit zones (rows/tabs/Back) from the last render
+    this.highscoresBackHover = false;      // High Scores Back button hovered (mouse)
 
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
@@ -567,9 +569,15 @@ export class Game {
         if (this.backPressed() || this.confirmPressed() || Input.mouseClicked()) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
         break;
 
-      case STATE.HIGHSCORES_PLACEHOLDER:
-        if (this.backPressed() || this.confirmPressed() || Input.mouseClicked()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+      case STATE.HIGHSCORES_PLACEHOLDER: {
+        // Mouse: a single clickable Back button (hover-highlighted). Clicking
+        // elsewhere no longer returns — only Back, or Esc/Backspace/Enter.
+        const hov = this.zoneAt(this.menuZones);
+        if (Input.mouseMoved()) this.highscoresBackHover = hov === 0;
+        const clickedBack = hov === 0 && Input.mouseClicked();
+        if (this.backPressed() || this.confirmPressed() || clickedBack) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         break;
+      }
 
       case STATE.SETTINGS_PLACEHOLDER: {
         // Four rows: 0 = Music Volume, 1 = SFX Volume, 2 = Reduced Flash, 3 = High Vis.
@@ -583,6 +591,11 @@ export class Game {
 
           // Press starts a slider drag, or flips a toggle (Off/On are separate targets).
           if (Input.mouseClicked()) {
+            if (z.back && inRect(z.back)) {
+              this.state = this.settingsReturn || STATE.MAIN_MENU;
+              if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
+              break; // returned to the previous screen; skip the rest this frame
+            }
             for (const s of z.sliders) {
               if (inRect(s)) { this.settingsDragging = s.row; this.settingsIndex = s.row; break; }
             }
@@ -616,26 +629,31 @@ export class Game {
           if (Input.mouseMoved()) {
             for (const s of z.sliders) if (inRect(s)) this.settingsIndex = s.row;
             for (const t of z.toggles) if (inRect(t.off) || inRect(t.on)) this.settingsIndex = t.row;
+            if (z.back && inRect(z.back)) this.settingsIndex = 4;
           }
         }
 
         if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
-          this.settingsIndex = (this.settingsIndex + 3) % 4; // -1, wrapped
+          this.settingsIndex = (this.settingsIndex + 4) % 5; // -1, wrapped (5 rows incl. Back)
         }
         if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
-          this.settingsIndex = (this.settingsIndex + 1) % 4;
+          this.settingsIndex = (this.settingsIndex + 1) % 5;
         }
         if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA")) {
           if (this.settingsIndex === 0) setMusicVolume(getMusicVolume() - 5);
           else if (this.settingsIndex === 1) { setSfxVolume(getSfxVolume() - 5); playSfx("hint"); }
           else if (this.settingsIndex === 2) setReducedFlash(false);
-          else setHighVisWarnings(false);
+          else if (this.settingsIndex === 3) setHighVisWarnings(false);
         }
         if (Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
           if (this.settingsIndex === 0) setMusicVolume(getMusicVolume() + 5);
           else if (this.settingsIndex === 1) { setSfxVolume(getSfxVolume() + 5); playSfx("hint"); }
           else if (this.settingsIndex === 2) setReducedFlash(true);
-          else setHighVisWarnings(true);
+          else if (this.settingsIndex === 3) setHighVisWarnings(true);
+        }
+        if (this.confirmPressed() && this.settingsIndex === 4) {
+          this.state = this.settingsReturn || STATE.MAIN_MENU;
+          if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
         }
         if (this.backPressed()) {
           this.state = this.settingsReturn || STATE.MAIN_MENU;
@@ -1669,7 +1687,7 @@ export class Game {
     }
 
     if (this.state === STATE.CLOSET) {
-      drawCloset(ctx, this.width, this.height, this.closetData());
+      this.closetZones = drawCloset(ctx, this.width, this.height, this.closetData());
       return;
     }
 
@@ -1688,7 +1706,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.HIGHSCORES_PLACEHOLDER) {
-      drawHighScores(ctx, this.width, this.height, this.getHighScores());
+      this.menuZones = drawHighScores(ctx, this.width, this.height, this.getHighScores(), this.highscoresBackHover).zones;
       return;
     }
     if (this.state === STATE.SETTINGS_PLACEHOLDER) {
@@ -2224,6 +2242,41 @@ export class Game {
   updateCloset() {
     const { order } = this.closetTabRefs();
     const count = order.length + 1; // rows + Back
+
+    // --- Mouse (additive; drives the SAME selection + actions as the keys) ---
+    const z = this.closetZones;
+    if (z) {
+      // Hover highlights the row/Back under the cursor, but only when the mouse
+      // moved, so a resting pointer never fights the keyboard.
+      if (Input.mouseMoved()) {
+        const hov = this.zoneAt(z.zones);
+        if (hov >= 0) this.closetIndex = hov;
+      }
+      if (Input.mouseClicked()) {
+        // A tab click SELECTS that tab (keyboard Left/Right toggles instead);
+        // clicking the active tab is a no-op so the row cursor isn't reset.
+        const mx = Input.mouseX(), my = Input.mouseY();
+        let onTab = -1;
+        for (const t of z.tabs) {
+          if (mx >= t.x && mx <= t.x + t.w && my >= t.y && my <= t.y + t.h) { onTab = t.tab; break; }
+        }
+        if (onTab >= 0) {
+          if (onTab !== this.closetTab) { this.closetTab = onTab; this.closetIndex = 0; }
+          return;
+        }
+        // Otherwise a row/Back click: select it, then act exactly like Enter
+        // (Back returns; any item runs the keyboard buy/equip path).
+        const hit = this.zoneAt(z.zones);
+        if (hit >= 0) {
+          this.closetIndex = hit;
+          if (hit === order.length) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+          else this.closetSelect();
+          return;
+        }
+      }
+    }
+
+    // --- Keyboard (primary; unchanged) ---
     // Left/Right toggles the tab (only two), resetting the row cursor.
     if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA") ||
         Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {

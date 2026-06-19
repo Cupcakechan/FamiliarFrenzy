@@ -249,9 +249,24 @@ export function drawPlaceholder(ctx, w, h, title) {
   ctx.globalAlpha = 1;
 }
 
+// Shared centred "Back" button for the High Scores + Settings screens. Mirrors
+// the Wardrobe's Back styling so every screen exits the same way. `active`
+// = selected/hovered (gold box). Returns its hit rect ({...index:0}) for the
+// mouse handler. cy is the button's vertical centre.
+function drawCenteredBack(ctx, w, cy, active) {
+  if (active) {
+    ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
+    roundRect(ctx, w / 2 - 90, cy - 20, 180, 40, 8); ctx.fill();
+    ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+    roundRect(ctx, w / 2 - 90, cy - 20, 180, 40, 8); ctx.stroke();
+  }
+  text(ctx, "Back", w / 2, cy, { size: 20, color: active ? GOLD : DIM, weight: "700" });
+  return { x: w / 2 - 90, y: cy - 20, w: 180, h: 40, index: 0 };
+}
+
 // --- HIGH SCORES (Endless only) ------------------------------------------
 // entries = array of { score, wave, date }, already sorted best-first.
-export function drawHighScores(ctx, w, h, entries) {
+export function drawHighScores(ctx, w, h, entries, backHover = false) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
@@ -262,11 +277,7 @@ export function drawHighScores(ctx, w, h, entries) {
   if (!entries || entries.length === 0) {
     text(ctx, "No runs yet.", w / 2, h / 2 - 12, { size: 24, color: CREAM, weight: "500" });
     text(ctx, "Survive Endless Mode to record a score.", w / 2, h / 2 + 22, { size: 16, color: DIM, weight: "500" });
-    const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
-    ctx.globalAlpha = pulse;
-    text(ctx, "Press Esc or Backspace to return", w / 2, h - 40, { size: 16, color: PURPLE, weight: "500" });
-    ctx.globalAlpha = 1;
-    return;
+    return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
   }
 
   // Table layout (5 columns: rank / name / score / wave / date).
@@ -303,10 +314,7 @@ export function drawHighScores(ctx, w, h, entries) {
     text(ctx, `${e.date || "—"}`, dateX,  y, { size: 16, color, align: "left", weight });
   });
 
-  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
-  ctx.globalAlpha = pulse;
-  text(ctx, "Press Esc or Backspace to return", w / 2, h - 32, { size: 16, color: PURPLE, weight: "500" });
-  ctx.globalAlpha = 1;
+  return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
 }
 
 // --- SETTINGS -------------------------------------------------------------
@@ -375,12 +383,15 @@ export function drawSettings(ctx, w, h, musicVolume, sfxVolume, reducedFlash, hi
   const flashT    = drawToggleRow(ctx, w, "Reduced Flash Effects",    reducedFlash,    h * 0.70, selectedIndex === 2);
   const highVisT  = drawToggleRow(ctx, w, "High Visibility Warnings", highVisWarnings, h * 0.81, selectedIndex === 3);
 
-  // Footer hint omitted (Esc/Backspace still returns).
+  // Back row — selectable like the Grimoire/Bestiary Back (keyboard index 4 /
+  // mouse click), so the screen exits without needing Esc.
+  const backRect = drawCenteredBack(ctx, w, h * 0.93, selectedIndex === 4);
 
-  // Hit zones for the mouse: sliders (drag/click) and toggles (click Off/On).
+  // Hit zones for the mouse: sliders (drag/click), toggles (click Off/On), Back.
   return {
     sliders: [ { ...musicRect, row: 0 }, { ...sfxRect, row: 1 } ],
     toggles: [ { ...flashT, row: 2 }, { ...highVisT, row: 3 } ],
+    back: backRect,
   };
 }
 
@@ -1526,9 +1537,11 @@ export function drawCloset(ctx, w, h, data) {
   // Tab toggle (Outfits | Collars); A/D switches (hint in the footer).
   const tabLabels = ["Outfits", "Collars"];
   const tabY = 136, tabGap = 150;
+  const tabs = []; // clickable tab rects (mouse) — one per tab regardless of active state
   tabLabels.forEach((label, ti) => {
     const tx = w / 2 + (ti === 0 ? -tabGap / 2 : tabGap / 2);
     const active = ti === data.tab;
+    tabs.push({ x: tx - 62, y: tabY - 16, w: 124, h: 32, tab: ti });
     if (active) {
       ctx.fillStyle = "rgba(244, 213, 141, 0.16)";
       roundRect(ctx, tx - 62, tabY - 16, 124, 32, 8); ctx.fill();
@@ -1545,9 +1558,11 @@ export function drawCloset(ctx, w, h, data) {
   const xL = w / 2 - boxW / 2;
   const xR = w / 2 + boxW / 2;
 
+  const zones = []; // clickable row rects + Back (mouse hit-testing in game.js)
   rowsData.forEach((o, i) => {
     const cy = startY + i * rowH;
     const selected = i === data.index;
+    zones.push({ x: xL, y: cy - boxH / 2, w: boxW, h: boxH, index: i });
 
     // Row box.
     if (selected) {
@@ -1609,6 +1624,9 @@ export function drawCloset(ctx, w, h, data) {
     roundRect(ctx, w / 2 - 90, backY - 20, 180, 40, 8); ctx.stroke();
   }
   text(ctx, "Back", w / 2, backY, { size: 20, color: backSel ? GOLD : DIM, weight: "700" });
+  zones.push({ x: w / 2 - 90, y: backY - 20, w: 180, h: 40, index: rowsData.length });
 
   text(ctx, "A/D switch tab • Up/Down move • Enter • Esc back", w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
+
+  return { zones, tabs }; // game.js hit-tests rows/Back (zones) + the tab toggle (tabs)
 }
