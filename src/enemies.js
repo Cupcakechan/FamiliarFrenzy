@@ -1438,7 +1438,7 @@ const MAGE_MAX_ALIVE = 2;         // never more than this many alive at once (zo
 const GOBLIN_INTRO_WAVE = 6;      // Goblin Bonkers join the spawn mix from this wave on
 const GOBLIN_SPAWN_CHANCE = 0.15; // chance each eligible slot rolls a Goblin
 const GOBLIN_MAX_ALIVE = 2;       // never more than this many alive (displacement is oppressive in bulk)
-const PRONG_INTRO_WAVE = 7;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
+const PRONG_INTRO_WAVE = 1;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
 const PRONG_SPAWN_CHANCE = 0.18;  // chance each eligible slot rolls a Pronggeist (bumped 0.13 -> 0.18)
 const PRONG_MAX_ALIVE = 2;        // never more than this many alive (line-zoning is oppressive in bulk)
 

@@ -311,10 +311,12 @@ const SFX_DEFS = {
   mage_blast: { src: "assets/sfx/mage_blast.mp3", volume: 0.50, voices: 2, minInterval: 0.08 },
   goblin_windup: { src: "assets/sfx/goblin_windup.mp3", volume: 0.40, voices: 2, minInterval: 0.10 },
   goblin_bonk:   { src: "assets/sfx/goblin_bonk.mp3",   volume: 0.55, voices: 2, minInterval: 0.08 },
+  pronggeist_spikes: { src: "assets/sfx/pronggeist_spikes.mp3", volume: 0.50, voices: 2, minInterval: 0.08 }, // fork tines erupt
   // Per-creature ambient voices (picked at random by game.js's chitter scheduler).
   gecko_chitter: { src: "assets/sfx/gecko_chitter.mp3", volume: 0.30, voices: 3, minInterval: 0.25 },
   mage_murmur:   { src: "assets/sfx/mage_murmur.mp3",   volume: 0.30, voices: 3, minInterval: 0.25 },
   goblin_grunt:  { src: "assets/sfx/goblin_grunt.mp3",  volume: 0.32, voices: 3, minInterval: 0.25 },
+  pronggeist_chitter: { src: "assets/sfx/pronggeist_chitter.mp3", volume: 0.30, voices: 3, minInterval: 0.25 },
   // Event cues.
   gecko_fling:       { src: "assets/sfx/gecko_fling.mp3",       volume: 0.35, voices: 4, minInterval: 0.08 },
   elder_wisp_charge: { src: "assets/sfx/elder_wisp_charge.mp3", volume: 0.50, voices: 2, minInterval: 0.20 },
