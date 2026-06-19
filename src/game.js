@@ -142,6 +142,7 @@ const TUTORIAL_HINTS = {
   hive_warden: "Careful — that buzz means stingers are coming!",
   bone_mage:   "A Bone Mage! It curses the ground — step off the rune!",
   goblin_bonker: "A Goblin Bonker! Its club swing knocks you flying — dodge it.",
+  pronggeist:  "That fork is aiming at the floor — move!",
   spirit_crystal: "A Spirit Crystal! Spend these in the Wardrobe between runs.",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
@@ -212,6 +213,11 @@ const BESTIARY = [
     id: "goblin_bonker", name: "Goblin Bonker", kind: "Enemy", enemyType: "goblin_bonker",
     spriteKey: "goblin_walk_s", frames: 6,
     blurb: "Winds up a heavy club swing that knocks witches back.",
+  },
+  {
+    id: "pronggeist", name: "Pronggeist", kind: "Enemy", enemyType: "pronggeist",
+    spriteKey: "pronggeist_walk_s", frames: 4,
+    blurb: "Plants itself, then skewers the ground in a straight line.",
   },
   {
     id: "elder_wisp", name: "Elder Wisp", kind: "Boss", bossName: "Elder Wisp",
@@ -1000,6 +1006,10 @@ export class Game {
       if (this.enemies.some((e) => e.type === "goblin_bonker")) {
         this.markSeen("goblin_bonker");
         this.showEnemyHint("goblin_bonker"); // both modes, once per run
+      }
+      if (this.enemies.some((e) => e.type === "pronggeist")) {
+        this.markSeen("pronggeist");
+        this.showEnemyHint("pronggeist"); // both modes, once per run
       }
     }
     if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");

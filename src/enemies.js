@@ -136,6 +136,37 @@ const ENEMY_TYPES = {
       stompRadius: 96,    // radial stomp danger radius (+player ~16 = ~112px). Bigger = harder to outrun.
     },
   },
+  pronggeist: {
+    spritePrefix: "pronggeist",
+    spriteScale: 0.8,         // tune independently once the art is in (visual only)
+    speedMult: 0.95,          // shuffles at a modest pace — it fights by trapping, not chasing
+    healthMult: 1.5,          // a bit tankier than a wisp; a deliberate priority target
+    damage: 8,                // contact damage if you crowd it (the spike line is the real threat)
+    fallbackOuter: "#f1c359", // fork gold (matches the spikes)
+    fallbackInner: "#8a6b1f",
+    ambientSfx: "pronggeist_chitter", // creature chitter (data-driven scheduler; silent until registered)
+    ranged: null,
+    // lineCaster: shuffles into range, PLANTS, and LOCKS a thin spike line toward
+    // the witch's position-at-cast — the line does NOT track. After `telegraph` it
+    // erupts (one hit at eruption), lingers briefly, then it shuffles again. The
+    // line is a rotated-rect HazardZone (skin "spikes"); game.js draws/collides it
+    // for free via the existing hazard pipeline. Distinct from the Bone Mage:
+    // a thin DIRECTIONAL corridor (sidestep it) vs a circular curse (leave it),
+    // and it WALKS rather than blinking.
+    lineCaster: {
+      castRange: 300,      // won't bother casting if she's beyond this (center dist)
+      shuffleTime: 1.2,    // seconds of repositioning before each cast
+      telegraph: 0.85,     // windup before the spikes erupt (the escape window)
+      castWait: 1.85,      // planted/frozen time per cast (telegraph + eruption flash + recovery)
+      lineMin: 140,        // shortest the corridor can be (a point-blank cast still shows a lane)
+      lineMax: 320,        // longest the corridor can be (>= castRange, so the lock is always reached)
+      lineOvershoot: 40,   // the corridor reaches this far PAST the locked spot
+      lineWidth: 36,       // narrow corridor (px across) — a thin lane you sidestep
+      damage: 12,          // spike damage at eruption (moderate; < the Mage's 15)
+      castFrame: 1,        // walk frame to freeze on while planted/casting
+      spikesSfx: "pronggeist_spikes", // eruption cue (graceful if the clip is missing)
+    },
+  },
 };
 
 // Gutter Gecko sprite strips (anthropomorphic lizard with a pouch). Unlike
@@ -179,6 +210,19 @@ for (const anim of ["walk", "attack"]) {
   }
 }
 
+// Pronggeist sprite strips. WALK-ONLY by design (a low-animation caster): it
+// animates while shuffling and FREEZES a walk frame while planted/casting, so no
+// idle/attack/die strips are needed — the spike-line telegraph carries the read.
+// Single-row strips in assets/sprites/enemies/:
+//   pronggeist_walk_<dir>.png   (4 frames, loops — shuffling toward a cast spot)
+// Missing strips fall back to the fork-gold placeholder per direction.
+for (const anim of ["walk"]) {
+  for (const d of WISP_DIRS) {
+    const key = `pronggeist_${anim}_${d}`;
+    loadImage(key, `assets/sprites/enemies/${key}.png`);
+  }
+}
+
 // Per-prefix animation tables.
 const ENEMY_ANIMS = {
   wisp:  { anims: WISP_ANIMS, fps: WISP_FPS, looping: WISP_LOOPING },
@@ -196,6 +240,11 @@ const ENEMY_ANIMS = {
     anims:   { walk: 6, attack: 6 },
     fps:     { walk: 8, attack: 10 }, // attack frame is PROGRESS-driven, fps unused for it
     looping: { walk: true, attack: false },
+  },
+  pronggeist: {
+    anims:   { walk: 4 },
+    fps:     { walk: 8 },
+    looping: { walk: true }, // walk-only; the cast freezes a single walk frame
   },
 };
 
@@ -408,6 +457,7 @@ export class HazardZone {
   // Goblin swing: a rotated danger rectangle whose fill sweeps from the goblin
   // out to the tip as the swing loads, then a bright impact flash.
   drawRect(ctx) {
+    if (this.skin === "spikes") { this.drawRectSpikes(ctx); return; } // Pronggeist look
     const hl = this.length / 2, hw = this.width / 2;
     ctx.save();
     ctx.translate(this.x, this.y);
@@ -430,6 +480,58 @@ export class HazardZone {
     ctx.strokeRect(-hl, -hw, this.length, this.width);
     ctx.fillStyle = `rgba(226, 83, 107, ${0.10 + 0.16 * pulse})`;
     ctx.fillRect(-hl, -hw, this.length * fill, this.width); // sweeps outward
+    ctx.restore();
+  }
+
+  // Pronggeist spike line (skin "spikes"): a GOLD warning corridor that fills from
+  // the fork toward the lock, then a row of erupting gold teeth that flash + fade.
+  // Code-drawn (no art) in the fork's gold #f1c359 — visually distinct from the
+  // Bone Mage's violet curse and the Goblin's green stomp. A spike sprite can
+  // replace the teeth later; this stays as the fallback.
+  drawRectSpikes(ctx) {
+    const GOLD = "#f1c359";
+    const hl = this.length / 2, hw = this.width / 2;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+
+    if (this.phase === "blast") {
+      const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME; // 0 -> 1
+      ctx.globalAlpha = 1 - p;                                   // fade as it retracts
+      ctx.fillStyle = "rgba(241, 195, 89, 0.30)";                // hot fill under the teeth
+      ctx.fillRect(-hl, -hw, this.length, this.width);
+      // A jagged sawtooth ridge along the corridor reads as a row of spikes.
+      const teeth = Math.max(3, Math.round(this.length / 16));
+      ctx.beginPath();
+      for (let i = 0; i <= teeth; i++) {
+        const tx = -hl + (i * this.length) / teeth;
+        const ty = (i % 2 === 0) ? -hw : hw;
+        if (i === 0) ctx.moveTo(tx, ty); else ctx.lineTo(tx, ty);
+      }
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = GOLD;
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#fff2c8"; // bright edge keeps the active lane legible
+      ctx.strokeRect(-hl, -hw, this.length, this.width);
+      ctx.restore();
+      return;
+    }
+
+    // Telegraph: corridor outline + an inner fill that sweeps from the fork to the
+    // tip as the windup loads, plus a pulsing centre guide so the lane reads early.
+    const fill = 1 - Math.max(0, this.timer) / this.telegraph; // 0 -> 1
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(241, 195, 89, ${0.45 + 0.45 * fill})`;
+    ctx.strokeRect(-hl, -hw, this.length, this.width);
+    ctx.fillStyle = `rgba(241, 195, 89, ${0.08 + 0.16 * pulse})`;
+    ctx.fillRect(-hl, -hw, this.length * fill, this.width); // sweeps outward
+    ctx.strokeStyle = `rgba(241, 195, 89, ${0.40 + 0.40 * fill})`;
+    ctx.beginPath();
+    ctx.moveTo(-hl, 0);
+    ctx.lineTo(-hl + this.length * fill, 0);
+    ctx.stroke();
     ctx.restore();
   }
 
@@ -546,6 +648,11 @@ export class Enemy {
     this.leapTimer = 0;         // Goblin: leap-step countdown (the commit hop)
     this.leapDist = 0;          // Goblin: total px the committed leap travels
 
+    // Pronggeist (lineCaster) phase machine. Starts mid-shuffle with a randomized
+    // timer so a group of forks doesn't plant + cast in perfect lockstep.
+    this.ppPhase = "shuffle";   // "shuffle" (repositioning) | "cast" (planted, frozen)
+    this.ppTimer = this.def.lineCaster ? randomRange(0.4, this.def.lineCaster.shuffleTime) : 0;
+
     // Animation state (visual only). Start frame is randomized so a swarm
     // doesn't pulse in perfect lockstep.
     const animCfg = ENEMY_ANIMS[this.def.spritePrefix];
@@ -553,7 +660,7 @@ export class Enemy {
     // Resting state differs per model: the ghostly wisp floats; the grounded
     // gecko and the Bone Mage idle; the Goblin has no rest pose (it's always
     // advancing or mid-swing), so its "rest" is the walk loop.
-    this.restState = this.def.bruiser ? "walk" : (this.def.ranged || this.def.caster) ? "idle" : "float";
+    this.restState = (this.def.bruiser || this.def.lineCaster) ? "walk" : (this.def.ranged || this.def.caster) ? "idle" : "float";
     this.animState = this.restState;
     this.animFrame = randomInt(0, animCfg.anims[this.restState] - 1);
     this.animTimer = 0;
@@ -612,6 +719,11 @@ export class Enemy {
       // --- Goblin Bonker: lumber in, plant, telegraph a LOCKED club swing, and
       // knock the witch back. (Handles its own facing + animation.) ---
       this.updateBruiser(dt, player, len, hazards);
+    } else if (this.def.lineCaster) {
+      // --- Pronggeist: shuffle into range, plant, and LOCK a thin spike line at
+      // the witch's CURRENT spot (it does NOT track). Handles its own facing +
+      // animation (walk while shuffling, frozen frame while casting). ---
+      this.updatePronggeist(dt, player, len, hazards);
     } else {
       // --- Melee chaser (wisp): walk straight at the witch (unchanged) ---
       this.x += (dx / len) * this.speed * dt;
@@ -636,8 +748,10 @@ export class Enemy {
     // as a flinger should).
     // --- Facing + animation (visual only) ---
     // The Goblin (bruiser) drives its OWN facing + frame in updateBruiser (it
-    // LOCKS them through the wind-up/swing), so it opts out of the generic path.
-    if (!this.def.bruiser) {
+    // LOCKS them through the wind-up/swing), and the Pronggeist (lineCaster) does
+    // the same in updatePronggeist (walk while shuffling, frozen while casting), so
+    // both opt out of the generic path.
+    if (!this.def.bruiser && !this.def.lineCaster) {
       this.facing = dirFromVector(dx, dy);
 
       // Wisp: ATTACK while touching (reads the same proximity the contact-damage
@@ -791,6 +905,74 @@ export class Enemy {
     // In range but still on cooldown — shuffle in place (walk loop).
     if (this.animState !== "walk") { this.animState = "walk"; this.animFrame = 0; this.animTimer = 0; }
     this.advanceFrames(dt);
+  }
+
+  // Pronggeist brain. SHUFFLE into a mid-range standoff (with a perpendicular
+  // wobble so it never runs on rails), then PLANT and LOCK a thin spike line at
+  // the witch's CURRENT spot. The locked line does NOT track — stepping out of the
+  // narrow corridor before it erupts is the whole dodge. It freezes a single walk
+  // frame while planted (no attack strip by design). The spike line is a rotated-
+  // rect HazardZone (skin "spikes"): game.js updates/draws/collides it for free.
+  updatePronggeist(dt, player, len, hazards) {
+    const lc = this.def.lineCaster;
+    const dx = player.x - this.x, dy = player.y - this.y;
+    this.ppTimer -= dt;
+
+    if (this.ppPhase === "shuffle") {
+      // Ease toward a comfortable casting distance: close in if far, back off if
+      // crowded, hold otherwise — plus a sideways drift so firing angles vary.
+      let mx = 0, my = 0;
+      if (len > lc.castRange * 0.7)        { mx = dx / len;  my = dy / len; }  // too far
+      else if (len < lc.castRange * 0.35)  { mx = -dx / len; my = -dy / len; } // too close
+      const strafe = Math.sin(this.wobble * 0.6) * 0.6;
+      mx += (-dy / len) * strafe;
+      my += (dx / len) * strafe;
+      const mlen = Math.hypot(mx, my);
+      if (mlen > 1) { mx /= mlen; my /= mlen; }
+      this.x += mx * this.speed * dt;
+      this.y += my * this.speed * dt;
+
+      this.facing = dirFromVector(dx, dy); // faces the witch while repositioning
+      if (this.animState !== "walk") { this.animState = "walk"; this.animFrame = 0; this.animTimer = 0; }
+      this.advanceFrames(dt);
+
+      // Shuffle window up: plant + cast if she's in range; otherwise reset the
+      // window so it keeps closing the gap instead of casting at empty floor.
+      if (this.ppTimer <= 0) {
+        if (len <= lc.castRange && hazards) {
+          // LOCK the aim NOW. Center the rect half a line-length along the aim so
+          // the corridor STARTS at the fork and reaches out to the locked spot.
+          const ang = Math.atan2(dy, dx);
+          // The corridor reaches from the fork to just PAST the locked spot, so a
+          // cast always threatens where she stood (clamped: point-blank still shows
+          // a lane; max-range isn't absurdly long). Centered half a reach along it.
+          const reach = clamp(len + lc.lineOvershoot, lc.lineMin, lc.lineMax);
+          const cx = this.x + Math.cos(ang) * (reach / 2);
+          const cy = this.y + Math.sin(ang) * (reach / 2);
+          hazards.push(new HazardZone(cx, cy, 0, lc.telegraph, lc.damage, {
+            shape: "rect", angle: ang, length: reach, width: lc.lineWidth,
+            skin: "spikes", sfx: lc.spikesSfx, knockback: 0, // no shove — avoids cheap stun-locks
+          }));
+          this.facing = dirFromVector(Math.cos(ang), Math.sin(ang)); // face the cast
+          this.ppPhase = "cast";
+          this.ppTimer = lc.castWait;     // stay planted through telegraph + eruption + recovery
+          this.animState = "walk";
+          this.animFrame = lc.castFrame;  // freeze a "planted" frame (no attack anim)
+          this.animTimer = 0;
+        } else {
+          this.ppTimer = lc.shuffleTime;  // out of range — shuffle again toward her
+        }
+      }
+    } else {
+      // CAST: planted + frozen. The HazardZone owns the telegraph -> eruption ->
+      // fade; the fork just holds its locked frame until recovery elapses.
+      this.animState = "walk";
+      this.animFrame = lc.castFrame;
+      if (this.ppTimer <= 0) {
+        this.ppPhase = "shuffle";
+        this.ppTimer = lc.shuffleTime;
+      }
+    }
   }
 
   // Step the current animation. Both anims loop; the non-looping branch is
@@ -1246,6 +1428,9 @@ const MAGE_MAX_ALIVE = 2;         // never more than this many alive at once (zo
 const GOBLIN_INTRO_WAVE = 6;      // Goblin Bonkers join the spawn mix from this wave on
 const GOBLIN_SPAWN_CHANCE = 0.15; // chance each eligible slot rolls a Goblin
 const GOBLIN_MAX_ALIVE = 2;       // never more than this many alive (displacement is oppressive in bulk)
+const PRONG_INTRO_WAVE = 7;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
+const PRONG_SPAWN_CHANCE = 0.13;  // chance each eligible slot rolls a Pronggeist
+const PRONG_MAX_ALIVE = 2;        // never more than this many alive (line-zoning is oppressive in bulk)
 
 // ===========================================================================
 //  WATCHING HAND — second boss (Phase 1: skeleton).
@@ -1930,8 +2115,8 @@ export class HiveWarden {
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
 // random rotation — no back-to-back repeats; order varies each run).
-const DEBUG_FORCE_BOSS = true;
-const DEBUG_BOSS_TYPE = "elder_wisp"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden"
+const DEBUG_FORCE_BOSS = false;
+const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
 // shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).
@@ -2067,18 +2252,23 @@ export class WaveManager {
   // GECKO_INTRO_WAVE, at GECKO_SPAWN_CHANCE per slot, capped at
   // GECKO_MAX_ALIVE simultaneously. Everything else is a wisp.
   rollEnemyType(enemies) {
-    let geckosAlive = 0, magesAlive = 0, goblinsAlive = 0;
+    let geckosAlive = 0, magesAlive = 0, goblinsAlive = 0, prongAlive = 0;
     for (const e of enemies) {
       if (e.dead) continue;
       if (e.type === "gutter_gecko") geckosAlive += 1;
       else if (e.type === "bone_mage") magesAlive += 1;
       else if (e.type === "goblin_bonker") goblinsAlive += 1;
+      else if (e.type === "pronggeist") prongAlive += 1;
     }
     // Bone Mage rolls first (rarer + capped) so its zoning pressure isn't
     // crowded out by the more common gecko roll.
     if (this.wave >= MAGE_INTRO_WAVE && magesAlive < MAGE_MAX_ALIVE &&
         Math.random() < MAGE_SPAWN_CHANCE) {
       return "bone_mage";
+    }
+    if (this.wave >= PRONG_INTRO_WAVE && prongAlive < PRONG_MAX_ALIVE &&
+        Math.random() < PRONG_SPAWN_CHANCE) {
+      return "pronggeist";
     }
     if (this.wave >= GOBLIN_INTRO_WAVE && goblinsAlive < GOBLIN_MAX_ALIVE &&
         Math.random() < GOBLIN_SPAWN_CHANCE) {
