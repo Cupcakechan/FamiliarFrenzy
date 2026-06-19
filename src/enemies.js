@@ -140,7 +140,7 @@ const ENEMY_TYPES = {
     spritePrefix: "pronggeist",
     spriteScale: 0.8,         // tune independently once the art is in (visual only)
     speedMult: 0.95,          // shuffles at a modest pace — it fights by trapping, not chasing
-    healthMult: 2.5,          // tanky enough to land several casts before it falls (still < the Goblin's 3.0)
+    healthMult: 2.0,          // tanky enough to land several casts before it falls (still < the Goblin's 3.0)
     damage: 8,                // contact damage if you crowd it (the spike line is the real threat)
     fallbackOuter: "#f1c359", // fork gold (matches the spikes)
     fallbackInner: "#8a6b1f",

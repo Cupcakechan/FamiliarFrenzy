@@ -336,19 +336,33 @@ function drawVolumeSlider(ctx, w, label, value, sy, selected) {
   text(ctx, `${Math.round(value)}%`, w / 2, sy + 32, { size: 18, color: selected ? GOLD : DIM });
 }
 
-export function drawSettings(ctx, w, h, musicVolume, sfxVolume, selectedIndex = 0) {
+// One labeled On/Off accessibility row. The active side is emphasized; the layout
+// mirrors the slider's label-above style so the two row types sit consistently.
+function drawToggleRow(ctx, w, label, isOn, sy, selected) {
+  text(ctx, label, w / 2, sy - 14, { size: 22, color: selected ? GOLD : CREAM, weight: "500" });
+  const offColor = !isOn ? (selected ? GOLD : CREAM) : DIM;
+  const onColor  =  isOn ? (selected ? GOLD : CREAM) : DIM;
+  text(ctx, "Off", w / 2 - 36, sy + 16, { size: 20, color: offColor, weight: !isOn ? "700" : "500" });
+  text(ctx, "/",   w / 2,      sy + 16, { size: 20, color: DIM });
+  text(ctx, "On",  w / 2 + 36, sy + 16, { size: 20, color: onColor,  weight:  isOn ? "700" : "500" });
+}
+
+export function drawSettings(ctx, w, h, musicVolume, sfxVolume, reducedFlash, highVisWarnings, selectedIndex = 0) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "SETTINGS", w / 2, h * 0.20, { size: 48, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  text(ctx, "SETTINGS", w / 2, h * 0.16, { size: 48, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
-  drawVolumeSlider(ctx, w, "Music Volume", musicVolume, h * 0.42, selectedIndex === 0);
-  drawVolumeSlider(ctx, w, "SFX Volume", sfxVolume, h * 0.62, selectedIndex === 1);
+  // Four rows: two volume sliders, then two accessibility toggles. Spaced to sit
+  // comfortably at 540px without crowding the footer (no other UI is resized).
+  drawVolumeSlider(ctx, w, "Music Volume", musicVolume, h * 0.34, selectedIndex === 0);
+  drawVolumeSlider(ctx, w, "SFX Volume",   sfxVolume,   h * 0.52, selectedIndex === 1);
+  drawToggleRow(ctx, w, "Reduced Flash Effects",    reducedFlash,    h * 0.70, selectedIndex === 2);
+  drawToggleRow(ctx, w, "High Visibility Warnings", highVisWarnings, h * 0.81, selectedIndex === 3);
 
-  text(ctx, "Up / Down: select      Left / Right: adjust", w / 2, h - 80, { size: 16, color: DIM, weight: "500" });
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, "Esc / Backspace: back", w / 2, h - 50, { size: 16, color: PURPLE, weight: "500" });
+  text(ctx, "Up / Down: select    Left / Right: change    Esc: back", w / 2, h - 40, { size: 16, color: PURPLE, weight: "500" });
   ctx.globalAlpha = 1;
 }
 
