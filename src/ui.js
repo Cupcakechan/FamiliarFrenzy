@@ -449,6 +449,9 @@ function drawScrollbar(ctx, x, top, viewH, scroll, maxScroll, contentH) {
   ctx.fillStyle = "rgba(244, 213, 141, 0.55)";
   roundRect(ctx, x, thumbY, barW, thumbH, 3);
   ctx.fill();
+
+  // Geometry the handler needs for drag hit-testing + mapping cursor → scroll.
+  return { x, top, viewH, thumbY, thumbH, maxScroll };
 }
 
 export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeCount, scrollIn = 0, followSel = true) {
@@ -613,10 +616,10 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
   ctx.restore();
 
   // Scrollbar: slim right-side track + thumb, shown only when the list overflows.
-  // A position/affordance cue — the mouse wheel does the actual scrolling.
-  if (maxScroll > 0) drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH);
+  // Drag the thumb (or click the track) to scroll; the wheel also works.
+  const scrollbar = maxScroll > 0 ? drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH) : null;
 
-  return { zones, scroll, maxScroll }; // game.js stores scroll + hit-tests rows
+  return { zones, scroll, maxScroll, scrollbar }; // game.js stores scroll + scrollbar geometry
 }
 
 // --- BESTIARY -------------------------------------------------------------
@@ -721,10 +724,10 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex, scrollIn = 0, fo
   ctx.restore();
 
   // Scrollbar: slim right-side track + thumb, shown only when the list overflows.
-  // A position/affordance cue — the mouse wheel does the actual scrolling.
-  if (maxScroll > 0) drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH);
+  // Drag the thumb (or click the track) to scroll; the wheel also works.
+  const scrollbar = maxScroll > 0 ? drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH) : null;
 
-  return { zones, scroll, maxScroll }; // game.js stores scroll + hit-tests rows
+  return { zones, scroll, maxScroll, scrollbar }; // game.js stores scroll + scrollbar geometry
 }
 
 // Shared creature portrait: lit box + sprite (or silhouette if unseen, or "?" if

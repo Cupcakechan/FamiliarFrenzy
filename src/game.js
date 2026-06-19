@@ -318,9 +318,15 @@ export class Game {
     this.grimoireScroll = 0;
     this.grimoireMaxScroll = 0;
     this.grimoireFollowSel = true;
+    this.grimoireScrollbar = null;        // {x, top, viewH, thumbY, thumbH, maxScroll} from last render, or null
+    this.grimoireScrollDragging = false;  // dragging the scrollbar thumb?
+    this.grimoireDragOffset = 0;          // cursor offset within the thumb at grab time
     this.bestiaryScroll = 0;
     this.bestiaryMaxScroll = 0;
     this.bestiaryFollowSel = true;
+    this.bestiaryScrollbar = null;
+    this.bestiaryScrollDragging = false;
+    this.bestiaryDragOffset = 0;
 
     this.player = new Player(WORLD_W / 2, WORLD_H / 2);
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
@@ -849,6 +855,7 @@ export class Game {
     this.grimoireIndex = 0;
     this.grimoireScroll = 0;
     this.grimoireFollowSel = true; // start pinned to the top entry
+    this.grimoireScrollDragging = false;
     this.state = STATE.GRIMOIRE;
   }
 
@@ -904,6 +911,7 @@ export class Game {
     this.bestiaryIndex = 0;
     this.bestiaryScroll = 0;
     this.bestiaryFollowSel = true; // start pinned to the top entry
+    this.bestiaryScrollDragging = false;
     this.state = STATE.BESTIARY;
   }
 
@@ -945,6 +953,29 @@ export class Game {
     const count = BESTIARY.length + 1; // entries + Back
     const backIndex = BESTIARY.length;
 
+    // --- Scrollbar drag (mouse). Grab the thumb to scrub; click the track to
+    // jump. Wins over entry-clicks within its band (consumedClick). ---
+    let consumedClick = false;
+    const sb = this.bestiaryScrollbar;
+    if (sb) {
+      const mx = Input.mouseX(), my = Input.mouseY();
+      const onBar = mx >= sb.x - 2 && mx <= sb.x + 18 && my >= sb.top && my <= sb.top + sb.viewH;
+      if (Input.mouseClicked() && onBar) {
+        const onThumb = my >= sb.thumbY && my <= sb.thumbY + sb.thumbH;
+        this.bestiaryDragOffset = onThumb ? my - sb.thumbY : sb.thumbH / 2;
+        this.bestiaryScrollDragging = true;
+        this.bestiaryFollowSel = false;
+        consumedClick = true;
+      }
+      if (this.bestiaryScrollDragging && Input.mouseHeld()) {
+        const travel = sb.viewH - sb.thumbH;
+        const frac = travel > 0 ? Math.max(0, Math.min(1, (my - this.bestiaryDragOffset - sb.top) / travel)) : 0;
+        this.bestiaryScroll = frac * sb.maxScroll;
+        this.bestiaryFollowSel = false;
+      }
+    }
+    if (!Input.mouseHeld()) this.bestiaryScrollDragging = false;
+
     // Mouse wheel scrolls freely (drops follow-selection). Clamped to last max.
     const wheel = Input.wheelDelta();
     if (wheel !== 0) {
@@ -952,9 +983,9 @@ export class Game {
       this.bestiaryFollowSel = false;
     }
 
-    // Click selects a creature (expanding it) or activates Back, re-centring on
-    // it. No hover-select (same reason as the Grimoire — the open row expands).
-    const click = Input.mouseClicked() ? this.zoneAt(this.menuZones) : -1;
+    // Click a creature (expanding it) or Back, re-centring on it. Skipped if the
+    // click hit the scrollbar. No hover-select (the open row expands inline).
+    const click = (!consumedClick && Input.mouseClicked()) ? this.zoneAt(this.menuZones) : -1;
     if (click >= 0) {
       if (click === backIndex) { this.closeBestiary(); return; }
       this.bestiaryIndex = click;
@@ -991,18 +1022,42 @@ export class Game {
     const count = entries.length + 1; // entries + Back
     const backIndex = entries.length;
 
-    // Mouse wheel scrolls the list freely (drops follow-selection so the view
-    // stays where you put it). Clamped against last frame's max.
+    // --- Scrollbar drag (mouse). Grab the thumb to scrub; click the track to
+    // jump. Wins over entry-clicks within its band (consumedClick). ---
+    let consumedClick = false;
+    const sb = this.grimoireScrollbar;
+    if (sb) {
+      const mx = Input.mouseX(), my = Input.mouseY();
+      // Generous grab band, kept right of the entry rows so the two don't fight.
+      const onBar = mx >= sb.x - 2 && mx <= sb.x + 18 && my >= sb.top && my <= sb.top + sb.viewH;
+      if (Input.mouseClicked() && onBar) {
+        // Grabbing the thumb keeps the grab point under the cursor; clicking the
+        // bare track centres the thumb on the cursor instead.
+        const onThumb = my >= sb.thumbY && my <= sb.thumbY + sb.thumbH;
+        this.grimoireDragOffset = onThumb ? my - sb.thumbY : sb.thumbH / 2;
+        this.grimoireScrollDragging = true;
+        this.grimoireFollowSel = false;
+        consumedClick = true;
+      }
+      if (this.grimoireScrollDragging && Input.mouseHeld()) {
+        const travel = sb.viewH - sb.thumbH;
+        const frac = travel > 0 ? Math.max(0, Math.min(1, (my - this.grimoireDragOffset - sb.top) / travel)) : 0;
+        this.grimoireScroll = frac * sb.maxScroll;
+        this.grimoireFollowSel = false;
+      }
+    }
+    if (!Input.mouseHeld()) this.grimoireScrollDragging = false;
+
+    // Mouse wheel scrolls freely (drops follow-selection). Clamped to last max.
     const wheel = Input.wheelDelta();
     if (wheel !== 0) {
       this.grimoireScroll = Math.max(0, Math.min(this.grimoireMaxScroll, this.grimoireScroll + wheel));
       this.grimoireFollowSel = false;
     }
 
-    // Click selects an entry (which expands it) or activates Back, and re-centres
-    // the view on it. No hover-select: the open row expands inline, so hover-to-
-    // select would make rows jump under the cursor.
-    const click = Input.mouseClicked() ? this.zoneAt(this.menuZones) : -1;
+    // Click an entry (which expands it) or Back, re-centring on it. Skipped if the
+    // click landed on the scrollbar. No hover-select (the open row expands inline).
+    const click = (!consumedClick && Input.mouseClicked()) ? this.zoneAt(this.menuZones) : -1;
     if (click >= 0) {
       if (click === backIndex) { this.closeGrimoire(); return; }
       this.grimoireIndex = click;
@@ -1609,6 +1664,7 @@ export class Game {
       this.menuZones = bz.zones;
       this.bestiaryScroll = bz.scroll;
       this.bestiaryMaxScroll = bz.maxScroll;
+      this.bestiaryScrollbar = bz.scrollbar;
       return;
     }
 
@@ -1624,6 +1680,7 @@ export class Game {
       this.menuZones = gz.zones;
       this.grimoireScroll = gz.scroll;
       this.grimoireMaxScroll = gz.maxScroll;
+      this.grimoireScrollbar = gz.scrollbar;
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {
