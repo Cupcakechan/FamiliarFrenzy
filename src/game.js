@@ -1453,6 +1453,13 @@ export class Game {
   render(ctx) {
     ctx.clearRect(0, 0, this.width, this.height);
 
+    // Hide the OS cursor during active play (the mouse is unused then — movement
+    // is WASD/arrows); restore the themed sprite cursor everywhere else, including
+    // the level-up overlay (clickable cards), pause, and the menus. "" reverts to
+    // the #game-canvas CSS rule; "none" overrides it.
+    ctx.canvas.style.cursor =
+      (this.state === STATE.PLAYING || this.state === STATE.DYING) ? "none" : "";
+
     if (this.state === STATE.MAIN_MENU) {
       this.menuZones = drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
         ["Enter: select"], { bg: true, title: true });
