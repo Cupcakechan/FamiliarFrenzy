@@ -783,8 +783,11 @@ export class Enemy {
     const c = this.def.caster;
 
     if (this.blinkCooldown > 0) this.blinkCooldown -= dt;
-    // Emergency reposition: the witch crowded it (gated so it can't spam-blink).
+    // Reposition (gated by the blink cooldown so it can't spam-blink): shove off if
+    // the witch crowds it, or phase-step TOWARD her if she's beyond cast range so it
+    // doesn't sit idle out of range. blink() reads the distance to pick the direction.
     if (len < c.blinkRange && this.blinkCooldown <= 0) this.blink(player, c);
+    else if (len > c.fireRange && this.blinkCooldown <= 0) this.blink(player, c);
 
     // Curse the witch's CURRENT spot on cooldown, then blink off its own rune so
     // casts come from varied angles and it never gets pinned.
@@ -804,11 +807,19 @@ export class Enemy {
     this.blinkFx = this.blinkFx.filter((f) => f.t > 0);
   }
 
-  // Phase-step: vanish (poof at the old spot) and reappear a fixed distance
-  // away, biased AWAY from the witch and clamped to the floor.
+  // Phase-step: vanish (poof at the old spot) and reappear a fixed distance away,
+  // clamped to the floor. Direction depends on spacing: it closes the gap when the
+  // witch is beyond cast range (so it stops stranding itself idle), shoves off when
+  // she crowds it, and otherwise drifts off its own rune for varied cast angles.
+  // Same fixed step distance either way — it phase-steps, it never walk-chases.
   blink(player, c) {
-    const away = Math.atan2(this.y - player.y, this.x - player.x);
-    const ang = away + randomRange(-0.8, 0.8);
+    const dx = player.x - this.x;
+    const dy = player.y - this.y;
+    const len = Math.hypot(dx, dy) || 1; // guard a zero-length overlap
+    const toward = Math.atan2(dy, dx);
+    // toward when too far to cast; otherwise away (toward + PI == the old behavior).
+    const base = len > c.fireRange ? toward : toward + Math.PI;
+    const ang = base + randomRange(-0.8, 0.8);
     const dest = clampToPlayfield(
       this.x + Math.cos(ang) * c.blinkDist,
       this.y + Math.sin(ang) * c.blinkDist,
@@ -1438,7 +1449,7 @@ const MAGE_MAX_ALIVE = 2;         // never more than this many alive at once (zo
 const GOBLIN_INTRO_WAVE = 6;      // Goblin Bonkers join the spawn mix from this wave on
 const GOBLIN_SPAWN_CHANCE = 0.15; // chance each eligible slot rolls a Goblin
 const GOBLIN_MAX_ALIVE = 2;       // never more than this many alive (displacement is oppressive in bulk)
-const PRONG_INTRO_WAVE = 1;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
+const PRONG_INTRO_WAVE = 7;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
 const PRONG_SPAWN_CHANCE = 0.18;  // chance each eligible slot rolls a Pronggeist (bumped 0.13 -> 0.18)
 const PRONG_MAX_ALIVE = 2;        // never more than this many alive (line-zoning is oppressive in bulk)
 
