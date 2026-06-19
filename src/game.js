@@ -26,6 +26,7 @@ import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./util
 import { loadImage, getImage } from "./assets.js";
 import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
+import { getReducedFlash, setReducedFlash, getHighVisWarnings, setHighVisWarnings } from "./settings.js";
 
 // Arena tileset (4x4 grid of 32px tiles: wall frame + detailed floor).
 const TILE = 32;
@@ -527,21 +528,27 @@ export class Game {
         break;
 
       case STATE.SETTINGS_PLACEHOLDER:
-        // Two rows: 0 = Music Volume, 1 = SFX Volume. Up/Down selects,
-        // Left/Right adjusts. SFX adjustments blip so the level is audible.
+        // Four rows: 0 = Music Volume, 1 = SFX Volume, 2 = Reduced Flash Effects,
+        // 3 = High Visibility Warnings. Up/Down selects; Left/Right adjusts a slider
+        // or flips a toggle (Left = Off, Right = On). Only the SFX slider blips (to
+        // preview its level); Music and the toggles are silent — the visuals are the cue.
         if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
-          this.settingsIndex = (this.settingsIndex + 1) % 2;
+          this.settingsIndex = (this.settingsIndex + 3) % 4; // -1, wrapped
         }
         if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
-          this.settingsIndex = (this.settingsIndex + 1) % 2;
+          this.settingsIndex = (this.settingsIndex + 1) % 4;
         }
         if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA")) {
           if (this.settingsIndex === 0) setMusicVolume(getMusicVolume() - 5);
-          else { setSfxVolume(getSfxVolume() - 5); playSfx("hint"); }
+          else if (this.settingsIndex === 1) { setSfxVolume(getSfxVolume() - 5); playSfx("hint"); }
+          else if (this.settingsIndex === 2) setReducedFlash(false);
+          else setHighVisWarnings(false);
         }
         if (Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
           if (this.settingsIndex === 0) setMusicVolume(getMusicVolume() + 5);
-          else { setSfxVolume(getSfxVolume() + 5); playSfx("hint"); }
+          else if (this.settingsIndex === 1) { setSfxVolume(getSfxVolume() + 5); playSfx("hint"); }
+          else if (this.settingsIndex === 2) setReducedFlash(true);
+          else setHighVisWarnings(true);
         }
         if (this.backPressed()) {
           this.state = this.settingsReturn || STATE.MAIN_MENU;
@@ -1422,7 +1429,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.SETTINGS_PLACEHOLDER) {
-      drawSettings(ctx, this.width, this.height, getMusicVolume(), getSfxVolume(), this.settingsIndex);
+      drawSettings(ctx, this.width, this.height, getMusicVolume(), getSfxVolume(), getReducedFlash(), getHighVisWarnings(), this.settingsIndex);
       return;
     }
     if (this.state === STATE.CONFIRM_QUIT) {
@@ -1471,7 +1478,9 @@ export class Game {
 
       case STATE.LEVEL_UP:
         drawHUD(ctx, this.width, this.height, this.hudState());
-        drawUpgradeScreen(ctx, this.width, this.height, this.offers, this.levelFlash / LEVEL_FLASH_TIME);
+        // Reduced Flash dims the celebratory bloom + title pop (the base title is
+        // always drawn at full size, so the upgrade screen stays readable).
+        drawUpgradeScreen(ctx, this.width, this.height, this.offers, (this.levelFlash / LEVEL_FLASH_TIME) * (getReducedFlash() ? 0.35 : 1));
         break;
 
       case STATE.PAUSED:
