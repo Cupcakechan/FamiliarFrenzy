@@ -72,8 +72,10 @@ body {
   background: #000;
   border-radius: 2px;
 
-  /* Mouse is now supported in the menus, so the cursor stays visible. */
-  cursor: default;
+  /* Mouse is now supported in the menus. Themed sprite cursor, with the system
+     arrow as a fallback (shown if the PNG is ever missing). "0 0" is the hotspot
+     — the active pixel; change it if your art's point isn't the top-left. */
+  cursor: url("assets/sprites/ui/cursor.png") 0 0, default;
 
   /* CRISP PIXEL ART:
      Tells the browser NOT to blur the canvas when it is scaled.

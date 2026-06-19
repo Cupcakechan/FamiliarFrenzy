@@ -261,7 +261,7 @@ const GECKO_ATTACK_POSE_SECONDS = ENEMY_ANIMS.gecko.anims.attack / ENEMY_ANIMS.g
 
 // --- Bone Mage timing / phase-step tuning (all visual-adjacent, tunable) ----
 const MAGE_ATTACK_POSE_SECONDS = ENEMY_ANIMS.bone_mage.anims.attack / ENEMY_ANIMS.bone_mage.fps.attack;
-const MAGE_BLINK_COOLDOWN = 1.5; // min seconds between "you crowded me" blinks
+const MAGE_BLINK_COOLDOWN = 2.5; // min seconds between phase-steps (any blink); higher = it flees less often, so ground DoT like the flask puddle can actually tick (was 1.5)
 const BLINK_FX_LIFE = 0.35;      // phase-step poof ring fade duration (seconds)
 
 // --- Goblin Bonker tuning ----
@@ -1443,7 +1443,7 @@ const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 const GECKO_INTRO_WAVE = 5;       // geckos join the spawn mix from this wave on
 const GECKO_SPAWN_CHANCE = 0.25;  // chance each spawn slot rolls a gecko
 const GECKO_MAX_ALIVE = 3;        // never more than this many alive at once
-const MAGE_INTRO_WAVE = 1;        // Bone Mages join the spawn mix from this wave on
+const MAGE_INTRO_WAVE = 8;        // Bone Mages join the spawn mix from this wave on
 const MAGE_SPAWN_CHANCE = 0.12;   // chance each eligible slot rolls a Bone Mage
 const MAGE_MAX_ALIVE = 2;         // never more than this many alive at once (zoning is oppressive in bulk)
 const GOBLIN_INTRO_WAVE = 6;      // Goblin Bonkers join the spawn mix from this wave on
