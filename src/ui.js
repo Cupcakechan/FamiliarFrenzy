@@ -498,6 +498,8 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
   if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
   scroll = Math.max(0, Math.min(maxScroll, scroll));
 
+  const zones = []; // clickable rect per entry/Back row (mouse hit-testing in game.js)
+
   // --- Draw, clipped to the viewport. ---
   ctx.save();
   ctx.beginPath();
@@ -507,6 +509,13 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
   for (const r of rows) {
     const ry = viewTop + r.y - scroll;
     if (ry + r.height < viewTop || ry > viewBottom) continue; // cull offscreen rows
+
+    // Clickable rect for entry/Back rows (headers aren't selectable), clamped to the viewport.
+    if (r.kind !== "header") {
+      const zy = Math.max(viewTop, ry);
+      const zBottom = Math.min(viewBottom, ry + r.height);
+      if (zBottom > zy) zones.push({ x: leftX - 16, y: Math.round(zy), w: rightX - leftX + 32, h: Math.round(zBottom - zy), index: r.kind === "back" ? backIndex : r.ei });
+    }
 
     if (r.kind === "header") {
       text(ctx, r.label, leftX, ry + r.height - 12, { size: 14, color: DIM, align: "left", weight: "700" });
@@ -568,7 +577,7 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
   if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
   if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
 
-  // Footer hint omitted for now (Esc or Backspace still returns); revisit with mouse support.
+  return zones; // game.js hit-tests these (Grimoire rows)
 }
 
 // --- BESTIARY -------------------------------------------------------------
@@ -631,6 +640,8 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
   scroll = Math.max(0, Math.min(maxScroll, scroll));
 
+  const zones = []; // clickable rect per entry/Back row (mouse hit-testing in game.js)
+
   // --- Draw the rows, clipped to the viewport. ---
   ctx.save();
   ctx.beginPath();
@@ -640,6 +651,13 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   for (const r of rows) {
     const ry = viewTop + r.y - scroll;
     if (ry + r.height < viewTop || ry > viewBottom) continue; // cull offscreen rows
+
+    // Clickable rect for every visible row (entries + Back), clamped to the viewport.
+    {
+      const zy = Math.max(viewTop, ry);
+      const zBottom = Math.min(viewBottom, ry + r.height);
+      if (zBottom > zy) zones.push({ x: leftX - 16, y: Math.round(zy), w: rightX - leftX + 32, h: Math.round(zBottom - zy), index: r.i });
+    }
 
     if (r.kind === "back") {
       const sel = selectedIndex === backIndex;
@@ -661,7 +679,7 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
   if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
 
-  // Footer hint omitted for now (Esc or Backspace still returns); revisit with mouse support.
+  return zones; // game.js hit-tests these (Bestiary rows)
 }
 
 // Shared creature portrait: lit box + sprite (or silhouette if unseen, or "?" if
@@ -1178,9 +1196,12 @@ export function drawConfirmQuit(ctx, w, h, items, selectedIndex) {
   text(ctx, "Return to Main Menu?", w / 2, h / 2 - 70, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   text(ctx, "Current run will be lost.", w / 2, h / 2 - 28, { size: 18, color: CREAM, weight: "500" });
 
+  const zones = []; // clickable rect per item (mouse hit-testing in game.js)
+  const bw = 300, bh = 38;
   items.forEach((item, i) => {
     const selected = i === selectedIndex;
     const y = h / 2 + 24 + i * 44;
+    zones.push({ x: Math.round(w / 2 - bw / 2), y: Math.round(y - bh / 2), w: bw, h: bh, index: i });
     text(ctx, `${selected ? "> " : "  "}${item}`, w / 2, y, {
       size: 26,
       color: selected ? GOLD : CREAM,
@@ -1189,6 +1210,7 @@ export function drawConfirmQuit(ctx, w, h, items, selectedIndex) {
   });
 
   text(ctx, "Esc / Backspace: cancel", w / 2, h - 28, { size: 15, color: DIM, weight: "500" });
+  return zones; // game.js hit-tests these for confirm-quit clicks/hover
 }
 
 // --- VICTORY --------------------------------------------------------------

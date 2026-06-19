@@ -619,9 +619,12 @@ export class Game {
         break;
       }
 
-      case STATE.CONFIRM_QUIT:
+      case STATE.CONFIRM_QUIT: {
+        const m = this.mouseMenu(this.menuZones);
+        if (m.hover >= 0) this.menuIndex = m.hover;
         this.navMenu(CONFIRM_ITEMS.length);
-        if (this.confirmPressed()) {
+        if (m.clicked >= 0) this.menuIndex = m.clicked;
+        if (this.confirmPressed() || m.clicked >= 0) {
           if (this.menuIndex === 0) {                   // Yes → end run, main menu
             this.state = STATE.MAIN_MENU;
             this.menuIndex = 0;
@@ -634,6 +637,7 @@ export class Game {
           this.menuIndex = 0;
         }
         break;
+      }
 
       case STATE.LEVEL_UP:
         if (this.levelFlash > 0) this.levelFlash = Math.max(0, this.levelFlash - dt);
@@ -878,6 +882,16 @@ export class Game {
 
   updateBestiary() {
     const count = BESTIARY.length + 1; // entries + Back
+    const backIndex = BESTIARY.length;
+
+    // Click selects a creature (expanding it) or activates Back. No hover-select
+    // (same reason as the Grimoire — the open row expands inline). Arrows still work.
+    const click = Input.mouseClicked() ? this.zoneAt(this.menuZones) : -1;
+    if (click >= 0) {
+      if (click === backIndex) { this.closeBestiary(); return; }
+      this.bestiaryIndex = click;
+    }
+
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.bestiaryIndex = (this.bestiaryIndex - 1 + count) % count;
     }
@@ -905,6 +919,15 @@ export class Game {
     const { entries } = this.grimoireList();
     const count = entries.length + 1; // entries + Back
     const backIndex = entries.length;
+
+    // Click selects an entry (which expands it) or activates Back. No hover-
+    // select here: the selected entry expands inline, so hover-to-select would
+    // make rows jump under the cursor. Keyboard arrows still navigate.
+    const click = Input.mouseClicked() ? this.zoneAt(this.menuZones) : -1;
+    if (click >= 0) {
+      if (click === backIndex) { this.closeGrimoire(); return; }
+      this.grimoireIndex = click;
+    }
 
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.grimoireIndex = (this.grimoireIndex - 1 + count) % count;
@@ -1499,7 +1522,7 @@ export class Game {
         seen: this.hasSeen(b.id),
         img: getImage(b.spriteKey),
       }));
-      drawBestiary(ctx, this.width, this.height, entries, this.bestiaryIndex);
+      this.menuZones = drawBestiary(ctx, this.width, this.height, entries, this.bestiaryIndex);
       return;
     }
 
@@ -1511,7 +1534,7 @@ export class Game {
     if (this.state === STATE.GRIMOIRE) {
       const levels = this.grimoireReturn === STATE.PAUSED ? this.upgradeLevels : null;
       const { entries, upgradeCount } = this.grimoireList();
-      drawGrimoire(ctx, this.width, this.height, entries, this.grimoireIndex, levels, upgradeCount);
+      this.menuZones = drawGrimoire(ctx, this.width, this.height, entries, this.grimoireIndex, levels, upgradeCount);
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {
@@ -1527,7 +1550,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.CONFIRM_QUIT) {
-      drawConfirmQuit(ctx, this.width, this.height, CONFIRM_ITEMS, this.menuIndex);
+      this.menuZones = drawConfirmQuit(ctx, this.width, this.height, CONFIRM_ITEMS, this.menuIndex);
       return;
     }
 
