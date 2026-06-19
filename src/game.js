@@ -179,7 +179,7 @@ const OUTFITS = {
   blue:    { name: "Sage's Weave",    cost: 3, swatch: "#5aa0e0", spritePrefix: "witch_blue", desc: "EXP gain +5%",      buff: { expMult: 1.05 } },
   gold:    { name: "Gilded Mantle",   cost: 6, swatch: "#f4d58d", spritePrefix: "witch_gold", desc: "Score gain +5%",    buff: { scoreMult: 1.05 } },
 };
-const OUTFIT_ORDER = ["default", "red", "blue", "gold"]; // Closet display order
+const OUTFIT_ORDER = ["default", "blue", "gold", "red"]; // Closet display order (by price; Emberheart last)
 
 // --- Collars (Closet) -----------------------------------------------------
 // A collar swaps the familiar's whole attack style (see familiar.js). Default
