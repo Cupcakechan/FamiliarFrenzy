@@ -309,6 +309,17 @@ export class Game {
     this.grimoireEntries = [];             // cached list while the screen is open
     this.grimoireIndex = 0;                // highlighted entry (Back = entries.length)
 
+    // Scroll state for the Grimoire/Bestiary list panels. `*Scroll` is the pixel
+    // offset; `*FollowSel` means "keep the highlighted row in view" (keyboard /
+    // open / click) versus free wheel-scroll. `*MaxScroll` is fed back from the
+    // renderer each frame so the handler can clamp the wheel.
+    this.grimoireScroll = 0;
+    this.grimoireMaxScroll = 0;
+    this.grimoireFollowSel = true;
+    this.bestiaryScroll = 0;
+    this.bestiaryMaxScroll = 0;
+    this.bestiaryFollowSel = true;
+
     this.player = new Player(WORLD_W / 2, WORLD_H / 2);
     this.familiar = new Familiar(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
 
@@ -790,6 +801,8 @@ export class Game {
     this.grimoireReturn = returnState;
     this.grimoireEntries = getGrimoireEntries();
     this.grimoireIndex = 0;
+    this.grimoireScroll = 0;
+    this.grimoireFollowSel = true; // start pinned to the top entry
     this.state = STATE.GRIMOIRE;
   }
 
@@ -843,6 +856,8 @@ export class Game {
     this.loadSeenEnemies();
     this.bestiaryReturn = returnState || STATE.ARCHIVE;
     this.bestiaryIndex = 0;
+    this.bestiaryScroll = 0;
+    this.bestiaryFollowSel = true; // start pinned to the top entry
     this.state = STATE.BESTIARY;
   }
 
@@ -884,19 +899,29 @@ export class Game {
     const count = BESTIARY.length + 1; // entries + Back
     const backIndex = BESTIARY.length;
 
-    // Click selects a creature (expanding it) or activates Back. No hover-select
-    // (same reason as the Grimoire — the open row expands inline). Arrows still work.
+    // Mouse wheel scrolls freely (drops follow-selection). Clamped to last max.
+    const wheel = Input.wheelDelta();
+    if (wheel !== 0) {
+      this.bestiaryScroll = Math.max(0, Math.min(this.bestiaryMaxScroll, this.bestiaryScroll + wheel));
+      this.bestiaryFollowSel = false;
+    }
+
+    // Click selects a creature (expanding it) or activates Back, re-centring on
+    // it. No hover-select (same reason as the Grimoire — the open row expands).
     const click = Input.mouseClicked() ? this.zoneAt(this.menuZones) : -1;
     if (click >= 0) {
       if (click === backIndex) { this.closeBestiary(); return; }
       this.bestiaryIndex = click;
+      this.bestiaryFollowSel = true;
     }
 
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.bestiaryIndex = (this.bestiaryIndex - 1 + count) % count;
+      this.bestiaryFollowSel = true;
     }
     if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
       this.bestiaryIndex = (this.bestiaryIndex + 1) % count;
+      this.bestiaryFollowSel = true;
     }
     if (this.confirmPressed()) {
       if (this.bestiaryIndex === BESTIARY.length) this.closeBestiary(); // Back row
@@ -920,20 +945,32 @@ export class Game {
     const count = entries.length + 1; // entries + Back
     const backIndex = entries.length;
 
-    // Click selects an entry (which expands it) or activates Back. No hover-
-    // select here: the selected entry expands inline, so hover-to-select would
-    // make rows jump under the cursor. Keyboard arrows still navigate.
+    // Mouse wheel scrolls the list freely (drops follow-selection so the view
+    // stays where you put it). Clamped against last frame's max.
+    const wheel = Input.wheelDelta();
+    if (wheel !== 0) {
+      this.grimoireScroll = Math.max(0, Math.min(this.grimoireMaxScroll, this.grimoireScroll + wheel));
+      this.grimoireFollowSel = false;
+    }
+
+    // Click selects an entry (which expands it) or activates Back, and re-centres
+    // the view on it. No hover-select: the open row expands inline, so hover-to-
+    // select would make rows jump under the cursor.
     const click = Input.mouseClicked() ? this.zoneAt(this.menuZones) : -1;
     if (click >= 0) {
       if (click === backIndex) { this.closeGrimoire(); return; }
       this.grimoireIndex = click;
+      this.grimoireFollowSel = true;
     }
 
+    // Keyboard navigation moves the highlight and snaps the view to follow it.
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.grimoireIndex = (this.grimoireIndex - 1 + count) % count;
+      this.grimoireFollowSel = true;
     }
     if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
       this.grimoireIndex = (this.grimoireIndex + 1) % count;
+      this.grimoireFollowSel = true;
     }
     if (this.grimoireIndex >= count) this.grimoireIndex = count - 1;
 
@@ -1522,7 +1559,10 @@ export class Game {
         seen: this.hasSeen(b.id),
         img: getImage(b.spriteKey),
       }));
-      this.menuZones = drawBestiary(ctx, this.width, this.height, entries, this.bestiaryIndex);
+      const bz = drawBestiary(ctx, this.width, this.height, entries, this.bestiaryIndex, this.bestiaryScroll, this.bestiaryFollowSel);
+      this.menuZones = bz.zones;
+      this.bestiaryScroll = bz.scroll;
+      this.bestiaryMaxScroll = bz.maxScroll;
       return;
     }
 
@@ -1534,7 +1574,10 @@ export class Game {
     if (this.state === STATE.GRIMOIRE) {
       const levels = this.grimoireReturn === STATE.PAUSED ? this.upgradeLevels : null;
       const { entries, upgradeCount } = this.grimoireList();
-      this.menuZones = drawGrimoire(ctx, this.width, this.height, entries, this.grimoireIndex, levels, upgradeCount);
+      const gz = drawGrimoire(ctx, this.width, this.height, entries, this.grimoireIndex, levels, upgradeCount, this.grimoireScroll, this.grimoireFollowSel);
+      this.menuZones = gz.zones;
+      this.grimoireScroll = gz.scroll;
+      this.grimoireMaxScroll = gz.maxScroll;
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {

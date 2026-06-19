@@ -49,6 +49,7 @@ let mouseX = 0;
 let mouseY = 0;
 let movedThisFrame = false;   // pointer moved since the last endFrame()
 let clickedThisFrame = false; // left button went down since the last endFrame()
+let wheelAccum = 0;           // wheel delta accumulated since the last endFrame()
 
 function toCanvasCoords(clientX, clientY) {
   if (!mouseCanvas) return { x: 0, y: 0 };
@@ -73,6 +74,12 @@ if (mouseCanvas) {
     mouseY = p.y;
     clickedThisFrame = true;
   });
+  // Wheel — accumulated per frame for the scrollable list panels. preventDefault
+  // (needs passive:false) so the page itself doesn't scroll under the cursor.
+  mouseCanvas.addEventListener("wheel", (e) => {
+    wheelAccum += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
 }
 
 export const Input = {
@@ -94,6 +101,8 @@ export const Input = {
   mouseMoved() { return movedThisFrame; },
   // True only on the frame a left-click went down (cleared in endFrame()).
   mouseClicked() { return clickedThisFrame; },
+  // Wheel delta accumulated this frame (+down / -up); 0 if none. For scroll panels.
+  wheelDelta() { return wheelAccum; },
 
   // Returns a movement direction {x, y} from WASD + Arrow Keys.
   // Diagonals are normalized so you don't move faster diagonally.
@@ -118,5 +127,6 @@ export const Input = {
     pressedThisFrame.clear();
     movedThisFrame = false;
     clickedThisFrame = false;
+    wheelAccum = 0;
   },
 };

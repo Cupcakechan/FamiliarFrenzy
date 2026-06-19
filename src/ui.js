@@ -418,7 +418,23 @@ export function drawHowToPlay(ctx, w, h) {
 // index === entries.length. `upgradeCount` marks where the Evolutions group
 // begins. `levels` = { id: ownedLevel } when opened from Pause (adds a
 // "Current" line for upgrades), else null.
-export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeCount) {
+// Slim scrollbar (track + thumb) for the scrollable list panels. Thumb height
+// reflects the visible fraction; its position reflects the scroll offset. Drawn
+// only when the content overflows. Cue only — not draggable (the wheel scrolls);
+// drag can come later alongside the Settings sliders.
+function drawScrollbar(ctx, x, top, viewH, scroll, maxScroll, contentH) {
+  const barW = 6;
+  ctx.fillStyle = "rgba(244, 213, 141, 0.10)";
+  roundRect(ctx, x, top, barW, viewH, 3);
+  ctx.fill();
+  const thumbH = Math.max(28, viewH * (viewH / contentH));
+  const thumbY = top + (maxScroll > 0 ? scroll / maxScroll : 0) * (viewH - thumbH);
+  ctx.fillStyle = "rgba(244, 213, 141, 0.55)";
+  roundRect(ctx, x, thumbY, barW, thumbH, 3);
+  ctx.fill();
+}
+
+export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeCount, scrollIn = 0, followSel = true) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
@@ -488,14 +504,20 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
   cy += backRow.height;
   const contentH = cy;
 
-  // --- Scroll so the selected row (or Back) is fully visible. ---
-  const selRow = rows.find((r) =>
-    (r.kind === "entry" && r.ei === selectedIndex) || (r.kind === "back" && selectedIndex === backIndex)
-  ) || backRow;
+  // --- Scroll: follow the highlighted row (keyboard / open / click) or honour
+  // the free wheel-scroll position. ---
   const maxScroll = Math.max(0, contentH - viewH);
-  let scroll = 0;
-  if (selRow.y < scroll) scroll = selRow.y;
-  if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  let scroll;
+  if (followSel) {
+    const selRow = rows.find((r) =>
+      (r.kind === "entry" && r.ei === selectedIndex) || (r.kind === "back" && selectedIndex === backIndex)
+    ) || backRow;
+    scroll = 0;
+    if (selRow.y < scroll) scroll = selRow.y;
+    if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  } else {
+    scroll = scrollIn;
+  }
   scroll = Math.max(0, Math.min(maxScroll, scroll));
 
   const zones = []; // clickable rect per entry/Back row (mouse hit-testing in game.js)
@@ -573,11 +595,11 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
   }
   ctx.restore();
 
-  // Scroll affordances (only when content is hidden above/below).
-  if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
-  if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
+  // Scrollbar: slim right-side track + thumb, shown only when the list overflows.
+  // A position/affordance cue — the mouse wheel does the actual scrolling.
+  if (maxScroll > 0) drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH);
 
-  return zones; // game.js hit-tests these (Grimoire rows)
+  return { zones, scroll, maxScroll }; // game.js stores scroll + hit-tests rows
 }
 
 // --- BESTIARY -------------------------------------------------------------
@@ -585,7 +607,7 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
 // draw as a black silhouette + "???" until the player has met them; the
 // selected row shows its blurb beneath it. `entries` carry a `seen` flag and a
 // resolved `img` (or null) supplied by game.js's draw call.
-export function drawBestiary(ctx, w, h, entries, selectedIndex) {
+export function drawBestiary(ctx, w, h, entries, selectedIndex, scrollIn = 0, followSel = true) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
@@ -632,12 +654,18 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   cy += backRow.height;
   const contentH = cy;
 
-  // --- Scroll so the selected row is fully visible. ---
-  const selRow = rows.find((r) => r.i === selectedIndex) || backRow;
+  // --- Scroll: follow the highlighted row (keyboard / open / click) or honour
+  // the free wheel-scroll position. ---
   const maxScroll = Math.max(0, contentH - viewH);
-  let scroll = 0;
-  if (selRow.y < scroll) scroll = selRow.y;
-  if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  let scroll;
+  if (followSel) {
+    const selRow = rows.find((r) => r.i === selectedIndex) || backRow;
+    scroll = 0;
+    if (selRow.y < scroll) scroll = selRow.y;
+    if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  } else {
+    scroll = scrollIn;
+  }
   scroll = Math.max(0, Math.min(maxScroll, scroll));
 
   const zones = []; // clickable rect per entry/Back row (mouse hit-testing in game.js)
@@ -675,11 +703,11 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   }
   ctx.restore();
 
-  // Scroll affordances (only when content is hidden above/below).
-  if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
-  if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
+  // Scrollbar: slim right-side track + thumb, shown only when the list overflows.
+  // A position/affordance cue — the mouse wheel does the actual scrolling.
+  if (maxScroll > 0) drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH);
 
-  return zones; // game.js hit-tests these (Bestiary rows)
+  return { zones, scroll, maxScroll }; // game.js stores scroll + hit-tests rows
 }
 
 // Shared creature portrait: lit box + sprite (or silhouette if unseen, or "?" if
