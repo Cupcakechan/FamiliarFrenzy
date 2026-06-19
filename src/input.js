@@ -33,6 +33,7 @@ window.addEventListener("keyup", (e) => {
 window.addEventListener("blur", () => {
   heldKeys.clear();
   pressedThisFrame.clear();
+  mouseHeld = false;
 });
 
 /* -------------------------------------------------------------------------
@@ -49,6 +50,7 @@ let mouseX = 0;
 let mouseY = 0;
 let movedThisFrame = false;   // pointer moved since the last endFrame()
 let clickedThisFrame = false; // left button went down since the last endFrame()
+let mouseHeld = false;        // left button currently down (persists until mouseup)
 let wheelAccum = 0;           // wheel delta accumulated since the last endFrame()
 
 function toCanvasCoords(clientX, clientY) {
@@ -73,6 +75,7 @@ if (mouseCanvas) {
     mouseX = p.x;
     mouseY = p.y;
     clickedThisFrame = true;
+    mouseHeld = true;
   });
   // Wheel — accumulated per frame for the scrollable list panels. preventDefault
   // (needs passive:false) so the page itself doesn't scroll under the cursor.
@@ -81,6 +84,12 @@ if (mouseCanvas) {
     e.preventDefault();
   }, { passive: false });
 }
+
+// Release is tracked on the window so a drag (slider / scrollbar) still ends even
+// if the button comes up off the canvas.
+window.addEventListener("mouseup", (e) => {
+  if (e.button === 0) mouseHeld = false;
+});
 
 export const Input = {
   // Is this key being held right now?
@@ -101,6 +110,8 @@ export const Input = {
   mouseMoved() { return movedThisFrame; },
   // True only on the frame a left-click went down (cleared in endFrame()).
   mouseClicked() { return clickedThisFrame; },
+  // Is the left button currently held? (persists across frames — for drags)
+  mouseHeld() { return mouseHeld; },
   // Wheel delta accumulated this frame (+down / -up); 0 if none. For scroll panels.
   wheelDelta() { return wheelAccum; },
 

@@ -338,6 +338,10 @@ function drawVolumeSlider(ctx, w, label, value, sy, selected) {
 
   // Value readout.
   text(ctx, `${Math.round(value)}%`, w / 2, sy + 32, { size: 18, color: selected ? GOLD : DIM });
+
+  // Track rect: x/w give the value-map range (and horizontal hit range); y/h are a
+  // generous vertical band so the track + knob are easy to grab with the mouse.
+  return { x: sx, y: sy - 14, w: sliderW, h: 36 };
 }
 
 // One labeled On/Off accessibility row. The active side is emphasized; the layout
@@ -349,6 +353,13 @@ function drawToggleRow(ctx, w, label, isOn, sy, selected) {
   text(ctx, "Off", w / 2 - 36, sy + 16, { size: 20, color: offColor, weight: !isOn ? "700" : "500" });
   text(ctx, "/",   w / 2,      sy + 16, { size: 20, color: DIM });
   text(ctx, "On",  w / 2 + 36, sy + 16, { size: 20, color: onColor,  weight:  isOn ? "700" : "500" });
+
+  // Off / On hit rects (centred on the two labels). Click Off → false, On → true.
+  const half = 28, top = sy, boxH = 34;
+  return {
+    off: { x: w / 2 - 36 - half, y: top, w: half * 2, h: boxH },
+    on:  { x: w / 2 + 36 - half, y: top, w: half * 2, h: boxH },
+  };
 }
 
 export function drawSettings(ctx, w, h, musicVolume, sfxVolume, reducedFlash, highVisWarnings, selectedIndex = 0) {
@@ -359,12 +370,18 @@ export function drawSettings(ctx, w, h, musicVolume, sfxVolume, reducedFlash, hi
 
   // Four rows: two volume sliders, then two accessibility toggles. Spaced to sit
   // comfortably at 540px without crowding the footer (no other UI is resized).
-  drawVolumeSlider(ctx, w, "Music Volume", musicVolume, h * 0.34, selectedIndex === 0);
-  drawVolumeSlider(ctx, w, "SFX Volume",   sfxVolume,   h * 0.52, selectedIndex === 1);
-  drawToggleRow(ctx, w, "Reduced Flash Effects",    reducedFlash,    h * 0.70, selectedIndex === 2);
-  drawToggleRow(ctx, w, "High Visibility Warnings", highVisWarnings, h * 0.81, selectedIndex === 3);
+  const musicRect = drawVolumeSlider(ctx, w, "Music Volume", musicVolume, h * 0.34, selectedIndex === 0);
+  const sfxRect   = drawVolumeSlider(ctx, w, "SFX Volume",   sfxVolume,   h * 0.52, selectedIndex === 1);
+  const flashT    = drawToggleRow(ctx, w, "Reduced Flash Effects",    reducedFlash,    h * 0.70, selectedIndex === 2);
+  const highVisT  = drawToggleRow(ctx, w, "High Visibility Warnings", highVisWarnings, h * 0.81, selectedIndex === 3);
 
-  // Footer hint omitted for now (Esc/Backspace still returns); revisit with Tier 2 mouse support.
+  // Footer hint omitted (Esc/Backspace still returns).
+
+  // Hit zones for the mouse: sliders (drag/click) and toggles (click Off/On).
+  return {
+    sliders: [ { ...musicRect, row: 0 }, { ...sfxRect, row: 1 } ],
+    toggles: [ { ...flashT, row: 2 }, { ...highVisT, row: 3 } ],
+  };
 }
 
 // --- HOW TO PLAY ----------------------------------------------------------

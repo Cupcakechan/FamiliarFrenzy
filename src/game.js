@@ -303,6 +303,8 @@ export class Game {
     this.offerHoverIndex = -1; // upgrade card under the cursor, or -1
     this.settingsReturn = STATE.MAIN_MENU; // where the Settings screen goes "back" to
     this.settingsIndex = 0;                // selected Settings row: 0 music, 1 sfx
+    this.settingsDragging = null;          // row of the slider being dragged, or null
+    this.settingsZones = null;             // hit zones fed back from the last Settings render
 
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
@@ -563,11 +565,54 @@ export class Game {
         if (this.backPressed() || this.confirmPressed() || Input.mouseClicked()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         break;
 
-      case STATE.SETTINGS_PLACEHOLDER:
-        // Four rows: 0 = Music Volume, 1 = SFX Volume, 2 = Reduced Flash Effects,
-        // 3 = High Visibility Warnings. Up/Down selects; Left/Right adjusts a slider
-        // or flips a toggle (Left = Off, Right = On). Only the SFX slider blips (to
-        // preview its level); Music and the toggles are silent — the visuals are the cue.
+      case STATE.SETTINGS_PLACEHOLDER: {
+        // Four rows: 0 = Music Volume, 1 = SFX Volume, 2 = Reduced Flash, 3 = High Vis.
+        // Mouse: drag (or click) the volume tracks; click Off/On to flip a toggle;
+        // hover highlights the row. Keyboard (Up/Down select, Left/Right adjust) still
+        // works — the mouse only ever drives the same settings.
+        const z = this.settingsZones;
+        if (z) {
+          const mx = Input.mouseX(), my = Input.mouseY();
+          const inRect = (r) => r && mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
+
+          // Press starts a slider drag, or flips a toggle (Off/On are separate targets).
+          if (Input.mouseClicked()) {
+            for (const s of z.sliders) {
+              if (inRect(s)) { this.settingsDragging = s.row; this.settingsIndex = s.row; break; }
+            }
+            for (const t of z.toggles) {
+              if (inRect(t.off)) {
+                this.settingsIndex = t.row;
+                if (t.row === 2) setReducedFlash(false); else setHighVisWarnings(false);
+              } else if (inRect(t.on)) {
+                this.settingsIndex = t.row;
+                if (t.row === 2) setReducedFlash(true); else setHighVisWarnings(true);
+              }
+            }
+          }
+
+          // While the button is held on a slider, the value tracks the cursor x.
+          // No per-frame SFX blip — it would machine-gun; the bar + percentage are
+          // the feedback. (This also fires on the press frame, so a click sets the
+          // value at the click point straight away.)
+          if (this.settingsDragging !== null && Input.mouseHeld()) {
+            const s = z.sliders.find((sl) => sl.row === this.settingsDragging);
+            if (s) {
+              const val = Math.round(Math.max(0, Math.min(1, (mx - s.x) / s.w)) * 100);
+              if (this.settingsDragging === 0) setMusicVolume(val);
+              else setSfxVolume(val);
+              this.settingsIndex = this.settingsDragging;
+            }
+          }
+          if (!Input.mouseHeld()) this.settingsDragging = null;
+
+          // Hover highlights the row under the cursor so keyboard + mouse agree.
+          if (Input.mouseMoved()) {
+            for (const s of z.sliders) if (inRect(s)) this.settingsIndex = s.row;
+            for (const t of z.toggles) if (inRect(t.off) || inRect(t.on)) this.settingsIndex = t.row;
+          }
+        }
+
         if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
           this.settingsIndex = (this.settingsIndex + 3) % 4; // -1, wrapped
         }
@@ -591,6 +636,7 @@ export class Game {
           if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
         }
         break;
+      }
 
       case STATE.PLAYING:
         if (Input.wasPressed("Escape") || Input.wasPressed("KeyP")) {
@@ -1589,7 +1635,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.SETTINGS_PLACEHOLDER) {
-      drawSettings(ctx, this.width, this.height, getMusicVolume(), getSfxVolume(), getReducedFlash(), getHighVisWarnings(), this.settingsIndex);
+      this.settingsZones = drawSettings(ctx, this.width, this.height, getMusicVolume(), getSfxVolume(), getReducedFlash(), getHighVisWarnings(), this.settingsIndex);
       return;
     }
     if (this.state === STATE.CONFIRM_QUIT) {
