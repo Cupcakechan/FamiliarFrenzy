@@ -298,6 +298,9 @@ export class Game {
 
     this.state = STATE.MAIN_MENU;
     this.menuIndex = 0; // highlighted option in the current menu
+    this.menuZones = [];       // clickable item rects from the last menu draw (mouse)
+    this.offerZones = [];      // clickable card rects from the last level-up draw
+    this.offerHoverIndex = -1; // upgrade card under the cursor, or -1
     this.settingsReturn = STATE.MAIN_MENU; // where the Settings screen goes "back" to
     this.settingsIndex = 0;                // selected Settings row: 0 music, 1 sfx
 
@@ -485,9 +488,15 @@ export class Game {
   // --- UPDATE ------------------------------------------------------------
   update(dt) {
     switch (this.state) {
-      case STATE.MAIN_MENU:
+      case STATE.MAIN_MENU: {
+        const hov = this.zoneAt(this.menuZones);
+        // Hover moves the highlight to the cursor, but only when the mouse
+        // actually moves — otherwise a resting pointer would fight the keyboard.
+        if (hov >= 0 && Input.mouseMoved()) this.menuIndex = hov;
         this.navMenu(MAIN_MENU_ITEMS.length);
-        if (this.confirmPressed()) {
+        const clicked = hov >= 0 && Input.mouseClicked();
+        if (clicked) this.menuIndex = hov; // click activates the item under the cursor
+        if (this.confirmPressed() || clicked) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
           else if (this.menuIndex === 1) this.openCloset();           // Wardrobe
           else if (this.menuIndex === 2) this.openArchive();          // Arcane Archive
@@ -495,6 +504,7 @@ export class Game {
           else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
         break;
+      }
 
       case STATE.HOW_TO_PLAY:
         // Lives under Play now, so it returns to Mode Select (How to Play is
@@ -715,6 +725,20 @@ export class Game {
     if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
       this.menuIndex = (this.menuIndex + 1) % count;
     }
+  }
+
+  // Index of the clickable zone under the cursor, or -1. Zones are the
+  // {x, y, w, h, index} rects reported by the menu / upgrade draws. Mouse
+  // support is additive — callers use this to drive the SAME selection the
+  // keyboard already sets.
+  zoneAt(zones) {
+    if (!zones || !zones.length) return -1;
+    const mx = Input.mouseX();
+    const my = Input.mouseY();
+    for (const z of zones) {
+      if (mx >= z.x && mx <= z.x + z.w && my >= z.y && my <= z.y + z.h) return z.index;
+    }
+    return -1;
   }
 
   confirmPressed() {
@@ -1287,11 +1311,16 @@ export class Game {
   }
 
   updateLevelUp() {
+    // Hover the card under the cursor (uses the previous frame's zones — a
+    // one-frame lag, imperceptible). Drives the hover outline in the draw.
+    this.offerHoverIndex = this.zoneAt(this.offerZones);
+
     let chosen = -1;
     if (Input.wasPressed("Enter") || Input.wasPressed("NumpadEnter")) chosen = 0;
     else if (Input.wasPressed("Digit1") || Input.wasPressed("Numpad1")) chosen = 0;
     else if (Input.wasPressed("Digit2") || Input.wasPressed("Numpad2")) chosen = 1;
     else if (Input.wasPressed("Digit3") || Input.wasPressed("Numpad3")) chosen = 2;
+    if (Input.mouseClicked() && this.offerHoverIndex >= 0) chosen = this.offerHoverIndex; // click a card
 
     if (chosen >= 0 && chosen < this.offers.length) {
       this.applyUpgrade(chosen);
@@ -1407,7 +1436,7 @@ export class Game {
     ctx.clearRect(0, 0, this.width, this.height);
 
     if (this.state === STATE.MAIN_MENU) {
-      drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
+      this.menuZones = drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
         ["Up / Down: move      Enter: select"], { bg: true, title: true });
       drawCrystalTotal(ctx, this.width, this.height, this.wardrobe.crystals);
       return;
@@ -1507,7 +1536,7 @@ export class Game {
         drawHUD(ctx, this.width, this.height, this.hudState());
         // Reduced Flash dims the celebratory bloom + title pop (the base title is
         // always drawn at full size, so the upgrade screen stays readable).
-        drawUpgradeScreen(ctx, this.width, this.height, this.offers, (this.levelFlash / LEVEL_FLASH_TIME) * (getReducedFlash() ? 0.35 : 1));
+        this.offerZones = drawUpgradeScreen(ctx, this.width, this.height, this.offers, (this.levelFlash / LEVEL_FLASH_TIME) * (getReducedFlash() ? 0.35 : 1), this.offerHoverIndex);
         break;
 
       case STATE.PAUSED:

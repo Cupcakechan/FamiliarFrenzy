@@ -185,11 +185,13 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
   const bw = hasBtn ? btn.width : 380;
   const bh = hasBtn ? btn.height : 42;
 
+  const zones = []; // clickable rect per item (mouse hit-testing in game.js)
   items.forEach((item, i) => {
     const y = startY + i * lineH;
     const selected = i === selectedIndex;
     const bx = Math.round(w / 2 - bw / 2);
     const by = Math.round(y - bh / 2);
+    zones.push({ x: bx, y: by, w: bw, h: bh, index: i });
 
     if (hasBtn) {
       // Same container for every item; the selected one gets a gold glow halo.
@@ -229,6 +231,8 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
     const fy = h - 40 - (footerLines.length - 1 - i) * 22;
     text(ctx, line, w / 2, fy, { size: 15, color: DIM, weight: "500" });
   });
+
+  return zones; // game.js hit-tests these for menu clicks/hover
 }
 
 // --- PLACEHOLDER ("Coming Soon") screen -----------------------------------
@@ -844,7 +848,7 @@ export function drawHUD(ctx, w, h, state) {
 // `flash` (0..1) is the fading "just leveled up" celebration: 1 the instant the
 // screen appears, decaying to 0. It pops the title and washes a soft gold bloom
 // over the screen (a single fade — no strobe).
-export function drawUpgradeScreen(ctx, w, h, offers, flash = 0) {
+export function drawUpgradeScreen(ctx, w, h, offers, flash = 0, hoveredIndex = -1) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.86)";
   ctx.fillRect(0, 0, w, h);
 
@@ -858,8 +862,22 @@ export function drawUpgradeScreen(ctx, w, h, offers, flash = 0) {
   let x = (w - totalW) / 2;
   const y = h / 2 - cardH / 2 + 16;
 
+  const zones = []; // clickable rect per card (mouse hit-testing in game.js)
   offers.forEach((up, i) => {
     drawCard(ctx, x, y, cardW, cardH, up, i, offers.length);
+    // Mouse hover outline — cards have no keyboard selection cursor, so this is
+    // the only "which one will I pick" feedback before a click.
+    if (i === hoveredIndex) {
+      ctx.save();
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2.5;
+      ctx.shadowColor = GOLD;
+      ctx.shadowBlur = 12;
+      roundRect(ctx, x, y, cardW, cardH, 10);
+      ctx.stroke();
+      ctx.restore();
+    }
+    zones.push({ x, y, w: cardW, h: cardH, index: i });
     x += cardW + gap;
   });
 
@@ -873,6 +891,8 @@ export function drawUpgradeScreen(ctx, w, h, offers, flash = 0) {
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
   }
+
+  return zones; // game.js hit-tests these for card clicks/hover
 }
 
 // Registered-once guard so each icon's loadImage() runs a single time (never

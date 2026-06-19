@@ -72,9 +72,8 @@ body {
   background: #000;
   border-radius: 2px;
 
-  /* The game is keyboard-only, so hide the mouse cursor over the play area
-     (it was sitting on top of the player). */
-  cursor: none;
+  /* Mouse is now supported in the menus, so the cursor stays visible. */
+  cursor: default;
 
   /* CRISP PIXEL ART:
      Tells the browser NOT to blur the canvas when it is scaled.

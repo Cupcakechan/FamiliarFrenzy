@@ -35,6 +35,46 @@ window.addEventListener("blur", () => {
   pressedThisFrame.clear();
 });
 
+/* -------------------------------------------------------------------------
+   Mouse — ADDITIVE. Keyboard stays the primary input everywhere; the mouse
+   only ever drives the same menu selection/confirm the keys already do.
+
+   We track the pointer in the canvas's INTERNAL 960x540 space and a one-shot
+   left-click (cleared each frame, like wasPressed). The canvas is CSS-scaled,
+   so client pixels are mapped through its live bounding rect — this keeps
+   hit-testing correct at any display size (small-screen scaling, fullscreen).
+   ------------------------------------------------------------------------- */
+const mouseCanvas = document.getElementById("game-canvas");
+let mouseX = 0;
+let mouseY = 0;
+let movedThisFrame = false;   // pointer moved since the last endFrame()
+let clickedThisFrame = false; // left button went down since the last endFrame()
+
+function toCanvasCoords(clientX, clientY) {
+  if (!mouseCanvas) return { x: 0, y: 0 };
+  const rect = mouseCanvas.getBoundingClientRect();
+  // Guard a zero-size rect (e.g. display:none) so we never divide by zero.
+  const sx = rect.width ? mouseCanvas.width / rect.width : 1;
+  const sy = rect.height ? mouseCanvas.height / rect.height : 1;
+  return { x: (clientX - rect.left) * sx, y: (clientY - rect.top) * sy };
+}
+
+if (mouseCanvas) {
+  mouseCanvas.addEventListener("mousemove", (e) => {
+    const p = toCanvasCoords(e.clientX, e.clientY);
+    mouseX = p.x;
+    mouseY = p.y;
+    movedThisFrame = true;
+  });
+  mouseCanvas.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return; // left button only
+    const p = toCanvasCoords(e.clientX, e.clientY);
+    mouseX = p.x;
+    mouseY = p.y;
+    clickedThisFrame = true;
+  });
+}
+
 export const Input = {
   // Is this key being held right now?
   isDown(code) {
@@ -45,6 +85,15 @@ export const Input = {
   wasPressed(code) {
     return pressedThisFrame.has(code);
   },
+
+  // Pointer position in the canvas's internal 960x540 space.
+  mouseX() { return mouseX; },
+  mouseY() { return mouseY; },
+  // True only on the frame the pointer moved — lets hover follow the cursor
+  // WITHOUT overriding keyboard navigation when the mouse is sitting still.
+  mouseMoved() { return movedThisFrame; },
+  // True only on the frame a left-click went down (cleared in endFrame()).
+  mouseClicked() { return clickedThisFrame; },
 
   // Returns a movement direction {x, y} from WASD + Arrow Keys.
   // Diagonals are normalized so you don't move faster diagonally.
@@ -67,5 +116,7 @@ export const Input = {
   // Called once at the very end of each frame to clear one-shot presses.
   endFrame() {
     pressedThisFrame.clear();
+    movedThisFrame = false;
+    clickedThisFrame = false;
   },
 };
