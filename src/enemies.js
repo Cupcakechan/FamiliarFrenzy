@@ -140,31 +140,33 @@ const ENEMY_TYPES = {
     spritePrefix: "pronggeist",
     spriteScale: 0.8,         // tune independently once the art is in (visual only)
     speedMult: 0.95,          // shuffles at a modest pace — it fights by trapping, not chasing
-    healthMult: 1.5,          // a bit tankier than a wisp; a deliberate priority target
+    healthMult: 2.5,          // tanky enough to land several casts before it falls (still < the Goblin's 3.0)
     damage: 8,                // contact damage if you crowd it (the spike line is the real threat)
     fallbackOuter: "#f1c359", // fork gold (matches the spikes)
     fallbackInner: "#8a6b1f",
     ambientSfx: "pronggeist_chitter", // creature chitter (data-driven scheduler; silent until registered)
     ranged: null,
-    // lineCaster: shuffles into range, PLANTS, and LOCKS a thin spike line toward
-    // the witch's position-at-cast — the line does NOT track. After `telegraph` it
-    // erupts (one hit at eruption), lingers briefly, then it shuffles again. The
-    // line is a rotated-rect HazardZone (skin "spikes"); game.js draws/collides it
-    // for free via the existing hazard pipeline. Distinct from the Bone Mage:
-    // a thin DIRECTIONAL corridor (sidestep it) vs a circular curse (leave it),
-    // and it WALKS rather than blinking.
+    // lineCaster: shuffles into range, PLANTS, and LOCKS a BAND of `prongs` thin
+    // parallel spike lines (a fork's tines) at the witch's position-at-cast — they
+    // do NOT track. After `telegraph` they erupt together (one hit — her i-frames
+    // swallow the simultaneous prongs), linger briefly, then it shuffles again.
+    // Each prong is a rotated-rect HazardZone (skin "spikes"), so game.js draws +
+    // collides them for free. Distinct from the Bone Mage: a wide DIRECTIONAL band
+    // (sidestep the whole thing) vs a circular curse (leave it), and it WALKS.
     lineCaster: {
       castRange: 300,      // won't bother casting if she's beyond this (center dist)
       shuffleTime: 1.2,    // seconds of repositioning before each cast
       telegraph: 0.85,     // windup before the spikes erupt (the escape window)
       castWait: 1.85,      // planted/frozen time per cast (telegraph + eruption flash + recovery)
-      lineMin: 140,        // shortest the corridor can be (a point-blank cast still shows a lane)
-      lineMax: 320,        // longest the corridor can be (>= castRange, so the lock is always reached)
-      lineOvershoot: 40,   // the corridor reaches this far PAST the locked spot
-      lineWidth: 36,       // narrow corridor (px across) — a thin lane you sidestep
-      damage: 12,          // spike damage at eruption (moderate; < the Mage's 15)
+      lineMin: 140,        // shortest a prong can be (a point-blank cast still shows the band)
+      lineMax: 320,        // longest a prong can be (>= castRange, so the lock is always reached)
+      lineOvershoot: 40,   // each prong reaches this far PAST the locked spot
+      prongs: 4,           // parallel spike lines (a fork's four tines)
+      prongGap: 26,        // px between prong centers — tight enough that no gap is a safe slot
+      prongWidth: 18,      // px across each prong (band spans ~prongGap*(prongs-1)+prongWidth ≈ 96px)
+      damage: 12,          // damage per eruption (one hit total; moderate, < the Mage's 15)
       castFrame: 1,        // walk frame to freeze on while planted/casting
-      spikesSfx: "pronggeist_spikes", // eruption cue (graceful if the clip is missing)
+      spikesSfx: "pronggeist_spikes", // eruption cue, played by the first prong (graceful if missing)
     },
   },
 };
@@ -404,7 +406,7 @@ export class HazardZone {
     this.knockback = opts.knockback || 0;
     this.ox = opts.ox != null ? opts.ox : x; // knockback origin (the attacker)
     this.oy = opts.oy != null ? opts.oy : y;
-    this.sfx = opts.sfx || "mage_blast";
+    this.sfx = opts.sfx === undefined ? "mage_blast" : opts.sfx; // explicit null = silent (extra prongs)
     // Circle look: "curse" = Bone Mage cursed ground (rune/violet), "stomp" =
     // Goblin shockwave (green/amber, no rune). Rect ignores this.
     this.skin = opts.skin || "curse";
@@ -442,7 +444,7 @@ export class HazardZone {
         this.hasHit = true;
         this.phase = "blast";
         this.timer = HAZARD_BLAST_TIME;
-        playSfx(this.sfx); // missing file = silent (registry is graceful)
+        if (this.sfx) playSfx(this.sfx); // null (extra prongs) = silent; registry is graceful otherwise
       }
     } else if (this.timer <= 0) {
       this.dead = true;
@@ -943,16 +945,24 @@ export class Enemy {
           // LOCK the aim NOW. Center the rect half a line-length along the aim so
           // the corridor STARTS at the fork and reaches out to the locked spot.
           const ang = Math.atan2(dy, dx);
-          // The corridor reaches from the fork to just PAST the locked spot, so a
-          // cast always threatens where she stood (clamped: point-blank still shows
-          // a lane; max-range isn't absurdly long). Centered half a reach along it.
+          // Each prong reaches from the fork to just PAST the locked spot, so a cast
+          // always threatens where she stood (clamped: point-blank still shows a
+          // band; max-range isn't absurdly long).
           const reach = clamp(len + lc.lineOvershoot, lc.lineMin, lc.lineMax);
-          const cx = this.x + Math.cos(ang) * (reach / 2);
-          const cy = this.y + Math.sin(ang) * (reach / 2);
-          hazards.push(new HazardZone(cx, cy, 0, lc.telegraph, lc.damage, {
-            shape: "rect", angle: ang, length: reach, width: lc.lineWidth,
-            skin: "spikes", sfx: lc.spikesSfx, knockback: 0, // no shove — avoids cheap stun-locks
-          }));
+          // Lock a BAND of parallel prongs (a fork's tines) straddling the aim line,
+          // so she's dead-center and must clear the whole band sideways. Gaps stay
+          // tighter than her body, so there's no safe slot between tines. Only the
+          // first prong carries the eruption SFX (4 at once would quadruple it).
+          const px = -Math.sin(ang), py = Math.cos(ang); // unit perpendicular to the aim
+          for (let i = 0; i < lc.prongs; i++) {
+            const off = (i - (lc.prongs - 1) / 2) * lc.prongGap; // centered offsets
+            const cx = this.x + px * off + Math.cos(ang) * (reach / 2);
+            const cy = this.y + py * off + Math.sin(ang) * (reach / 2);
+            hazards.push(new HazardZone(cx, cy, 0, lc.telegraph, lc.damage, {
+              shape: "rect", angle: ang, length: reach, width: lc.prongWidth,
+              skin: "spikes", sfx: i === 0 ? lc.spikesSfx : null, knockback: 0,
+            }));
+          }
           this.facing = dirFromVector(Math.cos(ang), Math.sin(ang)); // face the cast
           this.ppPhase = "cast";
           this.ppTimer = lc.castWait;     // stay planted through telegraph + eruption + recovery
@@ -1429,7 +1439,7 @@ const GOBLIN_INTRO_WAVE = 6;      // Goblin Bonkers join the spawn mix from this
 const GOBLIN_SPAWN_CHANCE = 0.15; // chance each eligible slot rolls a Goblin
 const GOBLIN_MAX_ALIVE = 2;       // never more than this many alive (displacement is oppressive in bulk)
 const PRONG_INTRO_WAVE = 7;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
-const PRONG_SPAWN_CHANCE = 0.13;  // chance each eligible slot rolls a Pronggeist
+const PRONG_SPAWN_CHANCE = 0.18;  // chance each eligible slot rolls a Pronggeist (bumped 0.13 -> 0.18)
 const PRONG_MAX_ALIVE = 2;        // never more than this many alive (line-zoning is oppressive in bulk)
 
 // ===========================================================================

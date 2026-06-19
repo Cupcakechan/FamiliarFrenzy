@@ -217,7 +217,7 @@ const BESTIARY = [
   {
     id: "pronggeist", name: "Pronggeist", kind: "Enemy", enemyType: "pronggeist",
     spriteKey: "pronggeist_walk_s", frames: 4,
-    blurb: "Plants itself, then skewers the ground in a straight line.",
+    blurb: "Plants itself, then rakes the ground with four spike rows.",
   },
   {
     id: "elder_wisp", name: "Elder Wisp", kind: "Boss", bossName: "Elder Wisp",
