@@ -91,7 +91,7 @@ const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "S
 const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Back"]; // Arcane Archive hub
 const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
-const PAUSE_ITEMS = ["Resume", "Grimoire", "Settings", "Main Menu"];
+const PAUSE_ITEMS = ["Resume", "Grimoire", "Bestiary", "Settings", "Main Menu"];
 const CONFIRM_ITEMS = ["Yes", "No"];
 
 const SCORE_PER_PICKUP = 10;
@@ -148,6 +148,12 @@ const TUTORIAL_HINTS = {
 };
 const FLASK_HEAL = 15;          // HP restored per flask
 
+// Emberheart Robe (red outfit) — emergency heal. When equipped and current HP dips
+// below EMBER_TRIGGER of max while alive, heal up to EMBER_HEAL_TO of max, once per
+// wave (re-armed at each wave change). Fractions of max HP; tunable.
+const EMBER_TRIGGER = 0.25;  // fires when current HP < 25% of max
+const EMBER_HEAL_TO = 0.50;  // tops her up to 50% of max
+
 // --- Spirit Crystals (meta currency) — Wardrobe/Closet feature, Phase 1 ------
 // First boss defeated EVER is a guaranteed crystal (+ the familiar tip). After
 // that, only ENDLESS bosses can drop one, on a chance that scales with depth and
@@ -160,7 +166,8 @@ const CRYSTAL_CHANCE_CAP = 0.85;      // hard ceiling on the per-boss chance
 // --- Outfits (Closet) -----------------------------------------------------
 // Data-driven, like UPGRADES/ENEMY_TYPES. Default is owned + free + no buff.
 // Only the EQUIPPED outfit's buff applies; buffs never stack. `buff` keys:
-//   flaskBonus  — extra HP added per flask (base FLASK_HEAL preserved)
+//   emergencyHeal — once per wave, auto-heal to EMBER_HEAL_TO when HP < EMBER_TRIGGER
+//   flaskBonus  — extra HP per flask (still supported by the flask pickup; now unused)
 //   expMult     — EXP-gain multiplier
 //   scoreMult   — score-gain multiplier
 // `swatch` is the code-drawn colour chip shown in the Closet. `spritePrefix` is
@@ -168,9 +175,9 @@ const CRYSTAL_CHANCE_CAP = 0.85;      // hard ceiling on the per-boss chance
 // sprites + player.js land); it has no effect yet.
 const OUTFITS = {
   default: { name: "Apprentice Robe", cost: 0, swatch: "#9b6cff", spritePrefix: "witch",      desc: "No bonus",          buff: {} },
-  red:     { name: "Emberheart Robe", cost: 3, swatch: "#e0584d", spritePrefix: "witch_red",  desc: "Flasks heal +5 HP", buff: { flaskBonus: 5 } },
+  red:     { name: "Emberheart Robe", cost: 8, swatch: "#e0584d", spritePrefix: "witch_red",  desc: "Heal to 50% /wave",  buff: { emergencyHeal: true } },
   blue:    { name: "Sage's Weave",    cost: 3, swatch: "#5aa0e0", spritePrefix: "witch_blue", desc: "EXP gain +5%",      buff: { expMult: 1.05 } },
-  gold:    { name: "Gilded Mantle",   cost: 8, swatch: "#f4d58d", spritePrefix: "witch_gold", desc: "Score gain +5%",    buff: { scoreMult: 1.05 } },
+  gold:    { name: "Gilded Mantle",   cost: 6, swatch: "#f4d58d", spritePrefix: "witch_gold", desc: "Score gain +5%",    buff: { scoreMult: 1.05 } },
 };
 const OUTFIT_ORDER = ["default", "red", "blue", "gold"]; // Closet display order
 
@@ -321,6 +328,8 @@ export class Game {
     this.offers = [];
     this.levelFlash = 0; // celebratory bloom timer (counts down from LEVEL_FLASH_TIME)
     this.upgradeLevels = {}; // { upgradeId: currentLevel }
+    this.emberHealUsed = false;  // Emberheart Robe: emergency heal used this wave (re-armed each wave)
+    this.emberHintShown = false; // Emberheart: "saved you!" line shown this run (once per run)
 
     // Upgrade-driven values (mutated by apply()); reset each run.
     this.magnetRange = BASE_MAGNET_RANGE; // pickup attraction radius (innate + Magnet Charm)
@@ -412,6 +421,8 @@ export class Game {
     this.offers = [];
     this.levelFlash = 0;
     this.upgradeLevels = {};
+    this.emberHealUsed = false;  // re-arm the Emberheart heal for the new run
+    this.emberHintShown = false; // allow the one-time Emberheart line again this run
 
     this.magnetRange = BASE_MAGNET_RANGE;
     this.frenzyPerMote = 1;
@@ -578,6 +589,8 @@ export class Game {
           } else if (this.menuIndex === 1) {
             this.openGrimoire(STATE.PAUSED);            // Upgrade Grimoire (returns to Pause)
           } else if (this.menuIndex === 2) {
+            this.openBestiary(STATE.PAUSED);            // Bestiary (returns to Pause)
+          } else if (this.menuIndex === 3) {
             this.settingsReturn = STATE.PAUSED;         // Settings (returns to Pause)
             this.settingsIndex = 0;
             this.state = STATE.SETTINGS_PLACEHOLDER;
@@ -918,6 +931,7 @@ export class Game {
     if (this._lastWaveSeen === undefined) this._lastWaveSeen = w;
     if (w === this._lastWaveSeen) return;
     this._lastWaveSeen = w;
+    this.emberHealUsed = false; // re-arm the Emberheart emergency heal each new wave
     if (this.queuedThemeIndex == null) return;
     this.themeIndex = this.queuedThemeIndex;
     this.queuedThemeIndex = null;
@@ -1237,6 +1251,19 @@ export class Game {
       }
     }
     this.magnets = this.magnets.filter((m) => !m.dead);
+
+    // Emberheart Robe: once per wave, if HP dips below the trigger while still alive,
+    // top her up to EMBER_HEAL_TO of max. Checked AFTER all damage + flask healing
+    // this frame and BEFORE the death check, so a lethal hit still dies and a non-
+    // lethal dip heals. The once-per-wave flag + the post-heal HP sitting above the
+    // trigger both stop it re-firing; heal() clamps, so no overheal.
+    if (!this.emberHealUsed && this.equippedBuff().emergencyHeal &&
+        this.player.health > 0 && this.player.health < this.player.maxHealth * EMBER_TRIGGER) {
+      this.player.heal(this.player.maxHealth * EMBER_HEAL_TO - this.player.health);
+      this.emberHealUsed = true;
+      playSfx("heal"); // reuse the flask heal cue
+      if (!this.emberHintShown) { this.emberHintShown = true; this.sayFamiliar("Emberheart saved you!"); }
+    }
 
     // Priority: death, then victory, then a level-up.
     if (this.player.health <= 0) {

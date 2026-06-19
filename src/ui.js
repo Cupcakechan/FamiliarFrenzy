@@ -1134,8 +1134,8 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   });
 
   // --- Menu options: centered near the bottom ---
-  const startY = h - 196;
-  const lineH = 40;
+  const startY = h - 206; // tuned for the 5-item menu (Resume/Grimoire/Bestiary/Settings/Main Menu)
+  const lineH = 36;
   items.forEach((item, i) => {
     const selected = i === selectedIndex;
     const y = startY + i * lineH;
