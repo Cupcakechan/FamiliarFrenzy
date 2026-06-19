@@ -528,9 +528,12 @@ export class Game {
         this.updateCloset();
         break;
 
-      case STATE.MODE_SELECT:
+      case STATE.MODE_SELECT: {
+        const m = this.mouseMenu(this.menuZones);
+        if (m.hover >= 0) this.menuIndex = m.hover;
         this.navMenu(MODE_SELECT_ITEMS.length);
-        if (this.confirmPressed()) {
+        if (m.clicked >= 0) this.menuIndex = m.clicked;
+        if (this.confirmPressed() || m.clicked >= 0) {
           if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Mode
           else if (this.menuIndex === 1) this.startGame("endless");    // Endless Mode
           else if (this.menuIndex === 2) { this.state = STATE.HOW_TO_PLAY; } // How to Play (returns to Mode Select)
@@ -539,6 +542,7 @@ export class Game {
           this.state = STATE.MAIN_MENU; this.menuIndex = 0;
         }
         break;
+      }
 
       case STATE.ENDLESS_PLACEHOLDER:
         if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
@@ -741,6 +745,17 @@ export class Game {
     return -1;
   }
 
+  // Mouse interaction for a list menu, given its reported zones. Returns the
+  // index to hover-highlight (only when the pointer MOVED, so it never fights
+  // the keyboard) and the index that was clicked (both -1 if none).
+  mouseMenu(zones) {
+    const at = this.zoneAt(zones);
+    return {
+      hover: at >= 0 && Input.mouseMoved() ? at : -1,
+      clicked: at >= 0 && Input.mouseClicked() ? at : -1,
+    };
+  }
+
   confirmPressed() {
     return Input.wasPressed("Enter") || Input.wasPressed("NumpadEnter") || Input.wasPressed("Space");
   }
@@ -830,13 +845,16 @@ export class Game {
 
   updateArchive() {
     const count = ARCHIVE_ITEMS.length; // Grimoire, Bestiary, Back
+    const m = this.mouseMenu(this.menuZones);
+    if (m.hover >= 0) this.archiveIndex = m.hover;
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
       this.archiveIndex = (this.archiveIndex - 1 + count) % count;
     }
     if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
       this.archiveIndex = (this.archiveIndex + 1) % count;
     }
-    if (this.confirmPressed()) {
+    if (m.clicked >= 0) this.archiveIndex = m.clicked;
+    if (this.confirmPressed() || m.clicked >= 0) {
       if (this.archiveIndex === 0) this.openGrimoire(STATE.ARCHIVE);
       else if (this.archiveIndex === 1) this.openBestiary(STATE.ARCHIVE);
       else { this.state = STATE.MAIN_MENU; this.menuIndex = 2; } // Back -> highlight Arcane Archive
@@ -1437,18 +1455,18 @@ export class Game {
 
     if (this.state === STATE.MAIN_MENU) {
       this.menuZones = drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
-        ["Up / Down: move      Enter: select"], { bg: true, title: true });
+        ["Enter: select"], { bg: true, title: true });
       drawCrystalTotal(ctx, this.width, this.height, this.wardrobe.crystals);
       return;
     }
     if (this.state === STATE.ARCHIVE) {
-      drawMenu(ctx, this.width, this.height, "Arcane Archive", ARCHIVE_ITEMS, this.archiveIndex,
-        ["Up/Down move • Enter select • Esc back"], { bg: true });
+      this.menuZones = drawMenu(ctx, this.width, this.height, "Arcane Archive", ARCHIVE_ITEMS, this.archiveIndex,
+        ["Enter select • Esc back"], { bg: true });
       return;
     }
     if (this.state === STATE.MODE_SELECT) {
-      drawMenu(ctx, this.width, this.height, "Choose Mode", MODE_SELECT_ITEMS, this.menuIndex,
-        ["Up/Down move • Enter select • Esc back"], { bg: true });
+      this.menuZones = drawMenu(ctx, this.width, this.height, "Choose Mode", MODE_SELECT_ITEMS, this.menuIndex,
+        ["Enter select • Esc back"], { bg: true });
       return;
     }
     if (this.state === STATE.HOW_TO_PLAY) {

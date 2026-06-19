@@ -364,10 +364,7 @@ export function drawSettings(ctx, w, h, musicVolume, sfxVolume, reducedFlash, hi
   drawToggleRow(ctx, w, "Reduced Flash Effects",    reducedFlash,    h * 0.70, selectedIndex === 2);
   drawToggleRow(ctx, w, "High Visibility Warnings", highVisWarnings, h * 0.81, selectedIndex === 3);
 
-  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
-  ctx.globalAlpha = pulse;
-  text(ctx, "Up / Down: select    Left / Right: change    Esc: back", w / 2, h - 40, { size: 16, color: PURPLE, weight: "500" });
-  ctx.globalAlpha = 1;
+  // Footer hint omitted for now (Esc/Backspace still returns); revisit with Tier 2 mouse support.
 }
 
 // --- HOW TO PLAY ----------------------------------------------------------
@@ -571,7 +568,7 @@ export function drawGrimoire(ctx, w, h, entries, selectedIndex, levels, upgradeC
   if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
   if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
 
-  text(ctx, "Up / Down: move      Esc / Backspace: back", w / 2, h - 20, { size: 14, color: DIM, weight: "500" });
+  // Footer hint omitted for now (Esc or Backspace still returns); revisit with mouse support.
 }
 
 // --- BESTIARY -------------------------------------------------------------
@@ -664,7 +661,7 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex) {
   if (scroll > 1) text(ctx, "\u25B2", w / 2, viewTop + 6, { size: 12, color: DIM });
   if (scroll < maxScroll - 1) text(ctx, "\u25BC", w / 2, viewBottom - 6, { size: 12, color: DIM });
 
-  text(ctx, "Up / Down: move      Esc / Backspace: back", w / 2, h - 20, { size: 14, color: DIM, weight: "500" });
+  // Footer hint omitted for now (Esc or Backspace still returns); revisit with mouse support.
 }
 
 // Shared creature portrait: lit box + sprite (or silhouette if unseen, or "?" if
