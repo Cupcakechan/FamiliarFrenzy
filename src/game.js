@@ -175,7 +175,7 @@ const CRYSTAL_CHANCE_CAP = 0.85;      // hard ceiling on the per-boss chance
 // sprites + player.js land); it has no effect yet.
 const OUTFITS = {
   default: { name: "Apprentice Robe", cost: 0, swatch: "#9b6cff", spritePrefix: "witch",      desc: "No bonus",          buff: {} },
-  red:     { name: "Emberheart Robe", cost: 8, swatch: "#e0584d", spritePrefix: "witch_red",  desc: "Heal to 50% /wave",  buff: { emergencyHeal: true } },
+  red:     { name: "Emberheart Robe", cost: 8, swatch: "#e0584d", spritePrefix: "witch_red",  desc: "Below 25% HP, heal to 50% per wave", buff: { emergencyHeal: true } },
   blue:    { name: "Sage's Weave",    cost: 3, swatch: "#5aa0e0", spritePrefix: "witch_blue", desc: "EXP gain +5%",      buff: { expMult: 1.05 } },
   gold:    { name: "Gilded Mantle",   cost: 6, swatch: "#f4d58d", spritePrefix: "witch_gold", desc: "Score gain +5%",    buff: { scoreMult: 1.05 } },
 };
