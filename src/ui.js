@@ -1153,9 +1153,12 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   // --- Menu options: centered near the bottom ---
   const startY = h - 206; // tuned for the 5-item menu (Resume/Grimoire/Bestiary/Settings/Main Menu)
   const lineH = 36;
+  const zones = []; // clickable rect per item (mouse hit-testing in game.js)
+  const bw = 360, bh = 32; // generous click band per row (lineH 36 leaves a small gap)
   items.forEach((item, i) => {
     const selected = i === selectedIndex;
     const y = startY + i * lineH;
+    zones.push({ x: Math.round(w / 2 - bw / 2), y: Math.round(y - bh / 2), w: bw, h: bh, index: i });
     text(ctx, `${selected ? "> " : "  "}${item}`, w / 2, y, {
       size: 26,
       color: selected ? GOLD : CREAM,
@@ -1164,6 +1167,7 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   });
 
   text(ctx, "Esc / P: Resume      Enter: select", w / 2, h - 28, { size: 15, color: DIM, weight: "500" });
+  return zones; // game.js hit-tests these for pause-menu clicks/hover
 }
 
 // --- CONFIRM QUIT (Main Menu from Pause) ---------------------------------
@@ -1219,9 +1223,11 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
   const lineH = 50;
   const boxW = 420, boxH = 42;
 
+  const zones = []; // clickable rect per item (mouse hit-testing in game.js)
   items.forEach((item, i) => {
     const y = startY + i * lineH;
     const selected = i === selectedIndex;
+    zones.push({ x: Math.round(w / 2 - boxW / 2), y: Math.round(y - boxH / 2), w: boxW, h: boxH, index: i });
 
     if (selected) {
       ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
@@ -1241,7 +1247,8 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
     });
   });
 
-  text(ctx, "Up / Down: move      Enter / Space: select", w / 2, h - 34, { size: 15, color: DIM, weight: "500" });
+  text(ctx, "Enter / Space: select", w / 2, h - 34, { size: 15, color: DIM, weight: "500" });
+  return zones; // game.js hit-tests these for victory-menu clicks/hover
 }
 
 // --- GAME OVER ------------------------------------------------------------
@@ -1391,9 +1398,15 @@ export function drawGameOver(ctx, w, h, info) {
     }
 
     ctx.globalAlpha = pulse;
-    text(ctx, "R: new endless run      Esc: main menu", w / 2, h / 2 + 124, { size: 18, color: PURPLE });
+    const py = h / 2 + 124;
+    text(ctx, "R: new endless run", w / 2 - 130, py, { size: 18, color: PURPLE });
+    text(ctx, "Esc: main menu",     w / 2 + 130, py, { size: 18, color: PURPLE });
     ctx.globalAlpha = 1;
-    return;
+    // Two click targets: index 0 = retry/new run (R), index 1 = main menu (Esc).
+    return [
+      { x: w / 2 - 260, y: py - 20, w: 250, h: 40, index: 0 },
+      { x: w / 2 + 10,  y: py - 20, w: 250, h: 40, index: 1 },
+    ];
   }
 
   text(ctx, "GAME OVER", w / 2, h / 2 - 50, { size: 56, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
@@ -1405,8 +1418,15 @@ export function drawGameOver(ctx, w, h, info) {
   }
 
   ctx.globalAlpha = pulse;
-  text(ctx, "R: try again      Esc: main menu", w / 2, h / 2 + 90, { size: 20, color: PURPLE });
+  const py = h / 2 + 90;
+  text(ctx, "R: try again",   w / 2 - 120, py, { size: 20, color: PURPLE });
+  text(ctx, "Esc: main menu", w / 2 + 120, py, { size: 20, color: PURPLE });
   ctx.globalAlpha = 1;
+  // Two click targets: index 0 = retry (R), index 1 = main menu (Esc).
+  return [
+    { x: w / 2 - 250, y: py - 22, w: 240, h: 44, index: 0 },
+    { x: w / 2 + 10,  y: py - 22, w: 240, h: 44, index: 1 },
+  ];
 }
 
 // --- Main-menu crystal readout --------------------------------------------

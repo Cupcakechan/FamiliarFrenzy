@@ -509,7 +509,7 @@ export class Game {
       case STATE.HOW_TO_PLAY:
         // Lives under Play now, so it returns to Mode Select (How to Play is
         // index 2 there, so restore that highlight).
-        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MODE_SELECT; this.menuIndex = 2; }
+        if (this.backPressed() || this.confirmPressed() || Input.mouseClicked()) { this.state = STATE.MODE_SELECT; this.menuIndex = 2; }
         break;
 
       case STATE.GRIMOIRE:
@@ -545,11 +545,11 @@ export class Game {
       }
 
       case STATE.ENDLESS_PLACEHOLDER:
-        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
+        if (this.backPressed() || this.confirmPressed() || Input.mouseClicked()) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
         break;
 
       case STATE.HIGHSCORES_PLACEHOLDER:
-        if (this.backPressed() || this.confirmPressed()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+        if (this.backPressed() || this.confirmPressed() || Input.mouseClicked()) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         break;
 
       case STATE.SETTINGS_PLACEHOLDER:
@@ -590,14 +590,17 @@ export class Game {
         this.updatePlaying(dt);
         break;
 
-      case STATE.PAUSED:
+      case STATE.PAUSED: {
         // Esc / P unpause (but only here, not inside the Settings sub-screen).
         if (Input.wasPressed("Escape") || Input.wasPressed("KeyP")) {
           this.state = STATE.PLAYING;
           break;
         }
+        const m = this.mouseMenu(this.menuZones);
+        if (m.hover >= 0) this.menuIndex = m.hover;
         this.navMenu(PAUSE_ITEMS.length);
-        if (this.confirmPressed()) {
+        if (m.clicked >= 0) this.menuIndex = m.clicked;
+        if (this.confirmPressed() || m.clicked >= 0) {
           if (this.menuIndex === 0) {
             this.state = STATE.PLAYING;                 // Resume
           } else if (this.menuIndex === 1) {
@@ -614,6 +617,7 @@ export class Game {
           }
         }
         break;
+      }
 
       case STATE.CONFIRM_QUIT:
         this.navMenu(CONFIRM_ITEMS.length);
@@ -681,9 +685,12 @@ export class Game {
         break;
       }
 
-      case STATE.VICTORY:
+      case STATE.VICTORY: {
+        const m = this.mouseMenu(this.menuZones);
+        if (m.hover >= 0) this.menuIndex = m.hover;
         this.navMenu(VICTORY_ITEMS.length);
-        if (this.confirmPressed()) {
+        if (m.clicked >= 0) this.menuIndex = m.clicked;
+        if (this.confirmPressed() || m.clicked >= 0) {
           if (this.menuIndex === 0) {
             this.continueToEndless();         // continue this run at Wave 11
           } else if (this.menuIndex === 1) {
@@ -694,15 +701,21 @@ export class Game {
           }
         }
         break;
+      }
 
-      case STATE.GAME_OVER:
-        if (Input.wasPressed("KeyR")) {
+      case STATE.GAME_OVER: {
+        // drawGameOver reports two prompt rects: 0 = retry/new run, 1 = main menu.
+        // No hover-highlight here (the prompts just pulse), so a click only acts
+        // when it lands on a prompt — stray clicks do nothing.
+        const click = Input.mouseClicked() ? this.zoneAt(this.menuZones) : -1;
+        if (Input.wasPressed("KeyR") || click === 0) {
           this.startGame(this.gameMode);      // retry in the same mode
-        } else if (this.backPressed()) {
+        } else if (this.backPressed() || click === 1) {
           this.state = STATE.MAIN_MENU;
           this.menuIndex = 0;
         }
         break;
+      }
     }
 
     // Keep music in sync with the current context (cheap; no-ops if unchanged).
@@ -1566,7 +1579,7 @@ export class Game {
 
       case STATE.PAUSED:
         drawHUD(ctx, this.width, this.height, this.hudState());
-        drawPauseMenu(ctx, this.width, this.height, this.pauseInfo(), PAUSE_ITEMS, this.menuIndex);
+        this.menuZones = drawPauseMenu(ctx, this.width, this.height, this.pauseInfo(), PAUSE_ITEMS, this.menuIndex);
         break;
 
       case STATE.DYING:
@@ -1574,7 +1587,7 @@ export class Game {
         break;
 
       case STATE.VICTORY:
-        drawVictory(ctx, this.width, this.height, this.runSummary(), VICTORY_ITEMS, this.menuIndex);
+        this.menuZones = drawVictory(ctx, this.width, this.height, this.runSummary(), VICTORY_ITEMS, this.menuIndex);
         break;
 
       case STATE.NAME_ENTRY:
@@ -1587,7 +1600,7 @@ export class Game {
         break;
 
       case STATE.GAME_OVER:
-        drawGameOver(ctx, this.width, this.height, this.gameOverSummary());
+        this.menuZones = drawGameOver(ctx, this.width, this.height, this.gameOverSummary());
         break;
     }
   }
