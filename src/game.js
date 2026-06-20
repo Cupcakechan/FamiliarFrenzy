@@ -20,6 +20,7 @@ import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager, HazardZone } from "./enemies.js";
+import { CURSES, rollNextCurse, curseValue } from "./curses.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
@@ -89,7 +90,7 @@ const STATE = {
 
 const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings"];
 const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Back"]; // Arcane Archive hub
-const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "How to Play", "Back"];
+const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "Cursed Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
 const PAUSE_ITEMS = ["Resume", "Grimoire", "Bestiary", "Settings", "Main Menu"];
 const CONFIRM_ITEMS = ["Yes", "No"];
@@ -388,7 +389,8 @@ export class Game {
     this.bossesDefeated = 0;
     this.runTime = 0; // seconds spent in the PLAYING state this run
 
-    this.gameMode = "tutorial"; // "tutorial" | "endless"
+    this.gameMode = "tutorial"; // "tutorial" | "endless" | "cursed"
+    this.activeCurses = [];     // Cursed Mode: ids of curses in effect this run (grows per boss kill)
 
     // Tutorial script + familiar-hint state (reset per run in startGame).
     this.hintsShown = {};
@@ -440,7 +442,8 @@ export class Game {
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
-    this.waveManager.reset(mode === "endless");
+    this.waveManager.reset(mode === "endless" || mode === "cursed", mode === "cursed");
+    this.activeCurses = []; // Cursed Mode starts with none; one is added per boss kill
     // Arena theme resets to stone each run, then advances as bosses fall: a boss kill
     // QUEUES the next theme; it swaps in cleanly at the next wave's start (helpers below).
     this.themeIndex = 0;
@@ -519,6 +522,16 @@ export class Game {
     this.state = STATE.PLAYING;
   }
 
+  // Cursed Mode escalation: on each boss kill, activate one more random curse (the
+  // difficulty also steps from the faster every-5 tier scaling). Stops adding once
+  // every pool curse is active. Pass 2 adds the on-screen announce + HUD icons; for
+  // now the effect itself is the feedback (Darkness dims the arena) and the debug
+  // readout lists the active set.
+  applyNextCurse() {
+    const id = rollNextCurse(this.activeCurses);
+    if (id) this.activeCurses.push(id);
+  }
+
   // --- UPDATE ------------------------------------------------------------
   update(dt) {
     switch (this.state) {
@@ -543,11 +556,11 @@ export class Game {
       case STATE.HOW_TO_PLAY: {
         // Mouse: a single clickable Back button (hover-highlighted), matching High
         // Scores/Settings. Clicking elsewhere no longer returns — only Back, or
-        // Esc/Backspace/Enter. Returns to Mode Select (How to Play is index 2 there).
+        // Esc/Backspace/Enter. Returns to Mode Select (How to Play is index 3 there).
         const hov = this.zoneAt(this.menuZones);
         if (Input.mouseMoved()) this.howToPlayBackHover = hov === 0;
         const clickedBack = hov === 0 && Input.mouseClicked();
-        if (this.backPressed() || this.confirmPressed() || clickedBack) { this.state = STATE.MODE_SELECT; this.menuIndex = 2; }
+        if (this.backPressed() || this.confirmPressed() || clickedBack) { this.state = STATE.MODE_SELECT; this.menuIndex = 3; }
         break;
       }
 
@@ -575,8 +588,9 @@ export class Game {
         if (this.confirmPressed() || m.clicked >= 0) {
           if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Mode
           else if (this.menuIndex === 1) this.startGame("endless");    // Endless Mode
-          else if (this.menuIndex === 2) { this.state = STATE.HOW_TO_PLAY; } // How to Play (returns to Mode Select)
-          else if (this.menuIndex === 3) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
+          else if (this.menuIndex === 2) this.startGame("cursed");     // Cursed Mode
+          else if (this.menuIndex === 3) { this.state = STATE.HOW_TO_PLAY; } // How to Play (returns to Mode Select)
+          else if (this.menuIndex === 4) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         } else if (this.backPressed()) {
           this.state = STATE.MAIN_MENU; this.menuIndex = 0;
         }
@@ -1429,6 +1443,7 @@ export class Game {
           this.pendingLevelUps += 1; // boss kill grants a free upgrade choice
           this.awardBossCrystal();   // + a Spirit Crystal (guaranteed first-ever, else endless chance)
           this.queueNextTheme();     // queue the next arena theme (applied at the next wave's start)
+          if (this.gameMode === "cursed") this.applyNextCurse(); // the curse deepens with each boss
         }
         // Drops are placed on non-overlapping spots near the kill (see
         // findDropSpot), so a mote + flask from the same enemy don't stack.
@@ -1754,12 +1769,19 @@ export class Game {
     // Tutorial intro shadow: a dark veil with a clear spotlight around the
     // witch (screen space, over the world, under all UI). Beyond the outer
     // radius the gradient clamps to its last stop, covering the whole screen.
-    if (this.shadowAlpha > 0.01) {
+    // The dark veil serves two masters: the tutorial intro shadow (this.shadowAlpha,
+    // which fades once the tutorial begins) AND the Cursed "Darkness" curse (a
+    // persistent gloom whose spotlight radius the curse itself defines). Draw
+    // whichever is stronger; the curse path is independent of the tutorial fade.
+    const darkVision = curseValue(this.activeCurses, "vision", 0); // 0 = no Darkness curse active
+    const veilAlpha = Math.max(this.shadowAlpha, darkVision > 0 ? SHADOW_ALPHA : 0);
+    if (veilAlpha > 0.01) {
       const px = this.player.x - cam.x;
       const py = this.player.y - cam.y;
-      const g = ctx.createRadialGradient(px, py, SHADOW_RADIUS * 0.45, px, py, SHADOW_RADIUS);
+      const radius = darkVision > 0 ? darkVision : SHADOW_RADIUS; // the curse drives its own spotlight size
+      const g = ctx.createRadialGradient(px, py, radius * 0.45, px, py, radius);
       g.addColorStop(0, "rgba(8, 7, 18, 0)");
-      g.addColorStop(1, `rgba(8, 7, 18, ${this.shadowAlpha.toFixed(3)})`);
+      g.addColorStop(1, `rgba(8, 7, 18, ${veilAlpha.toFixed(3)})`);
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, this.width, this.height);
     }
@@ -1768,6 +1790,16 @@ export class Game {
       case STATE.PLAYING:
         drawOffscreenIndicators(ctx, this.width, this.height, this.enemies, cam);
         drawHUD(ctx, this.width, this.height, this.hudState());
+        // TEMP (Pass 1): plain readout of active curses — replaced by HUD icons in
+        // Pass 2. Confirms the escalating-curse framework is live during testing.
+        if (this.gameMode === "cursed" && this.activeCurses.length > 0) {
+          ctx.save();
+          ctx.font = "12px monospace";
+          ctx.fillStyle = "rgba(210, 160, 255, 0.9)";
+          ctx.textAlign = "left";
+          ctx.fillText("CURSES: " + this.activeCurses.map((id) => CURSES[id].name).join(", "), 12, this.height - 14);
+          ctx.restore();
+        }
         if (this.waveManager.boss && !this.waveManager.boss.dead) {
           drawBossBar(ctx, this.width, this.height, this.waveManager.boss);
         }
@@ -2201,7 +2233,7 @@ export class Game {
       earned = 1;
       this.wardrobe.firstBossClaimed = true;
       this.queueFamiliarTip("spirit_crystal"); // once-ever, both modes
-    } else if (this.gameMode === "endless") {
+    } else if (this.gameMode === "endless" || this.gameMode === "cursed") {
       const tier = this.waveManager.endlessTier() + 1; // wave 10 -> 1, 20 -> 2, ...
       const chance = clamp(
         CRYSTAL_BASE_CHANCE + (tier - 1) * CRYSTAL_CHANCE_PER_TIER + this.luckLevel * CRYSTAL_CHANCE_PER_LUCK,
@@ -2434,7 +2466,7 @@ export class Game {
       ? "ACTIVE"
       : `${Math.round((this.frenzyCharge / FRENZY_MOTES) * 100)}%`;
     return {
-      mode: this.gameMode === "endless" ? "Endless" : "Tutorial",
+      mode: this.gameMode === "endless" ? "Endless" : this.gameMode === "cursed" ? "Cursed" : "Tutorial",
       wave: this.waveManager.displayWave,
       level: this.level,
       score: this.score,

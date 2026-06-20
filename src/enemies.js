@@ -1753,6 +1753,11 @@ const ENEMY_SPEED_PER_TIER = 12;   // px/s added to wisp speed per tier
 const ENEMY_HP_PER_TIER = 1;       // +HP to wisps per tier
 const COUNT_PER_TIER = 3;          // extra wisps in the wave budget per tier
 const SPAWN_DELAY_PER_TIER = 0.05; // spawn interval shaved per tier...
+// Cursed Mode: a flat "harder from wave 1" bump applied on top of the normal
+// per-wave/per-tier scaling (the FASTER escalation comes from the every-5 tier
+// cadence — see reset()/endlessTier()). The stacking curses carry the rest.
+const CURSED_SPEED_MULT = 1.12;    // enemies a touch faster from the start
+const CURSED_HP_MULT = 1.25;       // and noticeably tankier
 const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 
 // DEBUG: when true, EVERY wave spawns the boss (handy for testing boss art /
@@ -2952,8 +2957,10 @@ export class WaveManager {
     this.reset();
   }
 
-  reset(endless = false) {
-    this.endless = endless;        // false = capped tutorial, true = endless
+  reset(endless = false, cursed = false) {
+    this.endless = endless;        // false = capped tutorial, true = endless/cursed (uncapped)
+    this.cursed = cursed;          // Cursed Mode: faster cadence + a base difficulty bump (see makeEnemy)
+    this.bossEvery = cursed ? 5 : 10; // boss AND difficulty-tier interval — every 5 waves in Cursed
     this.wave = 0;                 // becomes 1 when the first wave starts
     this.phase = "intermission";   // "intermission" | "spawning" | "boss"
     this.timer = 2.0;              // short "get ready" before wave 1
@@ -2963,9 +2970,10 @@ export class WaveManager {
     this._bossIndex = 0;           // steps through BOSS_ORDER for the fixed normal-mode rotation (per run)
   }
 
-  // How many full 10-wave blocks have passed (0 for waves 1-10, 1 for 11-20...).
+  // How many full blocks have passed. Block size is bossEvery (10 normal, 5
+  // Cursed), so Cursed escalates twice as fast: tier 0 for waves 1-5, 1 for 6-10...
   endlessTier() {
-    return Math.max(0, Math.floor((this.wave - 1) / 10));
+    return Math.max(0, Math.floor((this.wave - 1) / (this.bossEvery || 10)));
   }
 
   // Effective spawn gap, tightened a little each endless tier (with a floor).
@@ -3022,8 +3030,8 @@ export class WaveManager {
   startNextWave(enemies, view) {
     this.wave += 1;
 
-    // Boss every 10th wave (Tutorial: wave 10; Endless: 10, 20, 30, ...).
-    if (DEBUG_FORCE_BOSS || this.wave % 10 === 0) {
+    // Boss every bossEvery-th wave (10 normal; 5 in Cursed Mode for more pressure).
+    if (DEBUG_FORCE_BOSS || this.wave % (this.bossEvery || 10) === 0) {
       this.phase = "boss";
       // Boss strength rises each block: wave 10 = x1, wave 20 = x2, wave 30 = x3.
       const bossTier = this.endlessTier() + 1;
@@ -3042,7 +3050,9 @@ export class WaveManager {
     // easiest -> hardest rotation (BOSS_ORDER), looping. Cursed Mode will instead
     // draw from the shuffled bag below for run-to-run variety.
     let type = DEBUG_BOSS_TYPE;
-    if (type === "auto") type = this.nextOrderedBoss();
+    // Normal play steps the fixed BOSS_ORDER; Cursed Mode draws from the shuffled
+    // bag for run-to-run variety, matching its random curses.
+    if (type === "auto") type = this.cursed ? this.drawBossFromBag() : this.nextOrderedBoss();
     return type === "watching_hand" ? new WatchingHand(pos.x, pos.y, tier)
          : type === "hive_warden"   ? new HiveWarden(pos.x, pos.y, tier)
          : type === "hourkeeper"    ? new Hourkeeper(pos.x, pos.y, tier)
@@ -3058,10 +3068,10 @@ export class WaveManager {
     return type;
   }
 
-  // Shuffled-bag boss draw — RESERVED FOR CURSED MODE (random bosses). Currently
-  // UNUSED: normal play uses the fixed nextOrderedBoss() rotation above. Refills +
-  // shuffles when empty, and avoids an immediate repeat across a bag boundary
-  // (e.g. last of one bag == first of the next).
+  // Shuffled-bag boss draw — used by CURSED MODE (random bosses). Normal play uses
+  // the fixed nextOrderedBoss() rotation above. Refills + shuffles when empty, and
+  // avoids an immediate repeat across a bag boundary (e.g. last of one bag == first
+  // of the next).
   drawBossFromBag() {
     if (!this._bossBag || this._bossBag.length === 0) {
       this._bossBag = BOSS_TYPES.slice();
@@ -3125,8 +3135,12 @@ export class WaveManager {
     // it spawns beside.
     const baseSpeed = 75 + this.wave * 4 + tier * ENEMY_SPEED_PER_TIER;
     const baseHealth = 2 + Math.floor(this.wave / 3) + tier * ENEMY_HP_PER_TIER;
-    e.speed = baseSpeed * e.def.speedMult;
-    e.maxHealth = Math.max(1, Math.round(baseHealth * e.def.healthMult));
+    // Cursed Mode is harder from the very first wave (the faster escalation + the
+    // stacking curses do the rest).
+    const speedMult = this.cursed ? CURSED_SPEED_MULT : 1;
+    const hpMult = this.cursed ? CURSED_HP_MULT : 1;
+    e.speed = baseSpeed * speedMult * e.def.speedMult;
+    e.maxHealth = Math.max(1, Math.round(baseHealth * hpMult * e.def.healthMult));
     e.health = e.maxHealth;
     return e;
   }
