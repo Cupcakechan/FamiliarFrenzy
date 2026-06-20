@@ -25,11 +25,29 @@ export const CURSES = {
     blurb: "The arena drowns in gloom — only a ring of light follows you.",
     vision: 230, // spotlight radius around the witch (drives the persistent veil)
   },
+  withering: {
+    id: "withering",
+    name: "Withering",
+    blurb: "Health flasks no longer fall — what you have is all you have.",
+    noFlasks: true, // read by the flask-drop roll (game.js)
+  },
+  cursed_ground: {
+    id: "cursed_ground",
+    name: "Cursed Ground",
+    blurb: "Cursed patches keep blooming underfoot. Don't stand still.",
+    groundHazard: true, // read by the ambient hazard spawner (game.js)
+  },
+  quickening: {
+    id: "quickening",
+    name: "Quickening",
+    blurb: "Every lesser horror moves with unnatural speed.",
+    enemySpeedMult: 1.25, // applied to regular enemies' speed (bosses keep their tuned patterns)
+  },
 };
 
 // Curses eligible to be rolled, in rough easiest->nastiest order. Pass 2+ extends
-// this as new CURSES entries land (e.g. "withering", "cursed_ground", "quickening").
-export const CURSE_POOL = ["darkness"];
+// this as new CURSES entries land.
+export const CURSE_POOL = ["darkness", "withering", "cursed_ground", "quickening"];
 
 // Pick a random curse id that isn't active yet, or null once every pool curse is
 // on (so the escalation gracefully stops adding when exhausted).

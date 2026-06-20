@@ -151,6 +151,14 @@ const TUTORIAL_HINTS = {
 };
 const FLASK_HEAL = 15;          // HP restored per flask
 
+// Cursed Ground curse: telegraphed cursed patches keep blooming around the witch.
+const CG_INTERVAL = 2.4;        // seconds between patches while the curse is active
+const CG_RADIUS = 58;           // patch damage radius
+const CG_TELEGRAPH = 1.1;       // windup before it bites (the escape window)
+const CG_DAMAGE = 14;           // damage if you're standing in it at bloom
+const CG_MIN_DIST = 90;         // patches bloom in a ring around the witch...
+const CG_MAX_DIST = 320;        // ...near enough to threaten, far enough to dodge
+
 // Emberheart Robe (red outfit) — emergency heal. When equipped and current HP dips
 // below EMBER_TRIGGER of max while alive, heal up to EMBER_HEAL_TO of max, once per
 // wave (re-armed at each wave change). Fractions of max HP; tunable.
@@ -391,6 +399,7 @@ export class Game {
 
     this.gameMode = "tutorial"; // "tutorial" | "endless" | "cursed"
     this.activeCurses = [];     // Cursed Mode: ids of curses in effect this run (grows per boss kill)
+    this.cursedGroundTimer = CG_INTERVAL; // countdown for the Cursed Ground curse's patches
 
     // Tutorial script + familiar-hint state (reset per run in startGame).
     this.hintsShown = {};
@@ -444,6 +453,7 @@ export class Game {
     this.hazards = [];
     this.waveManager.reset(mode === "endless" || mode === "cursed", mode === "cursed");
     this.activeCurses = []; // Cursed Mode starts with none; one is added per boss kill
+    this.cursedGroundTimer = CG_INTERVAL;
     // Arena theme resets to stone each run, then advances as bosses fall: a boss kill
     // QUEUES the next theme; it swaps in cleanly at the next wave's start (helpers below).
     this.themeIndex = 0;
@@ -529,7 +539,19 @@ export class Game {
   // readout lists the active set.
   applyNextCurse() {
     const id = rollNextCurse(this.activeCurses);
-    if (id) this.activeCurses.push(id);
+    if (!id) return; // every pool curse already active
+    this.activeCurses.push(id);
+
+    // Speed curses (Quickening) take effect at once: update the multiplier new
+    // enemies spawn with, and bump any already alive by the same ratio. Bosses are
+    // left at their tuned speeds. Other curses are passive (read where they apply:
+    // Darkness in the veil, Withering in the flask roll, Cursed Ground in update).
+    const newMult = curseValue(this.activeCurses, "enemySpeedMult", 1);
+    const oldMult = this.waveManager.curseSpeedMult || 1;
+    if (newMult !== oldMult) {
+      for (const e of this.enemies) if (!e.isBoss) e.speed *= newMult / oldMult;
+      this.waveManager.curseSpeedMult = newMult;
+    }
   }
 
   // --- UPDATE ------------------------------------------------------------
@@ -1357,6 +1379,22 @@ export class Game {
     // Bone Mage cursed ground: each zone telegraphs then blasts (damage handled
     // inside HazardZone against the witch's i-frames), then fades and is culled.
     for (const hz of this.hazards) hz.update(dt, this.player);
+
+    // Cursed Ground curse: telegraphed cursed patches keep blooming in a ring
+    // around the witch, forcing her to keep moving. Reuses the Bone Mage's
+    // HazardZone (violet "curse" look, telegraph -> one-time blast).
+    if (this.activeCurses.includes("cursed_ground")) {
+      this.cursedGroundTimer -= dt;
+      if (this.cursedGroundTimer <= 0) {
+        this.cursedGroundTimer = CG_INTERVAL;
+        const a = Math.random() * Math.PI * 2;
+        const d = randomRange(CG_MIN_DIST, CG_MAX_DIST);
+        const m = TILE + CG_RADIUS;
+        const gx = clamp(this.player.x + Math.cos(a) * d, m, WORLD_W - m);
+        const gy = clamp(this.player.y + Math.sin(a) * d, m, WORLD_H - m);
+        this.hazards.push(new HazardZone(gx, gy, CG_RADIUS, CG_TELEGRAPH, CG_DAMAGE));
+      }
+    }
     this.hazards = this.hazards.filter((h) => !h.dead);
 
     // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
@@ -1472,7 +1510,9 @@ export class Game {
             // Lucky Paws now boosts only the RARE drops (flask + magnet); there is
             // no longer a bonus-mote roll, so it never doubles up XP.
             const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP;
-            if (Math.random() < flaskChance) {
+            // Withering curse: no flasks fall at all.
+            const noFlasks = curseValue(this.activeCurses, "noFlasks", false);
+            if (!noFlasks && Math.random() < flaskChance) {
               spot = this.findDropSpot(enemy.x, enemy.y, 9);
               this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
               if (this.isOnScreen(spot.x, spot.y)) this.showHint("flask"); // don't announce an offscreen flask

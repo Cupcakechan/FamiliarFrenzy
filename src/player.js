@@ -41,6 +41,11 @@ const LOOPING = { idle: true, walk: true, die: false };
 // Knockback (e.g. Goblin Bonker club): a brief impulse decays over this long.
 const KNOCK_TIME = 0.22; // seconds
 
+// DEBUG: flip to true to make the witch invulnerable (effectively unlimited HP)
+// for testing — she takes no damage and never dies. Pushes/knockback still apply
+// so you can test those. SHIP AS false.
+const DEBUG_GOD_MODE = false;
+
 // Register sprites. The default purple set is "witch"; outfit recolors use the
 // same strips under a prefixed name (e.g. witch_red_walk_ne.png). Any recolor
 // file that's missing simply falls back to the purple frame at draw time, so
@@ -186,6 +191,7 @@ export class Player {
   }
 
   takeDamage(amount) {
+    if (DEBUG_GOD_MODE) return true; // testing: invulnerable, never takes damage
     if (this.invulnTimer > 0) return false;
     this.health -= amount;
     if (this.health < 0) this.health = 0;

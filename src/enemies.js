@@ -2961,6 +2961,7 @@ export class WaveManager {
     this.endless = endless;        // false = capped tutorial, true = endless/cursed (uncapped)
     this.cursed = cursed;          // Cursed Mode: faster cadence + a base difficulty bump (see makeEnemy)
     this.bossEvery = cursed ? 5 : 10; // boss AND difficulty-tier interval — every 5 waves in Cursed
+    this.curseSpeedMult = 1;       // Quickening curse multiplies new enemies' speed (1 = none)
     this.wave = 0;                 // becomes 1 when the first wave starts
     this.phase = "intermission";   // "intermission" | "spawning" | "boss"
     this.timer = 2.0;              // short "get ready" before wave 1
@@ -3139,7 +3140,7 @@ export class WaveManager {
     // stacking curses do the rest).
     const speedMult = this.cursed ? CURSED_SPEED_MULT : 1;
     const hpMult = this.cursed ? CURSED_HP_MULT : 1;
-    e.speed = baseSpeed * speedMult * e.def.speedMult;
+    e.speed = baseSpeed * speedMult * e.def.speedMult * (this.curseSpeedMult || 1);
     e.maxHealth = Math.max(1, Math.round(baseHealth * hpMult * e.def.healthMult));
     e.health = e.maxHealth;
     return e;
