@@ -460,6 +460,7 @@ export class HazardZone {
   // out to the tip as the swing loads, then a bright impact flash.
   drawRect(ctx) {
     if (this.skin === "spikes") { this.drawRectSpikes(ctx); return; } // Pronggeist look
+    if (this.skin === "clock") { this.drawRectClock(ctx); return; }   // Hourkeeper clock hand
     const hl = this.length / 2, hw = this.width / 2;
     ctx.save();
     ctx.translate(this.x, this.y);
@@ -540,6 +541,7 @@ export class HazardZone {
   // Bone Mage cursed ground: warning ring/rune that fills, then an impact flash.
   drawCircle(ctx) {
     if (this.skin === "stomp") { this.drawStomp(ctx); return; }
+    if (this.skin === "clock") { this.drawClockRune(ctx); return; } // Hourkeeper alarm rune
     const img = getImage("hex_rune");
     if (this.phase === "blast") {
       const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME; // 0->1
@@ -608,6 +610,86 @@ export class HazardZone {
       ctx.beginPath();
       ctx.moveTo(this.x + Math.cos(a) * this.radius * 0.25, this.y + Math.sin(a) * this.radius * 0.25);
       ctx.lineTo(this.x + Math.cos(a) * this.radius * 0.92, this.y + Math.sin(a) * this.radius * 0.92);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Hourkeeper clock hand (rect skin "clock"): a brass bar whose fill sweeps
+  // OUTWARD from the locked pivot both ways (it's a full line through the
+  // pivot), with a bright centre "hand" line + a hub, then a pale flash.
+  // Distinct from the Goblin's red bar and the Pronggeist's toothed gold lane.
+  drawRectClock(ctx) {
+    const BRASS = "#f1c359";
+    const hl = this.length / 2, hw = this.width / 2;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    if (this.phase === "blast") {
+      const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME;
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = "rgba(255, 242, 200, 0.85)";
+      ctx.fillRect(-hl, -hw, this.length, this.width);
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = BRASS;
+      ctx.strokeRect(-hl, -hw, this.length, this.width);
+      ctx.restore();
+      return;
+    }
+    const fill = 1 - Math.max(0, this.timer) / this.telegraph;
+    const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(241, 195, 89, ${0.4 + 0.45 * fill})`;
+    ctx.strokeRect(-hl, -hw, this.length, this.width);
+    // Fill grows symmetrically from the centre (pivot) outward to both tips.
+    ctx.fillStyle = `rgba(241, 195, 89, ${0.10 + 0.18 * pulse})`;
+    ctx.fillRect(-hl * fill, -hw, this.length * fill, this.width);
+    ctx.strokeStyle = `rgba(255, 242, 200, ${0.5 + 0.4 * fill})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-hl, 0); ctx.lineTo(hl, 0); ctx.stroke();
+    ctx.fillStyle = BRASS;
+    ctx.beginPath(); ctx.arc(0, 0, 4, 0, Math.PI * 2); ctx.fill(); // pivot hub
+    ctx.restore();
+  }
+
+  // Hourkeeper alarm rune (circle skin "clock"): the clock_rune.png mark filling
+  // toward the burst, then a pale flash. Falls back to a brass clock-face circle
+  // with a sweeping hand if the art is absent.
+  drawClockRune(ctx) {
+    const img = getImage("clock_rune");
+    if (this.phase === "blast") {
+      const p = 1 - Math.max(0, this.timer) / HAZARD_BLAST_TIME;
+      const r = this.radius * (1 + p * 0.2);
+      ctx.save();
+      ctx.globalAlpha = 1 - p;
+      ctx.fillStyle = "rgba(255, 242, 200, 0.85)";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#f1c359";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+      return;
+    }
+    const fill = 1 - Math.max(0, this.timer) / this.telegraph;
+    ctx.save();
+    if (img && img.width > 0) {
+      const dw = this.radius * 2, dh = this.radius * 2;
+      ctx.globalAlpha = 0.55 + 0.4 * fill;
+      ctx.drawImage(img, this.x - dw / 2, this.y - dh / 2, dw, dh);
+    } else {
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 120);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(241, 195, 89, ${0.45 + 0.45 * fill})`;
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = `rgba(241, 195, 89, ${0.10 + 0.16 * pulse})`;
+      ctx.beginPath(); ctx.arc(this.x, this.y, this.radius * fill, 0, Math.PI * 2); ctx.fill();
+      // A clock hand sweeping toward 12 as the burst nears.
+      const a = -Math.PI / 2 + fill * Math.PI * 2;
+      ctx.strokeStyle = "rgba(255, 242, 200, 0.9)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(this.x, this.y);
+      ctx.lineTo(this.x + Math.cos(a) * this.radius * 0.8, this.y + Math.sin(a) * this.radius * 0.8);
       ctx.stroke();
     }
     ctx.restore();
@@ -2132,12 +2214,432 @@ export class HiveWarden {
   }
 }
 
+// --- Boss: The Hourkeeper (Wave 10) --------------------------------------
+// A clockwork RHYTHM boss: timing / vulnerability-window pressure. It is
+// UNTARGETABLE while it sweeps clock hands across the arena (survive), then
+// REAPPEARS and stays VULNERABLE while it casts Alarm Rune bursts (punish it),
+// blinking between sets. Every attack reuses HazardZone (rect hands + circle
+// runes pushed into the shared `hazards` array), so game.js drives their
+// telegraph / blast / damage / draw for free. Code-drawn + graceful: it runs
+// with no art (a drawn clock + brass hazards) and lights up once the PNGs land.
+//
+// Targetability is enforced two ways: the familiar skips `untargetable` targets
+// (familiar.js), and takeDamage() no-ops unless `vulnerable` — so it can ONLY be
+// hurt during the alarm window. `noContactDamage` keeps its body harmless (its
+// telegraphed hazards are its only damage), so standing close for the cat to
+// reach it during the alarm phase never chips you.
+const HK_RADIUS = 30;            // body hitbox (matches the other bosses)
+const HK_HP_MULT = 1.0;          // x BOSS_HEALTH*tier; dial toward ~0.8 if the fight drags
+const HK_DMG_BASE = 12;          // hand + rune damage at tier 1 (fair, not a one-shot)
+const HK_DMG_PER_TIER = 4;       // + per Endless tier
+const HK_RANGE = 220;            // how far from the witch it (re)appears — keeps it on-screen
+
+// Fades + blink (code effects; no sprites needed for vanish/reappear/blink).
+const HK_APPEAR_TIME = 0.6;
+const HK_VANISH_TIME = 0.35;
+const HK_REAPPEAR_TIME = 0.35;
+const HK_BLINK_TIME = 0.2;
+const HK_FX_LIFE = 0.35;         // poof-ring fade (matches the Bone Mage)
+
+// Clock Hand Sweep (rect HazardZones through a locked pivot, one at a time).
+const HK_HAND_WARN = 1.0;        // telegraph per hand (generous)
+const HK_STRIKE_GAP = 0.5;       // gap between sequential hands (time to reposition)
+const HK_HAND_LENGTH = 1200;     // spans the 960x540 view through the pivot (the camera knob)
+const HK_HAND_WIDTH = 44;        // +player radius ~ a 60px danger band
+const HK_HAND_KNOCKBACK = 0;     // pure dodge for the first pass
+// Hand angles applied IN ORDER; the HP phase decides how many are used:
+// vertical, horizontal (the cross), then the two diagonals (the asterisk).
+const HK_HAND_ANGLES = [Math.PI / 2, 0, Math.PI / 4, -Math.PI / 4];
+
+// Alarm Rune Burst (circle HazardZones dropped around the witch).
+const HK_RUNE_WARN = 1.2;        // "tick... tick... burst"
+const HK_RUNE_RADIUS = 60;       // +player radius ~ a 76px mark
+const HK_RUNE_SPREAD = 90;       // ring radius the runes drop on, around the witch
+const HK_RUNE_STAGGER = 0.12;    // gap between rune spawns (avoids a same-frame double-tap)
+const HK_RECOVER = 0.8;          // stays vulnerable + static this long after a set detonates
+const HK_TIGHTEN = 0.85;         // < 30% HP: shorten warns + gaps for late pressure
+
+// Idle (loops) + Attack (one-shot cast). Single front-facing strip each; the
+// drawn-clock fallback covers a missing file. 6 frames each, sliced at draw time.
+const HK_ANIMS = { idle: 6, attack: 6 };
+const HK_FPS = { idle: 6, attack: 10 };
+loadImage("hourkeeper_idle_s", "assets/sprites/enemies/hourkeeper_idle_s.png");
+loadImage("hourkeeper_attack_s", "assets/sprites/enemies/hourkeeper_attack_s.png");
+
+export class Hourkeeper {
+  constructor(x, y, tier = 1) {
+    this.x = x;
+    this.y = y;
+    this.radius = HK_RADIUS;
+    this.tier = tier;
+
+    this.maxHealth = Math.round(BOSS_HEALTH * tier * HK_HP_MULT);
+    this.health = this.maxHealth;
+    this.damage = HK_DMG_BASE + (tier - 1) * HK_DMG_PER_TIER; // hands + runes
+    this.dead = false;
+    this.hitFlash = 0;
+    this.isBoss = true;
+    this.name = "The Hourkeeper";
+
+    // Rhythm gating.
+    this.untargetable = true;    // familiar skips this while it's gone
+    this.vulnerable = false;     // takeDamage no-ops unless true
+    this.noContactDamage = true; // body never chips the witch (game.js contact guard)
+
+    // Visuals.
+    this.alpha = 0;              // body opacity (fades for vanish/reappear/blink)
+    this.facing = "s";
+    this.animState = "idle";
+    this.animFrame = 0;
+    this.animTimer = 0;
+    this.spriteScale = 1.0;      // tune to native art (body radius 30)
+    this.bodyTick = Math.random() * Math.PI * 2; // drives the drawn clock hands
+    this.blinkFx = [];           // poof rings (visual only)
+
+    // State machine: appear -> vanish -> sweep -> reappear -> (alarm -> blink)xN -> ...
+    this.state = "appear";
+    this.phaseTimer = HK_APPEAR_TIME;
+    this._appeared = false;      // place near the witch on the first frame
+    this._tighten = 1;           // phase timing multiplier (1, or HK_TIGHTEN when low)
+
+    // Sweep bookkeeping.
+    this.pivotX = x;
+    this.pivotY = y;
+    this.sweepAngles = [];       // hand angles queued for this sweep
+    this.sweepGapTimer = 0;
+    this.sweepTailTimer = 0;     // waits out the last hand's warn + blast
+
+    // Alarm bookkeeping.
+    this.setsLeft = 0;           // alarm sets remaining this cycle
+    this.runeQueue = 0;          // runes left to drop in the current set
+    this.runeSetTotal = 0;       // the set's original count (for even ring spacing)
+    this.runeIndex = 0;
+    this.runeAngleBase = 0;
+    this.runeStaggerTimer = 0;
+    this.recoverTimer = 0;       // vulnerable tail after a set's last rune drops
+
+    this._worldW = PLAYFIELD.worldW;
+    this._worldH = PLAYFIELD.worldH;
+  }
+
+  // HP-fraction phase: fewer hands/runes/sets up top, more (and tighter) as it
+  // weakens. Re-evaluated when each sweep/alarm begins, so it ramps responsively.
+  hkPhase() {
+    const f = this.health / this.maxHealth;
+    if (f >= 0.60) return { hands: 2, runes: 3, sets: 1, tighten: 1 };
+    if (f >= 0.30) return { hands: 3, runes: 4, sets: 2, tighten: 1 };
+    return { hands: 4, runes: 5, sets: 2, tighten: HK_TIGHTEN };
+  }
+
+  // Teleport to a point `dist` from the witch (random angle), clamped to the
+  // floor, with a poof at both the old and new spots. Keeps it on-screen + in
+  // range so the sweep pivot is always something the player just saw.
+  repositionNear(player, dist) {
+    const ang = Math.random() * Math.PI * 2;
+    const pos = clampToPlayfield(
+      player.x + Math.cos(ang) * dist,
+      player.y + Math.sin(ang) * dist,
+      this.radius
+    );
+    this.blinkFx.push({ x: this.x, y: this.y, t: HK_FX_LIFE });
+    this.x = pos.x;
+    this.y = pos.y;
+    this.blinkFx.push({ x: this.x, y: this.y, t: HK_FX_LIFE });
+  }
+
+  // Driven by the generic enemy loop as update(dt, player, enemyBolts, hazards);
+  // it ignores enemyBolts and pushes its attacks into `hazards`.
+  update(dt, player, enemyBolts, hazards) {
+    this._worldW = PLAYFIELD.worldW;
+    this._worldH = PLAYFIELD.worldH;
+    if (this.hitFlash > 0) this.hitFlash -= dt;
+    this.bodyTick += dt;
+
+    // Age poof rings.
+    for (const f of this.blinkFx) f.t -= dt;
+    this.blinkFx = this.blinkFx.filter((f) => f.t > 0);
+
+    this.phaseTimer -= dt;
+
+    switch (this.state) {
+      case "appear":
+        if (!this._appeared) { this.repositionNear(player, HK_RANGE); this._appeared = true; }
+        this.alpha = Math.min(1, this.alpha + dt / HK_APPEAR_TIME);
+        this.animState = "idle";
+        if (this.phaseTimer <= 0) this.beginVanish();
+        break;
+
+      case "vanish":
+        this.alpha = Math.max(0, this.alpha - dt / HK_VANISH_TIME);
+        if (this.phaseTimer <= 0) this.beginSweep();
+        break;
+
+      case "sweep":
+        this.alpha = 0; // invisible + untargetable while the hands sweep
+        if (this.sweepAngles.length > 0) {
+          this.sweepGapTimer -= dt;
+          if (this.sweepGapTimer <= 0) {
+            this.spawnHand(this.sweepAngles.shift(), hazards);
+            this.sweepGapTimer = HK_STRIKE_GAP * this._tighten;
+            // Once the last hand is out, wait its warn + blast before reappearing.
+            if (this.sweepAngles.length === 0) {
+              this.sweepTailTimer = HK_HAND_WARN * this._tighten + HAZARD_BLAST_TIME + 0.1;
+            }
+          }
+        } else {
+          this.sweepTailTimer -= dt;
+          if (this.sweepTailTimer <= 0) this.beginReappear(player);
+        }
+        break;
+
+      case "reappear":
+        this.alpha = Math.min(1, this.alpha + dt / HK_REAPPEAR_TIME);
+        this.animState = "idle";
+        if (this.phaseTimer <= 0) this.beginAlarm(player, hazards);
+        break;
+
+      case "alarm":
+        this.alpha = 1; // present, vulnerable, static while casting
+        if (this.runeQueue > 0) {
+          this.runeStaggerTimer -= dt;
+          if (this.runeStaggerTimer <= 0) {
+            this.spawnRune(player, hazards);
+            this.runeQueue -= 1;
+            this.runeStaggerTimer = HK_RUNE_STAGGER;
+            // Stay vulnerable through the last rune's warn + blast + a recover tail.
+            if (this.runeQueue === 0) {
+              this.recoverTimer = HK_RUNE_WARN * this._tighten + HAZARD_BLAST_TIME + HK_RECOVER;
+            }
+          }
+        } else {
+          this.recoverTimer -= dt;
+          if (this.recoverTimer <= 0) this.beginBlink(player);
+        }
+        break;
+
+      case "blink":
+        this.alpha = 0.3; // brief dim flicker during the teleport
+        if (this.phaseTimer <= 0) {
+          if (this.setsLeft > 0) this.beginAlarm(player, hazards);
+          else this.beginVanish();
+        }
+        break;
+    }
+
+    this.advanceAnim(dt);
+  }
+
+  beginVanish() {
+    this.state = "vanish";
+    this.phaseTimer = HK_VANISH_TIME;
+    this.untargetable = true;
+    this.vulnerable = false;
+  }
+
+  beginSweep() {
+    this.state = "sweep";
+    this.untargetable = true;
+    this.vulnerable = false;
+    // Lock the pivot at the boss's last-seen spot (the player just saw it here).
+    this.pivotX = this.x;
+    this.pivotY = this.y;
+    const ph = this.hkPhase();
+    this._tighten = ph.tighten;
+    this.sweepAngles = HK_HAND_ANGLES.slice(0, ph.hands);
+    this.sweepGapTimer = 0; // first hand drops immediately
+    this.sweepTailTimer = 0;
+  }
+
+  spawnHand(angle, hazards) {
+    if (!hazards) return;
+    // radius 0 (unused for rect); length/width/angle define the bar. sfx null =
+    // silent (no audio.js dependency this pass).
+    hazards.push(new HazardZone(this.pivotX, this.pivotY, 0, HK_HAND_WARN * this._tighten, this.damage, {
+      shape: "rect",
+      angle,
+      length: HK_HAND_LENGTH,
+      width: HK_HAND_WIDTH,
+      knockback: HK_HAND_KNOCKBACK,
+      ox: this.pivotX,
+      oy: this.pivotY,
+      skin: "clock",
+      sfx: null,
+    }));
+  }
+
+  beginReappear(player) {
+    this.state = "reappear";
+    this.phaseTimer = HK_REAPPEAR_TIME;
+    this.untargetable = true;
+    this.vulnerable = false;
+    this.repositionNear(player, HK_RANGE);
+    this.setsLeft = this.hkPhase().sets; // how many alarm sets this cycle
+  }
+
+  beginAlarm(player, hazards) {
+    this.state = "alarm";
+    this.untargetable = false; // the punish window opens
+    this.vulnerable = true;
+    const ph = this.hkPhase();
+    this._tighten = ph.tighten;
+    this.runeQueue = ph.runes;
+    this.runeSetTotal = ph.runes;
+    this.runeIndex = 0;
+    this.runeAngleBase = Math.random() * Math.PI * 2;
+    this.runeStaggerTimer = 0; // first rune drops immediately
+    this.recoverTimer = 0;
+    this.setsLeft -= 1;        // this set consumes one
+    this.startAttackAnim();    // one-shot cast pose
+  }
+
+  spawnRune(player, hazards) {
+    if (!hazards) return;
+    // Drop on a ring around the witch's CURRENT spot (so she must move), spread
+    // evenly with a little jitter, clamped to the floor — never on top of her.
+    const total = Math.max(1, this.runeSetTotal);
+    const a = this.runeAngleBase + (this.runeIndex / total) * Math.PI * 2 + randomRange(-0.3, 0.3);
+    const dist = HK_RUNE_SPREAD + randomRange(-15, 15);
+    const pos = clampToPlayfield(
+      player.x + Math.cos(a) * dist,
+      player.y + Math.sin(a) * dist,
+      HK_RUNE_RADIUS
+    );
+    this.runeIndex += 1;
+    hazards.push(new HazardZone(pos.x, pos.y, HK_RUNE_RADIUS, HK_RUNE_WARN * this._tighten, this.damage, {
+      shape: "circle",
+      skin: "clock",
+      sfx: null,
+    }));
+  }
+
+  beginBlink(player) {
+    this.state = "blink";
+    this.phaseTimer = HK_BLINK_TIME;
+    this.untargetable = true; // brief immunity during the teleport poof
+    this.vulnerable = false;
+    this.repositionNear(player, HK_RANGE);
+  }
+
+  advanceAnim(dt) {
+    const frames = HK_ANIMS[this.animState];
+    const dur = 1 / HK_FPS[this.animState];
+    this.animTimer += dt;
+    while (this.animTimer >= dur) {
+      this.animTimer -= dur;
+      if (this.animState === "attack") {
+        if (this.animFrame < frames - 1) this.animFrame += 1;
+        else { this.animState = "idle"; this.animFrame = 0; } // one-shot -> idle
+      } else {
+        this.animFrame = (this.animFrame + 1) % frames; // idle loops
+      }
+    }
+  }
+
+  startAttackAnim() {
+    this.animState = "attack";
+    this.animFrame = 0;
+    this.animTimer = 0;
+  }
+
+  takeDamage(amount) {
+    if (!this.vulnerable) return; // immune unless in the alarm window
+    this.health -= amount;
+    this.hitFlash = 0.08;
+    if (this.health <= 0) this.dead = true;
+  }
+
+  // The shared boss-summon call (boss.consumeSummon()) is made unguarded by
+  // game.js — this no-op keeps the Hourkeeper (which never summons) safe.
+  consumeSummon() {
+    return false;
+  }
+
+  draw(ctx) {
+    // Poof rings at each blink/vanish/reappear end (brass-tinted).
+    for (const f of this.blinkFx) {
+      const p = 1 - f.t / HK_FX_LIFE;
+      const r = 6 + p * (this.radius + 12);
+      ctx.save();
+      ctx.globalAlpha = (1 - p) * 0.7;
+      ctx.strokeStyle = "#f1c359";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(f.x, f.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
+    if (this.alpha <= 0.02) return; // fully vanished — body not drawn
+
+    const flash = this.hitFlash > 0;
+    const key = `hourkeeper_${this.animState}_s`;
+    const img = getImage(key);
+
+    ctx.save();
+    ctx.globalAlpha = this.alpha;
+    if (img && img.width > 0) {
+      const frames = HK_ANIMS[this.animState];
+      const fw = img.width / frames;
+      const fh = img.height;
+      const dw = fw * this.spriteScale, dh = fh * this.spriteScale;
+      const sx = Math.floor(this.animFrame) * fw;
+      ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+      if (flash) {
+        ctx.globalAlpha = this.alpha * 0.55;
+        ctx.globalCompositeOperation = "lighter";
+        ctx.drawImage(img, sx, 0, fw, fh, this.x - dw / 2, this.y - dh / 2, dw, dh);
+      }
+    } else {
+      this.drawClockFallback(ctx, flash);
+    }
+    ctx.restore();
+  }
+
+  // Code-drawn clock face: a brass-rimmed dial with hour ticks + two turning
+  // hands. Glows while vulnerable so the punish window reads even without art.
+  drawClockFallback(ctx, flash) {
+    const R = this.radius;
+    if (this.vulnerable) { ctx.save(); ctx.shadowColor = "#f1c359"; ctx.shadowBlur = 16; }
+    ctx.fillStyle = flash ? "#ffffff" : "#2a2440";
+    ctx.beginPath(); ctx.arc(this.x, this.y, R, 0, Math.PI * 2); ctx.fill();
+    if (this.vulnerable) ctx.restore();
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = flash ? "#ffffff" : "#f1c359";
+    ctx.beginPath(); ctx.arc(this.x, this.y, R, 0, Math.PI * 2); ctx.stroke();
+
+    ctx.strokeStyle = "rgba(241, 195, 89, 0.8)";
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(this.x + Math.cos(a) * R * 0.78, this.y + Math.sin(a) * R * 0.78);
+      ctx.lineTo(this.x + Math.cos(a) * R * 0.92, this.y + Math.sin(a) * R * 0.92);
+      ctx.stroke();
+    }
+
+    const hourA = this.bodyTick * 0.6, minA = this.bodyTick * 1.8;
+    ctx.strokeStyle = flash ? "#ffffff" : "#fff2c8";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.x + Math.cos(hourA) * R * 0.5, this.y + Math.sin(hourA) * R * 0.5);
+    ctx.stroke();
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(this.x, this.y);
+    ctx.lineTo(this.x + Math.cos(minA) * R * 0.78, this.y + Math.sin(minA) * R * 0.78);
+    ctx.stroke();
+
+    ctx.fillStyle = "#f1c359";
+    ctx.beginPath(); ctx.arc(this.x, this.y, 3, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
 // --- Boss selection ----------------------------------------------------------
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
 // random rotation — no back-to-back repeats; order varies each run).
 const DEBUG_FORCE_BOSS = false;
-const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden"
+const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden" | "hourkeeper"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
 // shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).
@@ -2248,6 +2750,7 @@ export class WaveManager {
     if (type === "auto") type = this.drawBossFromBag();
     return type === "watching_hand" ? new WatchingHand(pos.x, pos.y, tier)
          : type === "hive_warden"   ? new HiveWarden(pos.x, pos.y, tier)
+         : type === "hourkeeper"    ? new Hourkeeper(pos.x, pos.y, tier)
          : new Boss(pos.x, pos.y, tier);
   }
 

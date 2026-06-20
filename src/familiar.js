@@ -291,7 +291,7 @@ class Puddle {
     if (this.tickTimer <= 0) {
       this.tickTimer += PUDDLE_TICK_INTERVAL;
       for (const t of targets) {
-        if (t.dead) continue;
+        if (t.dead || t.untargetable) continue;
         if (distance(this.x, this.y, t.x, t.y) <= this.radius + t.radius) {
           t.takeDamage(this.tickDamage);
           // Extend the enemy's existing white hit-flash (set ~0.1 by takeDamage)
@@ -397,7 +397,7 @@ export class Familiar {
       bolt.update(dt);
       if (bolt.dead) continue;
       for (const target of targets) {
-        if (target.dead || bolt.hitTargets.has(target)) continue;
+        if (target.dead || target.untargetable || bolt.hitTargets.has(target)) continue;
         if (distance(bolt.x, bolt.y, target.x, target.y) < bolt.radius + target.radius) {
           target.takeDamage(bolt.damage);
           bolt.hitTargets.add(target);
@@ -417,7 +417,7 @@ export class Familiar {
       beam.update(dt);
       if (beam.dead) continue;
       for (const t of targets) {
-        if (t.dead || beam.hitTargets.has(t)) continue;
+        if (t.dead || t.untargetable || beam.hitTargets.has(t)) continue;
         if (pointSegDist(t.x, t.y, beam.x, beam.y, beam.ex, beam.ey) <= beam.width / 2 + t.radius) {
           t.takeDamage(beam.damage);
           beam.hitTargets.add(t);
@@ -526,7 +526,7 @@ export class Familiar {
   // Up to `n` nearest in-range targets, excluding the primary, for collar spread.
   findExtraTargets(targets, exclude, n) {
     return targets
-      .filter((t) => !t.dead && t !== exclude && distance(this.x, this.y, t.x, t.y) <= this.attackRange)
+      .filter((t) => !t.dead && !t.untargetable && t !== exclude && distance(this.x, this.y, t.x, t.y) <= this.attackRange)
       .sort((a, b) => distance(this.x, this.y, a.x, a.y) - distance(this.x, this.y, b.x, b.y))
       .slice(0, n);
   }
@@ -563,7 +563,7 @@ export class Familiar {
     let nearest = null;
     let nearestDist = this.attackRange;
     for (const target of targets) {
-      if (target.dead) continue;
+      if (target.dead || target.untargetable) continue;
       const d = distance(this.x, this.y, target.x, target.y);
       if (d <= nearestDist) {
         nearestDist = d;

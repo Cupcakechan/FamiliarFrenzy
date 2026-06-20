@@ -144,6 +144,7 @@ const TUTORIAL_HINTS = {
   bone_mage:   "A Bone Mage! It curses the ground — step off the rune!",
   goblin_bonker: "A Goblin Bonker! Its club swing knocks you flying — dodge it.",
   pronggeist:  "That fork is aiming at the floor — move!",
+  hourkeeper:  "It's gone — watch the clock hands!",
   spirit_crystal: "A Spirit Crystal! Spend these in the Wardrobe between runs.",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
@@ -241,6 +242,11 @@ const BESTIARY = [
     id: "hive_warden", name: "Hive Warden", kind: "Boss", bossName: "Hive Warden",
     spriteKey: "bee_fly_s", frames: 6,
     blurb: "Charges up and fires sharp stinger volleys.",
+  },
+  {
+    id: "hourkeeper", name: "The Hourkeeper", kind: "Boss", bossName: "The Hourkeeper",
+    spriteKey: "hourkeeper_idle_s", frames: 6,
+    blurb: "Vanishes into time, then returns when the alarms begin.",
   },
 ];
 
@@ -1272,9 +1278,12 @@ export class Game {
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player, this.enemyBolts, this.hazards);
       // Goblin Bonker deals NO body-contact damage at all — its radial stomp is
-      // its only damage. The `enemy.def &&` guard matters because bosses are
-      // separate classes with no `def`, so reading `.bruiser` on them would throw.
-      if (enemy.def && enemy.def.bruiser) continue;
+      // its only damage. The Hourkeeper (noContactDamage) is the same: only its
+      // telegraphed hazards hurt, so standing close during its alarm phase for the
+      // familiar to reach it never chips you. The `enemy.def &&` guard matters
+      // because bosses are separate classes with no `def`, so reading `.bruiser`
+      // on them would throw.
+      if ((enemy.def && enemy.def.bruiser) || enemy.noContactDamage) continue;
       // Contact damage uses the enemy's contactRadius when it defines one (the
       // Elder Wisp tightens it mid-dash); everything else falls back to radius.
       const cr = enemy.contactRadius != null ? enemy.contactRadius : enemy.radius;
@@ -1327,6 +1336,7 @@ export class Game {
       if (boss.name === "Elder Wisp") { this.markSeen("elder_wisp"); this.showEnemyHint("elder_wisp"); }
       else if (boss.name === "The Watching Hand") { this.markSeen("watching_hand"); this.showEnemyHint("watching_hand"); }
       else if (boss.name === "Hive Warden") { this.markSeen("hive_warden"); this.showEnemyHint("hive_warden"); }
+      else if (boss.name === "The Hourkeeper") { this.markSeen("hourkeeper"); this.showEnemyHint("hourkeeper"); }
       else this.showHint("boss");
     }
 
