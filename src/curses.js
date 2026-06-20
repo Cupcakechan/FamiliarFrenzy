@@ -3,7 +3,7 @@
 
    A "curse" is a data-driven modifier that activates as you descend in Cursed
    Mode: each boss kill adds one new random curse, and they stack. Every entry
-   declares its display info (name, blurb) and its EFFECT FIELDS, which the
+   declares its display info (name, blurb, cry) and its EFFECT FIELDS, which the
    relevant systems read off the currently-active set. So adding a curse is a
    registry entry plus the one place that reads its field — the HUD, pause
    menu, and archive (later passes) all auto-flow from this table with no extra
@@ -23,24 +23,28 @@ export const CURSES = {
     id: "darkness",
     name: "Darkness",
     blurb: "The arena drowns in gloom — only a ring of light follows you.",
+    cry: "The light dies — stay close to me.", // familiar's herald the moment it lands
     vision: 230, // spotlight radius around the witch (drives the persistent veil)
   },
   withering: {
     id: "withering",
     name: "Withering",
     blurb: "Health flasks no longer fall — what you have is all you have.",
+    cry: "No flasks will fall now — make it last.",
     noFlasks: true, // read by the flask-drop roll (game.js)
   },
   cursed_ground: {
     id: "cursed_ground",
     name: "Cursed Ground",
     blurb: "Cursed patches keep blooming underfoot. Don't stand still.",
+    cry: "The ground turns against us — keep moving.",
     groundHazard: true, // read by the ambient hazard spawner (game.js)
   },
   quickening: {
     id: "quickening",
     name: "Quickening",
     blurb: "Every lesser horror moves with unnatural speed.",
+    cry: "They move faster now… don't get cornered.",
     enemySpeedMult: 1.25, // applied to regular enemies' speed (bosses keep their tuned patterns)
   },
 };

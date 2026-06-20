@@ -775,6 +775,130 @@ export function drawBestiary(ctx, w, h, entries, selectedIndex, scrollIn = 0, fo
   return { zones, scroll, maxScroll, scrollbar }; // game.js stores scroll + scrollbar geometry
 }
 
+// --- CURSES ARCHIVE (Cursed Mode) ----------------------------------------
+// Mirrors the Bestiary: scrollable list, "N / M discovered" counter, a Back row,
+// and the same follow-selection scroll. Each row shows the curse icon + name +
+// blurb; undiscovered curses are blacked out (dark box + "?" and "???").
+// entries = [{ id, name, blurb, seen, img }] in pool order.
+// Returns { zones, scroll, maxScroll, scrollbar }.
+export function drawCurses(ctx, w, h, entries, selectedIndex, scrollIn = 0, followSel = true) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "CURSES", w / 2, 46, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  const seenCount = entries.filter((e) => e.seen).length;
+  text(ctx, `${seenCount} / ${entries.length} discovered`, w / 2, 74, { size: 14, color: DIM, weight: "500" });
+
+  const leftX = 200;
+  const rightX = w - 200;
+  const iconBox = 64;       // native curse-icon size (1:1, crisp)
+  const gap = 8;
+  const backIndex = entries.length;
+  const textX = leftX + iconBox + 22;
+
+  const viewTop = 94;
+  const viewBottom = h - 40;
+  const viewH = viewBottom - viewTop;
+
+  // Pass 1: lay rows out in content space (each sized to its wrapped blurb).
+  const rows = [];
+  let cy = 0;
+  entries.forEach((e, i) => {
+    const blurb = e.seen ? e.blurb : "Not yet discovered. Suffer this curse in a run to reveal it.";
+    const blurbLines = wrapText(ctx, blurb, rightX - textX, { size: 16, weight: "500", maxLines: 3 });
+    const textBlock = 30 + 6 + blurbLines.length * 22;
+    const height = Math.max(iconBox, textBlock) + 16;
+    rows.push({ kind: "entry", i, e, blurbLines, y: cy, height });
+    cy += height + gap;
+  });
+  const backRow = { kind: "back", i: backIndex, y: cy, height: 40 };
+  rows.push(backRow);
+  cy += backRow.height;
+  const contentH = cy;
+
+  // Scroll: follow the highlighted row, or honour the free wheel position.
+  const maxScroll = Math.max(0, contentH - viewH);
+  let scroll;
+  if (followSel) {
+    const selRow = rows.find((r) => r.i === selectedIndex) || backRow;
+    scroll = 0;
+    if (selRow.y < scroll) scroll = selRow.y;
+    if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  } else {
+    scroll = scrollIn;
+  }
+  scroll = Math.max(0, Math.min(maxScroll, scroll));
+
+  const zones = [];
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, viewTop, w, viewH);
+  ctx.clip();
+
+  for (const r of rows) {
+    const ry = viewTop + r.y - scroll;
+    if (ry + r.height < viewTop || ry > viewBottom) continue; // cull offscreen rows
+
+    {
+      const zy = Math.max(viewTop, ry);
+      const zBottom = Math.min(viewBottom, ry + r.height);
+      if (zBottom > zy) zones.push({ x: leftX - 16, y: Math.round(zy), w: rightX - leftX + 32, h: Math.round(zBottom - zy), index: r.i });
+    }
+
+    if (r.kind === "back") {
+      const sel = selectedIndex === backIndex;
+      text(ctx, `${sel ? "> " : "  "}Back`, leftX, ry + 20, {
+        size: 22, color: sel ? GOLD : CREAM, align: "left", weight: sel ? "700" : "500",
+      });
+      continue;
+    }
+
+    drawCurseRow(ctx, r.e, leftX, ry, rightX, r.height, iconBox, textX, r.blurbLines, r.i === selectedIndex);
+  }
+  ctx.restore();
+
+  const scrollbar = maxScroll > 0 ? drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH) : null;
+  return { zones, scroll, maxScroll, scrollbar };
+}
+
+// One curse row: icon box (or blacked-out box + "?" if unseen) + name + wrapped
+// blurb, inside a highlighted panel when selected.
+function drawCurseRow(ctx, e, leftX, y, rightX, rowH, iconBox, textX, blurbLines, selected) {
+  if (selected) {
+    ctx.fillStyle = "rgba(244, 213, 141, 0.07)";
+    ctx.fillRect(leftX - 16, y, rightX - leftX + 32, rowH - 6);
+    ctx.strokeStyle = "rgba(244, 213, 141, 0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(leftX - 16, y, rightX - leftX + 32, rowH - 6);
+  }
+
+  const boxY = y + (rowH - iconBox) / 2 - 3;
+  ctx.fillStyle = "rgba(244, 213, 141, 0.06)";
+  ctx.fillRect(leftX, boxY, iconBox, iconBox);
+  ctx.strokeStyle = selected ? GOLD : "rgba(244, 213, 141, 0.3)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(leftX, boxY, iconBox, iconBox);
+
+  if (e.seen && e.img && e.img.width > 0) {
+    ctx.save();
+    ctx.imageSmoothingEnabled = false; // 64px art at 1:1, crisp
+    const pad = 4;
+    ctx.drawImage(e.img, leftX + pad, boxY + pad, iconBox - pad * 2, iconBox - pad * 2);
+    ctx.restore();
+  } else {
+    // Blacked out until discovered.
+    ctx.fillStyle = "#2b2540";
+    ctx.fillRect(leftX + 1, boxY + 1, iconBox - 2, iconBox - 2);
+    text(ctx, "?", leftX + iconBox / 2, boxY + iconBox / 2, { size: 30, color: "#5a5170", weight: "700" });
+  }
+
+  const name = e.seen ? e.name : "???";
+  text(ctx, name, textX, y + 26, { size: 24, color: e.seen ? GOLD : DIM, align: "left", weight: "700" });
+  blurbLines.forEach((line, li) => {
+    text(ctx, line, textX, y + 56 + li * 22, { size: 16, color: e.seen ? CREAM : DIM, align: "left", weight: "500" });
+  });
+}
+
 // Shared creature portrait: lit box + sprite (or silhouette if unseen, or "?" if
 // no art). `animated` plays the idle loop (used in the big expanded view).
 function drawCreaturePortrait(ctx, e, x, y, box, animated, highlighted) {
@@ -1311,8 +1435,8 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   });
 
   // --- Menu options: centered near the bottom ---
-  const startY = h - 206; // tuned for the 5-item menu (Resume/Grimoire/Bestiary/Settings/Main Menu)
   const lineH = 36;
+  const startY = h - 62 - (items.length - 1) * lineH; // anchor last row just above the footer; auto-fits any item count
   const zones = []; // clickable rect per item (mouse hit-testing in game.js)
   const bw = 360, bh = 32; // generous click band per row (lineH 36 leaves a small gap)
   items.forEach((item, i) => {

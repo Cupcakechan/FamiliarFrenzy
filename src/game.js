@@ -20,12 +20,12 @@ import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager, HazardZone } from "./enemies.js";
-import { CURSES, rollNextCurse, curseValue } from "./curses.js";
+import { CURSES, CURSE_POOL, rollNextCurse, curseValue } from "./curses.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 import { getReducedFlash, setReducedFlash, getHighVisWarnings, setHighVisWarnings } from "./settings.js";
 
@@ -63,7 +63,7 @@ const OBJECT_COUNT  = 12;      // distinct object cells (rows 5–7)
 // runes / 20–31 objects), so the constants above drive every theme. Order = the cycle;
 // add a 3rd entry and the picker keeps working (alternation becomes a rotation).
 const THEMES = [
-  { id: "stone", tiles: "dungeon_tiles", props: "floor_props", arriveLine: "The cold stone returns..." },
+  { id: "stone", tiles: "dungeon_tiles", props: "floor_props", arriveLine: null },
   { id: "wood",  tiles: "wood_tiles",    props: "wood_props",  arriveLine: "The dungeon shifts beneath us..." },
 ];
 
@@ -73,7 +73,8 @@ const STATE = {
   HOW_TO_PLAY: "howToPlay",
   GRIMOIRE: "grimoire",
   BESTIARY: "bestiary",
-  ARCHIVE: "archive", // Arcane Archive hub (Grimoire + Bestiary)
+  CURSES: "curses", // Curses archive (Cursed Mode), reached via the Arcane Archive
+  ARCHIVE: "archive", // Arcane Archive hub (Grimoire + Bestiary + Curses)
   CLOSET: "closet", // Wardrobe: buy/equip outfits with Spirit Crystals
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
@@ -89,10 +90,10 @@ const STATE = {
 };
 
 const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings"];
-const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Back"]; // Arcane Archive hub
+const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Curses", "Back"]; // Arcane Archive hub
 const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "Cursed Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
-const PAUSE_ITEMS = ["Resume", "Grimoire", "Bestiary", "Settings", "Main Menu"];
+const PAUSE_ITEMS = ["Resume", "Arcane Archive", "Settings", "Main Menu"];
 const CONFIRM_ITEMS = ["Yes", "No"];
 
 const SCORE_PER_PICKUP = 10;
@@ -334,6 +335,7 @@ export class Game {
 
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
+    this.archiveReturn = STATE.MAIN_MENU;  // Arcane Archive hub: back out to main menu or pause
     this.grimoireEntries = [];             // cached list while the screen is open
     this.grimoireIndex = 0;                // highlighted entry (Back = entries.length)
 
@@ -536,13 +538,19 @@ export class Game {
 
   // Cursed Mode escalation: on each boss kill, activate one more random curse (the
   // difficulty also steps from the faster every-5 tier scaling). Stops adding once
-  // every pool curse is active. Pass 2 adds the on-screen announce + HUD icons; for
-  // now the effect itself is the feedback (Darkness dims the arena) and the debug
-  // readout lists the active set.
+  // every pool curse is active. The new curse shows on the HUD (icon), unlocks in
+  // the Curses archive, and the familiar heralds it by name (below).
   applyNextCurse() {
     const id = rollNextCurse(this.activeCurses);
     if (!id) return; // every pool curse already active
     this.activeCurses.push(id);
+    this.markCurseSeen(id); // unlocks the entry in the Curses archive (persists)
+
+    // The familiar heralds the new curse so it isn't just a silent HUD icon. Each
+    // CURSES entry carries its own short `cry`; a missing one degrades to silence
+    // (the icon still appears). Reuses the dialogue bar/queue, so it honors the same
+    // hints toggle as the tutorial/theme lines and queues behind any active line.
+    if (CURSES[id] && CURSES[id].cry) this.sayFamiliar(CURSES[id].cry);
 
     // Speed curses (Quickening) take effect at once: update the multiplier new
     // enemies spawn with, and bump any already alive by the same ratio. Bosses are
@@ -570,7 +578,7 @@ export class Game {
         if (this.confirmPressed() || clicked) {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
           else if (this.menuIndex === 1) this.openCloset();           // Wardrobe
-          else if (this.menuIndex === 2) this.openArchive();          // Arcane Archive
+          else if (this.menuIndex === 2) this.openArchive(STATE.MAIN_MENU);  // Arcane Archive
           else if (this.menuIndex === 3) { this.highscoresTab = "endless"; this.highscoresTabHover = null; this.state = STATE.HIGHSCORES_PLACEHOLDER; }
           else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
@@ -594,6 +602,10 @@ export class Game {
 
       case STATE.BESTIARY:
         this.updateBestiary();
+        break;
+
+      case STATE.CURSES:
+        this.updateCurses();
         break;
 
       case STATE.ARCHIVE:
@@ -752,10 +764,8 @@ export class Game {
           if (this.menuIndex === 0) {
             this.state = STATE.PLAYING;                 // Resume
           } else if (this.menuIndex === 1) {
-            this.openGrimoire(STATE.PAUSED);            // Upgrade Grimoire (returns to Pause)
+            this.openArchive(STATE.PAUSED);             // Arcane Archive hub (returns to Pause)
           } else if (this.menuIndex === 2) {
-            this.openBestiary(STATE.PAUSED);            // Bestiary (returns to Pause)
-          } else if (this.menuIndex === 3) {
             this.settingsReturn = STATE.PAUSED;         // Settings (returns to Pause)
             this.settingsIndex = 0;
             this.state = STATE.SETTINGS_PLACEHOLDER;
@@ -879,10 +889,14 @@ export class Game {
   // a boss is alive during play; otherwise gameplay states use the GAMEPLAY
   // pool and menus use the MENU pool (the two pools are split in audio.js).
   updateMusic() {
-    const grimoireInPlay = this.state === STATE.GRIMOIRE && this.grimoireReturn === STATE.PAUSED;
+    // Any archive screen opened from pause (hub, Grimoire, Bestiary, Curses) is
+    // still "in the run" for music — keep the gameplay/boss track, don't drop to menu.
+    const inArchiveFromPause = (this.state === STATE.ARCHIVE || this.state === STATE.GRIMOIRE
+      || this.state === STATE.BESTIARY || this.state === STATE.CURSES)
+      && this.archiveReturn === STATE.PAUSED;
     const inPlay = this.state === STATE.PLAYING || this.state === STATE.LEVEL_UP
       || this.state === STATE.PAUSED || this.state === STATE.DYING
-      || grimoireInPlay;
+      || inArchiveFromPause;
     const bossActive = this.waveManager.boss && !this.waveManager.boss.dead;
     setMusicContext(bossActive && inPlay ? "boss" : inPlay ? "gameplay" : "menu");
   }
@@ -1007,16 +1021,76 @@ export class Game {
     else if (this.state === STATE.ARCHIVE) this.archiveIndex = 1; // land back on "Bestiary"
   }
 
+  // --- Curses archive (Cursed Mode) -----------------------------------------
+  // Discovered curses persist across runs in ff_seenCurses (a JSON array of ids),
+  // mirroring ff_seenEnemies. Loaded lazily into this._seenCurses on first use; a
+  // curse is marked seen the moment it's applied (see applyNextCurse).
+  loadSeenCurses() {
+    if (this._seenCurses) return this._seenCurses;
+    let ids = [];
+    try {
+      const raw = localStorage.getItem("ff_seenCurses");
+      if (raw) { const p = JSON.parse(raw); if (Array.isArray(p)) ids = p; }
+    } catch (e) { /* storage blocked — start empty */ }
+    this._seenCurses = new Set(ids);
+    return this._seenCurses;
+  }
+
+  hasSeenCurse(id) {
+    return this.loadSeenCurses().has(id);
+  }
+
+  markCurseSeen(id) {
+    const seen = this.loadSeenCurses();
+    if (seen.has(id)) return;
+    seen.add(id);
+    try { localStorage.setItem("ff_seenCurses", JSON.stringify([...seen])); } catch (e) { /* ignore */ }
+  }
+
+  // Curse icons aren't in the boot preload, and the HUD's lazy loads don't survive
+  // a page reload — so ensure they're loaded (once) when the archive opens, keyed
+  // exactly as the HUD uses them (curse_icon_<id>).
+  loadCurseIcons() {
+    if (this._curseIconsLoaded) return;
+    this._curseIconsLoaded = true;
+    for (const id of CURSE_POOL) loadImage("curse_icon_" + id, "assets/sprites/curses/" + id + ".png");
+  }
+
+  openCurses(returnState) {
+    this.loadSeenCurses();
+    this.loadCurseIcons();
+    this.cursesReturn = returnState || STATE.ARCHIVE;
+    this.cursesIndex = 0;
+    this.cursesScroll = 0;
+    this.cursesFollowSel = true; // start pinned to the top entry
+    this.cursesScrollDragging = false;
+    this.state = STATE.CURSES;
+  }
+
+  closeCurses() {
+    this.state = this.cursesReturn || STATE.MAIN_MENU;
+    if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
+    else if (this.state === STATE.ARCHIVE) this.archiveIndex = 2; // land back on "Curses"
+  }
+
   // --- Arcane Archive hub ---------------------------------------------------
-  // A small hub that holds the Grimoire + Bestiary. Both back out to here; the
-  // hub backs out to the main menu (with "Arcane Archive" re-highlighted).
-  openArchive() {
+  // A small hub holding the Grimoire + Bestiary + Curses. Each backs out to here;
+  // the hub backs out to wherever it was opened from (main menu or pause).
+  openArchive(returnState = STATE.MAIN_MENU) {
+    this.archiveReturn = returnState;
     this.archiveIndex = 0;
     this.state = STATE.ARCHIVE;
   }
 
+  // Back out of the hub to its opener (main menu re-highlights "Arcane Archive";
+  // pause just resumes the pause menu).
+  closeArchive() {
+    this.state = this.archiveReturn || STATE.MAIN_MENU;
+    if (this.state === STATE.MAIN_MENU) this.menuIndex = 2;
+  }
+
   updateArchive() {
-    const count = ARCHIVE_ITEMS.length; // Grimoire, Bestiary, Back
+    const count = ARCHIVE_ITEMS.length; // Grimoire, Bestiary, Curses, Back
     const m = this.mouseMenu(this.menuZones);
     if (m.hover >= 0) this.archiveIndex = m.hover;
     if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
@@ -1029,9 +1103,10 @@ export class Game {
     if (this.confirmPressed() || m.clicked >= 0) {
       if (this.archiveIndex === 0) this.openGrimoire(STATE.ARCHIVE);
       else if (this.archiveIndex === 1) this.openBestiary(STATE.ARCHIVE);
-      else { this.state = STATE.MAIN_MENU; this.menuIndex = 2; } // Back -> highlight Arcane Archive
+      else if (this.archiveIndex === 2) this.openCurses(STATE.ARCHIVE);
+      else this.closeArchive(); // Back
     } else if (this.backPressed()) {
-      this.state = STATE.MAIN_MENU; this.menuIndex = 2;
+      this.closeArchive();
     }
   }
 
@@ -1090,6 +1165,62 @@ export class Game {
       if (this.bestiaryIndex === BESTIARY.length) this.closeBestiary(); // Back row
     } else if (this.backPressed()) {
       this.closeBestiary();
+    }
+  }
+
+  updateCurses() {
+    const count = CURSE_POOL.length + 1; // entries + Back
+    const backIndex = CURSE_POOL.length;
+
+    // Scrollbar drag (mouse): grab the thumb to scrub, click the track to jump.
+    let consumedClick = false;
+    const sb = this.cursesScrollbar;
+    if (sb) {
+      const mx = Input.mouseX(), my = Input.mouseY();
+      const onBar = mx >= sb.x - 2 && mx <= sb.x + 18 && my >= sb.top && my <= sb.top + sb.viewH;
+      if (Input.mouseClicked() && onBar) {
+        const onThumb = my >= sb.thumbY && my <= sb.thumbY + sb.thumbH;
+        this.cursesDragOffset = onThumb ? my - sb.thumbY : sb.thumbH / 2;
+        this.cursesScrollDragging = true;
+        this.cursesFollowSel = false;
+        consumedClick = true;
+      }
+      if (this.cursesScrollDragging && Input.mouseHeld()) {
+        const travel = sb.viewH - sb.thumbH;
+        const frac = travel > 0 ? Math.max(0, Math.min(1, (my - this.cursesDragOffset - sb.top) / travel)) : 0;
+        this.cursesScroll = frac * sb.maxScroll;
+        this.cursesFollowSel = false;
+      }
+    }
+    if (!Input.mouseHeld()) this.cursesScrollDragging = false;
+
+    // Mouse wheel scrolls freely (drops follow-selection). Clamped to last max.
+    const wheel = Input.wheelDelta();
+    if (wheel !== 0) {
+      this.cursesScroll = Math.max(0, Math.min(this.cursesMaxScroll, this.cursesScroll + wheel));
+      this.cursesFollowSel = false;
+    }
+
+    // Click a row (selecting it) or Back. Skipped if the click hit the scrollbar.
+    const click = (!consumedClick && Input.mouseClicked()) ? this.zoneAt(this.menuZones) : -1;
+    if (click >= 0) {
+      if (click === backIndex) { this.closeCurses(); return; }
+      this.cursesIndex = click;
+      this.cursesFollowSel = true;
+    }
+
+    if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+      this.cursesIndex = (this.cursesIndex - 1 + count) % count;
+      this.cursesFollowSel = true;
+    }
+    if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+      this.cursesIndex = (this.cursesIndex + 1) % count;
+      this.cursesFollowSel = true;
+    }
+    if (this.confirmPressed()) {
+      if (this.cursesIndex === CURSE_POOL.length) this.closeCurses(); // Back row
+    } else if (this.backPressed()) {
+      this.closeCurses();
     }
   }
 
@@ -1238,7 +1369,7 @@ export class Game {
     this.themeIndex = this.queuedThemeIndex;
     this.queuedThemeIndex = null;
     const theme = THEMES[this.themeIndex];
-    if (theme) this.sayFamiliar(theme.arriveLine); // "The dungeon shifts beneath us..."
+    if (theme && theme.arriveLine) this.sayFamiliar(theme.arriveLine); // skips themes with no line (e.g. stone)
   }
 
   updateHints(dt) {
@@ -1781,13 +1912,26 @@ export class Game {
       return;
     }
 
+    if (this.state === STATE.CURSES) {
+      const entries = CURSE_POOL.map((id) => {
+        const c = CURSES[id];
+        return { id, name: c.name, blurb: c.blurb, seen: this.hasSeenCurse(id), img: getImage("curse_icon_" + id) };
+      });
+      const cz = drawCurses(ctx, this.width, this.height, entries, this.cursesIndex, this.cursesScroll, this.cursesFollowSel);
+      this.menuZones = cz.zones;
+      this.cursesScroll = cz.scroll;
+      this.cursesMaxScroll = cz.maxScroll;
+      this.cursesScrollbar = cz.scrollbar;
+      return;
+    }
+
     if (this.state === STATE.CLOSET) {
       this.closetZones = drawCloset(ctx, this.width, this.height, this.closetData());
       return;
     }
 
     if (this.state === STATE.GRIMOIRE) {
-      const levels = this.grimoireReturn === STATE.PAUSED ? this.upgradeLevels : null;
+      const levels = this.archiveReturn === STATE.PAUSED ? this.upgradeLevels : null;
       const { entries, upgradeCount } = this.grimoireList();
       const gz = drawGrimoire(ctx, this.width, this.height, entries, this.grimoireIndex, levels, upgradeCount, this.grimoireScroll, this.grimoireFollowSel);
       this.menuZones = gz.zones;
@@ -1855,7 +1999,7 @@ export class Game {
           drawEvolutionBanner(ctx, this.width, this.height, this.evoBannerText, this.evoBannerTimer);
         }
         if (this.tutorialWavesStarted && this.waveManager.phase === "intermission") {
-          const bossWave = this.waveManager.displayWave % 10 === 0;
+          const bossWave = this.waveManager.displayWaveIsBoss; // every 10th wave (normal) / 5th (Cursed), from the WaveManager's own rule
           drawWaveBanner(ctx, this.width, this.height, this.waveManager.displayWave, this.waveManager.timer, bossWave);
         }
         if (this.activeHint) {

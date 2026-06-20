@@ -2933,7 +2933,7 @@ export class Hourkeeper {
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
 // random rotation — no back-to-back repeats; order varies each run).
-const DEBUG_FORCE_BOSS = true;
+const DEBUG_FORCE_BOSS = false;
 const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden" | "hourkeeper"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
@@ -2987,6 +2987,15 @@ export class WaveManager {
     if (this.phase !== "intermission") return this.wave;
     const next = this.wave + 1;
     return this.endless ? next : Math.min(next, this.maxWaves);
+  }
+
+  // True when the wave shown by displayWave will spawn a boss. Mirrors the exact
+  // rule in startNextWave() (wave % bossEvery === 0), so the "Boss Incoming" banner
+  // stays in lockstep with the real spawn in BOTH modes — every 10th wave normal,
+  // every 5th in Cursed — instead of a hardcoded multiple-of-10 that silently
+  // missed Cursed boss waves (5, 15, 25…).
+  get displayWaveIsBoss() {
+    return this.displayWave % (this.bossEvery || 10) === 0;
   }
 
   // Mutates the `enemies` array. Call every frame while playing.
