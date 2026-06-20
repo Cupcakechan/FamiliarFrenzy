@@ -324,6 +324,9 @@ const SFX_DEFS = {
   // Hive Warden (bee boss): a grunt on the wind-up, a shot when the stinger volley fires.
   bee_charge: { src: "assets/sfx/bee_charge.mp3", volume: 0.45, voices: 2, minInterval: 0.20 },
   bee_sting:  { src: "assets/sfx/bee_sting.mp3",  volume: 0.50, voices: 3, minInterval: 0.10 },
+// The Hourkeeper (clockwork boss): a clang as each clock hand strikes, a chime as the alarm runes cast.
+  hourkeeper_sweep: { src: "assets/sfx/hourkeeper_sweep.mp3", volume: 0.45, voices: 3, minInterval: 0.12 },
+  hourkeeper_alarm: { src: "assets/sfx/hourkeeper_alarm.mp3", volume: 0.45, voices: 2, minInterval: 0.20 },
 };
 
 const SFX_STORAGE_KEY = "ff_sfxVolume";

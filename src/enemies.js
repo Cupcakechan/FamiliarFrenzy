@@ -2242,7 +2242,7 @@ const HK_BLINK_TIME = 0.2;
 const HK_FX_LIFE = 0.35;         // poof-ring fade (matches the Bone Mage)
 
 // Clock Hand Sweep (rect HazardZones through a locked pivot, one at a time).
-const HK_HAND_WARN = 1.0;        // telegraph per hand (generous)
+const HK_HAND_WARN = 0.7;        // telegraph per hand (tightened for reaction pressure)
 const HK_STRIKE_GAP = 0.5;       // gap between sequential hands (time to reposition)
 const HK_HAND_LENGTH = 1200;     // spans the 960x540 view through the pivot (the camera knob)
 const HK_HAND_WIDTH = 52;        // +player radius ~ an 84px danger band (wider = harder)
@@ -2260,13 +2260,21 @@ const HK_HAND_ANGLES = [
 ];
 
 // Alarm Rune Burst (circle HazardZones scattered across a field on the witch).
-const HK_RUNE_WARN = 1.2;        // "tick... tick... burst"
+const HK_RUNE_WARN = 0.9;        // "tick.. tick.. burst" (tightened; a hair looser than hands —
+                                 // a scattered field takes longer to READ than a single line)
 const HK_RUNE_RADIUS = 60;       // +player radius ~ a 76px mark
 const HK_RUNE_FIELD = 170;       // runes scatter within this radius of the witch (covers her
                                  // spot, so standing still is risky); larger = easier to thread
 const HK_RUNE_STAGGER = 0.12;    // gap between rune spawns (avoids a same-frame double-tap)
-const HK_RECOVER = 0.8;          // stays vulnerable + static this long after a set detonates
+const HK_RECOVER = 1.0;          // stays vulnerable + static this long after a set detonates
+                                 // (widened so the cat still gets clean hits after the guard hand)
 const HK_TIGHTEN = 0.85;         // < 30% HP: shorten warns + gaps for late pressure
+// Punish-window "guard hand": while it's vulnerable + static for you to hit, it
+// sweeps ONE hand through its OWN position so you must dodge WITHOUT giving up
+// the punish (the offense/defense dilemma). Only below this HP fraction, so the
+// pressure ramps in as it weakens — phase 1 stays a clean teach. Set to 1.0 to
+// see it from the very first set when testing.
+const HK_GUARD_HAND_HP = 1;
 
 // Idle (loops) + Attack (one-shot cast). Single front-facing strip each; the
 // drawn-clock fallback covers a missing file. 6 frames each, sliced at draw time.
@@ -2324,6 +2332,8 @@ export class Hourkeeper {
     this.runeQueue = 0;          // runes left to drop in the current set
     this.runeStaggerTimer = 0;
     this.recoverTimer = 0;       // vulnerable tail after a set's last rune drops
+    this.guardHandPending = false; // a punish-window hand queued for this set (phases 2-3)
+    this.guardHandTimer = 0;       // fires the guard hand shortly AFTER the runes burst
 
     this._worldW = PLAYFIELD.worldW;
     this._worldH = PLAYFIELD.worldH;
@@ -2416,9 +2426,23 @@ export class Hourkeeper {
             // Stay vulnerable through the last rune's warn + blast + a recover tail.
             if (this.runeQueue === 0) {
               this.recoverTimer = HK_RUNE_WARN * this._tighten + HAZARD_BLAST_TIME + HK_RECOVER;
+              // Phases 2-3: queue a punish-window hand, fired shortly AFTER the
+              // runes burst so it's a rhythm (dodge runes -> dodge the guard hand
+              // while you keep punishing), not a simultaneous wall.
+              if (this.health / this.maxHealth < HK_GUARD_HAND_HP) {
+                this.guardHandPending = true;
+                this.guardHandTimer = HK_RUNE_WARN * this._tighten + 0.2;
+              }
             }
           }
         } else {
+          if (this.guardHandPending) {
+            this.guardHandTimer -= dt;
+            if (this.guardHandTimer <= 0) {
+              this.spawnGuardHand(hazards);
+              this.guardHandPending = false;
+            }
+          }
           this.recoverTimer -= dt;
           if (this.recoverTimer <= 0) this.beginBlink(player);
         }
@@ -2474,6 +2498,27 @@ export class Hourkeeper {
     }));
   }
 
+  // Punish-window hand: a full clock hand THROUGH the boss's own position (not
+  // the locked sweep pivot), fired while it's vulnerable + static for the cat.
+  // You must step off the line while staying close enough to keep punishing —
+  // the offense/defense dilemma. Random orientation (0..PI covers every line),
+  // same 0.7s tell as the sweep, so it's never a surprise hit.
+  spawnGuardHand(hazards) {
+    if (!hazards) return;
+    const angle = Math.random() * Math.PI;
+    hazards.push(new HazardZone(this.x, this.y, 0, HK_HAND_WARN * this._tighten, this.damage, {
+      shape: "rect",
+      angle,
+      length: HK_HAND_LENGTH,
+      width: HK_HAND_WIDTH,
+      knockback: HK_HAND_KNOCKBACK,
+      ox: this.x,
+      oy: this.y,
+      skin: "clock",
+      sfx: "hourkeeper_sweep",
+    }));
+  }
+
   beginReappear(player) {
     this.state = "reappear";
     this.phaseTimer = HK_REAPPEAR_TIME;
@@ -2492,6 +2537,7 @@ export class Hourkeeper {
     this.runeQueue = ph.runes;
     this.runeStaggerTimer = 0; // first rune drops immediately
     this.recoverTimer = 0;
+    this.guardHandPending = false; // re-armed when this set's last rune lands
     this.setsLeft -= 1;        // this set consumes one
     this.startAttackAnim();    // one-shot cast pose
     playSfx("hourkeeper_alarm"); // graceful: silent until registered
@@ -2642,8 +2688,8 @@ export class Hourkeeper {
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
 // random rotation — no back-to-back repeats; order varies each run).
-const DEBUG_FORCE_BOSS = false;
-const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden" | "hourkeeper"
+const DEBUG_FORCE_BOSS = true;
+const DEBUG_BOSS_TYPE = "hourkeeper"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden" | "hourkeeper"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
 // shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).
