@@ -2245,16 +2245,25 @@ const HK_FX_LIFE = 0.35;         // poof-ring fade (matches the Bone Mage)
 const HK_HAND_WARN = 1.0;        // telegraph per hand (generous)
 const HK_STRIKE_GAP = 0.5;       // gap between sequential hands (time to reposition)
 const HK_HAND_LENGTH = 1200;     // spans the 960x540 view through the pivot (the camera knob)
-const HK_HAND_WIDTH = 44;        // +player radius ~ a 60px danger band
+const HK_HAND_WIDTH = 52;        // +player radius ~ an 84px danger band (wider = harder)
 const HK_HAND_KNOCKBACK = 0;     // pure dodge for the first pass
-// Hand angles applied IN ORDER; the HP phase decides how many are used:
-// vertical, horizontal (the cross), then the two diagonals (the asterisk).
-const HK_HAND_ANGLES = [Math.PI / 2, 0, Math.PI / 4, -Math.PI / 4];
+// Full lines THROUGH the pivot, applied IN ORDER; the HP phase decides how many
+// are used. Cross first (most readable), then the diagonals + off-axis tilts so
+// later phases fan out into a denser sweep.
+const HK_HAND_ANGLES = [
+  Math.PI / 2,    // vertical
+  0,              // horizontal
+  Math.PI / 4,    // diagonal
+  -Math.PI / 4,   // diagonal (the asterisk)
+  Math.PI / 8,    // off-axis tilt
+  -Math.PI / 8,   // off-axis tilt
+];
 
-// Alarm Rune Burst (circle HazardZones dropped around the witch).
+// Alarm Rune Burst (circle HazardZones scattered across a field on the witch).
 const HK_RUNE_WARN = 1.2;        // "tick... tick... burst"
 const HK_RUNE_RADIUS = 60;       // +player radius ~ a 76px mark
-const HK_RUNE_SPREAD = 90;       // ring radius the runes drop on, around the witch
+const HK_RUNE_FIELD = 170;       // runes scatter within this radius of the witch (covers her
+                                 // spot, so standing still is risky); larger = easier to thread
 const HK_RUNE_STAGGER = 0.12;    // gap between rune spawns (avoids a same-frame double-tap)
 const HK_RECOVER = 0.8;          // stays vulnerable + static this long after a set detonates
 const HK_TIGHTEN = 0.85;         // < 30% HP: shorten warns + gaps for late pressure
@@ -2265,6 +2274,7 @@ const HK_ANIMS = { idle: 6, attack: 6 };
 const HK_FPS = { idle: 6, attack: 10 };
 loadImage("hourkeeper_idle_s", "assets/sprites/enemies/hourkeeper_idle_s.png");
 loadImage("hourkeeper_attack_s", "assets/sprites/enemies/hourkeeper_attack_s.png");
+loadImage("clock_rune", "assets/sprites/enemies/clock_rune.png"); // alarm-rune mark (code fallback if absent)
 
 export class Hourkeeper {
   constructor(x, y, tier = 1) {
@@ -2312,9 +2322,6 @@ export class Hourkeeper {
     // Alarm bookkeeping.
     this.setsLeft = 0;           // alarm sets remaining this cycle
     this.runeQueue = 0;          // runes left to drop in the current set
-    this.runeSetTotal = 0;       // the set's original count (for even ring spacing)
-    this.runeIndex = 0;
-    this.runeAngleBase = 0;
     this.runeStaggerTimer = 0;
     this.recoverTimer = 0;       // vulnerable tail after a set's last rune drops
 
@@ -2326,9 +2333,9 @@ export class Hourkeeper {
   // weakens. Re-evaluated when each sweep/alarm begins, so it ramps responsively.
   hkPhase() {
     const f = this.health / this.maxHealth;
-    if (f >= 0.60) return { hands: 2, runes: 3, sets: 1, tighten: 1 };
-    if (f >= 0.30) return { hands: 3, runes: 4, sets: 2, tighten: 1 };
-    return { hands: 4, runes: 5, sets: 2, tighten: HK_TIGHTEN };
+    if (f >= 0.60) return { hands: 3, runes: 4, sets: 1, tighten: 1 };
+    if (f >= 0.30) return { hands: 4, runes: 5, sets: 2, tighten: 1 };
+    return { hands: 5, runes: 6, sets: 2, tighten: HK_TIGHTEN };
   }
 
   // Teleport to a point `dist` from the witch (random angle), clamped to the
@@ -2452,8 +2459,8 @@ export class Hourkeeper {
 
   spawnHand(angle, hazards) {
     if (!hazards) return;
-    // radius 0 (unused for rect); length/width/angle define the bar. sfx null =
-    // silent (no audio.js dependency this pass).
+    // radius 0 (unused for rect); length/width/angle define the bar. sfx fires
+    // on the strike (graceful: silent until hourkeeper_sweep is registered).
     hazards.push(new HazardZone(this.pivotX, this.pivotY, 0, HK_HAND_WARN * this._tighten, this.damage, {
       shape: "rect",
       angle,
@@ -2463,7 +2470,7 @@ export class Hourkeeper {
       ox: this.pivotX,
       oy: this.pivotY,
       skin: "clock",
-      sfx: null,
+      sfx: "hourkeeper_sweep",
     }));
   }
 
@@ -2483,28 +2490,25 @@ export class Hourkeeper {
     const ph = this.hkPhase();
     this._tighten = ph.tighten;
     this.runeQueue = ph.runes;
-    this.runeSetTotal = ph.runes;
-    this.runeIndex = 0;
-    this.runeAngleBase = Math.random() * Math.PI * 2;
     this.runeStaggerTimer = 0; // first rune drops immediately
     this.recoverTimer = 0;
     this.setsLeft -= 1;        // this set consumes one
     this.startAttackAnim();    // one-shot cast pose
+    playSfx("hourkeeper_alarm"); // graceful: silent until registered
   }
 
   spawnRune(player, hazards) {
     if (!hazards) return;
-    // Drop on a ring around the witch's CURRENT spot (so she must move), spread
-    // evenly with a little jitter, clamped to the floor — never on top of her.
-    const total = Math.max(1, this.runeSetTotal);
-    const a = this.runeAngleBase + (this.runeIndex / total) * Math.PI * 2 + randomRange(-0.3, 0.3);
-    const dist = HK_RUNE_SPREAD + randomRange(-15, 15);
+    // Scatter runes across a field centred on the witch's CURRENT spot (uniform
+    // over the disc, so it covers her position too — standing still is risky and
+    // she must read the field + move to a gap). More runes (HP phase) = denser.
+    const a = Math.random() * Math.PI * 2;
+    const dist = Math.sqrt(Math.random()) * HK_RUNE_FIELD; // uniform disc
     const pos = clampToPlayfield(
       player.x + Math.cos(a) * dist,
       player.y + Math.sin(a) * dist,
       HK_RUNE_RADIUS
     );
-    this.runeIndex += 1;
     hazards.push(new HazardZone(pos.x, pos.y, HK_RUNE_RADIUS, HK_RUNE_WARN * this._tighten, this.damage, {
       shape: "circle",
       skin: "clock",
