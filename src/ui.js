@@ -264,20 +264,52 @@ function drawCenteredBack(ctx, w, cy, active) {
   return { x: w / 2 - 90, y: cy - 20, w: 180, h: 40, index: 0 };
 }
 
-// --- HIGH SCORES (Endless only) ------------------------------------------
-// entries = array of { score, wave, date }, already sorted best-first.
-export function drawHighScores(ctx, w, h, entries, backHover = false) {
+// --- HIGH SCORES (Endless + Cursed tabs) ---------------------------------
+// boards = { endless: [...], cursed: [...] }, each an array of { name, score, wave,
+// date } already sorted best-first. activeTab = "endless" | "cursed". tabHover = the
+// tab the mouse is over, or null. backHover = Back button hovered. Returns clickable
+// zones: index 0 = Back, index 1 = Endless tab, index 2 = Cursed tab.
+export function drawHighScores(ctx, w, h, boards, activeTab = "endless", tabHover = null, backHover = false) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
   text(ctx, "High Scores", w / 2, 58, { size: 42, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
-  text(ctx, "Endless Mode", w / 2, 92, { size: 16, color: DIM, weight: "500" });
 
-  // Friendly empty state when no Endless run has been recorded yet.
-  if (!entries || entries.length === 0) {
+  // Tabs: Endless | Cursed. Click a tab or press Left/Right (A/D) to switch; the
+  // active board fills the table below. Underline marks the active tab.
+  const tabY = 96;
+  const tabDefs = [
+    { id: "endless", label: "Endless", cx: w / 2 - 78, index: 1 },
+    { id: "cursed",  label: "Cursed",  cx: w / 2 + 78, index: 2 },
+  ];
+  const tabZones = [];
+  for (const t of tabDefs) {
+    const active = activeTab === t.id;
+    const hovered = tabHover === t.id;
+    text(ctx, t.label, t.cx, tabY, {
+      size: 18,
+      color: active ? GOLD : hovered ? CREAM : DIM,
+      weight: active ? "700" : "500",
+    });
+    if (active) {
+      ctx.strokeStyle = GOLD;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(t.cx - 42, tabY + 15);
+      ctx.lineTo(t.cx + 42, tabY + 15);
+      ctx.stroke();
+    }
+    tabZones.push({ x: t.cx - 56, y: tabY - 15, w: 112, h: 30, index: t.index });
+  }
+
+  const entries = (activeTab === "cursed" ? boards.cursed : boards.endless) || [];
+
+  // Friendly empty state when the active board has no runs yet.
+  if (entries.length === 0) {
+    const modeLabel = activeTab === "cursed" ? "Cursed" : "Endless";
     text(ctx, "No runs yet.", w / 2, h / 2 - 12, { size: 24, color: CREAM, weight: "500" });
-    text(ctx, "Survive Endless Mode to record a score.", w / 2, h / 2 + 22, { size: 16, color: DIM, weight: "500" });
-    return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
+    text(ctx, `Survive ${modeLabel} Mode to record a score.`, w / 2, h / 2 + 22, { size: 16, color: DIM, weight: "500" });
+    return { zones: [drawCenteredBack(ctx, w, h - 40, backHover), ...tabZones] };
   }
 
   // Table layout (5 columns: rank / name / score / wave / date).
@@ -287,7 +319,7 @@ export function drawHighScores(ctx, w, h, entries, backHover = false) {
   const scoreX = tableX + 190;
   const waveX = tableX + 380;
   const dateX = tableX + 500;
-  const headerY = 132;
+  const headerY = 138;
   const rowH = 30;
 
   text(ctx, "#",     rankX,  headerY, { size: 14, color: DIM, align: "left", weight: "700" });
@@ -314,7 +346,7 @@ export function drawHighScores(ctx, w, h, entries, backHover = false) {
     text(ctx, `${e.date || "—"}`, dateX,  y, { size: 16, color, align: "left", weight });
   });
 
-  return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
+  return { zones: [drawCenteredBack(ctx, w, h - 40, backHover), ...tabZones] };
 }
 
 // --- SETTINGS -------------------------------------------------------------
@@ -1240,8 +1272,8 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   if (info.curses && info.curses.length > 0) {
     const cs = 32, cg = 8;
     const rowW = info.curses.length * cs + (info.curses.length - 1) * cg;
-    text(ctx, "CURSES", w / 2, 92, { size: 14, color: PURPLE, weight: "700" });
-    drawCurseIcons(ctx, info.curses, (w - rowW) / 2, 102, cs, cg);
+    text(ctx, "CURSES", w / 2, 100, { size: 14, color: PURPLE, weight: "700" });
+    drawCurseIcons(ctx, info.curses, (w - rowW) / 2, 110, cs, cg);
   }
 
   // --- Run info: two columns, top-aligned ---
