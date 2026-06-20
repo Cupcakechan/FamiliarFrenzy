@@ -1,12 +1,18 @@
 # Familiar Frenzy — Project Handoff
 
-Last updated: **2026-06-19** — added the **1.7.0** ("The Shifting Dungeon") release
-and the entire **1.8.0** mouse-support cycle.
-Covers all post-launch work through **1.8.0**.
-**1.2.0–1.7.0 are all SHIPPED/LIVE.** **1.8.0 (mouse everywhere + the Bone Mage fix)
-was built + tested this session but is NOT yet shipped — three mouse gaps remain
-(the Wardrobe has no clickable elements; Settings + High Scores need a clickable
-Back; see §12). Finish those, then package 1.8.0.**
+Last updated: **2026-06-20** — **1.8.0** (mouse everywhere + the Bone Mage fix; the
+three pending mouse gaps were closed) and **1.9.0** ("Cursed Mode") are both now
+SHIPPED/LIVE.
+Covers all post-launch work through **1.9.0**.
+**1.2.0–1.9.0 are all SHIPPED/LIVE.** The 1.8.0 mouse cycle is complete (Wardrobe is
+fully click-driven; Settings + High Scores have clickable Back). **1.9.0 added the
+whole Cursed Mode arc — a separate hard mode with eight stacking curses, a separate
+leaderboard, curse HUD icons + familiar heralds, a Curses archive, and a unified
+Arcane-Archive pause menu (see §3a).** No release is mid-flight.
+
+> The Hourkeeper boss is now in `BOSS_TYPES` (4 bosses). It was added between this
+> doc's prior update and 1.9.0; its detailed entry below is marked TODO/verify —
+> fill it from `enemies.js` next session.
 
 > Versioning note: the Spirit Crystals / Wardrobe / Collars bundle shipped as
 > **1.5.0**, not 1.4.0. 1.4.0 was the prior asset-completion release (Spirit
@@ -127,6 +133,12 @@ Wave 10 (Victory, can carry into Endless); Endless runs until death with per-tie
 scaling, personal bests, a run recap, and a top-10 leaderboard. Bosses now drop
 **Spirit Crystals**, a between-runs currency spent in the **Wardrobe**.
 
+**Cursed Mode (1.9.0)** is a third run mode (Mode Select): a harder Endless where
+**bosses arrive every 5 waves** and **each boss kill lays one more random curse**,
+stacking, until the eight-curse pool is exhausted (see §3a). It has its own scaling
+bumps, its own leaderboard, on-HUD curse icons, and a familiar that heralds each new
+curse. The full curse system lives in **`curses.js`** (data-driven registry).
+
 Implemented and tested:
 
 * **Menus/screens:** Main Menu (**Play / Wardrobe / Arcane Archive / High Scores /
@@ -146,8 +158,10 @@ Implemented and tested:
   thumb / click the track); keyboard still drives the highlight. **Settings** sliders
   drag/click and the toggles click Off/On; hover highlights the row. A custom **sprite
   cursor** (`assets/sprites/ui/cursor.png`) shows on menus and is HIDDEN during active
-  play (PLAYING/DYING). **STILL PENDING (see §12):** the **Wardrobe** has NO clickable
-  elements yet, and **Settings + High Scores need a clickable Back**.
+  play (PLAYING/DYING). **All three former gaps CLOSED (shipped 1.8.0):** the
+  **Wardrobe** is fully click-driven (Outfits/Collars tabs, click-to-select,
+  click-to-buy/equip, clickable Back), and **Settings + High Scores have clickable
+  Back** rows.
 * **Display & Accessibility (1.7.0, in Settings):** **Reduced Flash** (dampens
   screen-flash intensity, `REDUCED_FLASH_MULT 0.4`) and **High Visibility Warnings**
   (clearer enemy telegraphs), persisted via `settings.js` (`ff_reducedFlash`,
@@ -173,7 +187,8 @@ Implemented and tested:
     ×1.05), Gilded Mantle (8◆, score ×1.05). Witch skin via `player.spritePrefix`.
   * **Collars** — swap the familiar's whole attack (see Familiar below): Spirit
     Collar (0◆, rune), Moon Beam Collar (10◆), Alchemist Collar (12◆).
-* **Bosses (shuffled-bag `BOSS_TYPES` = elder_wisp, watching_hand, hive_warden):**
+* **Bosses (shuffled-bag `BOSS_TYPES` = elder_wisp, watching_hand, hive_warden,
+  hourkeeper):**
   * **Elder Wisp** — wobble-follow, telegraphed dash (charge wind-up, **tightened
     contact radius 22 while dashing**), staggered wisp summons. `spriteScale = 1.0`.
   * **The Watching Hand** — hops; locked-marker jump slam (`hand_slam` SFX);
@@ -187,6 +202,13 @@ Implemented and tested:
     are `EnemyBolt`s with sprite opts (`bee_stinger`, velocity-oriented). Does **NOT**
     summon — it carries a `consumeSummon(){ return false; }` no-op stub that ALL
     three bosses now implement (game.js calls it unguarded). `spriteScale = 1.0`.
+  * **The Hourkeeper (added between this doc's prior update and 1.9.0)** — a
+    teleporting time-themed boss now in `BOSS_TYPES`. **TODO/verify from `enemies.js`:**
+    its full fight (notes from build: an APPEAR → VANISH → SWEEP → REAPPEAR → ALARM →
+    BLINK loop; a code-drawn sweep ~1200×44 sized to span the embed diagonal; an
+    untargetable/`noContactDamage` window during the vanish; single-facing front/south
+    Idle + Attack strips, 6 frames each; optional `clock_rune.png` ground marker). Fill
+    this in once re-checked against source.
   * New bosses go in `BOSS_TYPES`. Bosses are SEPARATE classes (no `.def`) and must
     implement `consumeSummon()`.
 * **Player:** 8-dir idle/walk/die sprites, i-frames, death animation,
@@ -234,6 +256,72 @@ Implemented and tested:
 
 ---
 
+## 3a. Cursed Mode (1.9.0) — the curse system
+
+A third run mode (Mode Select). Plays like Endless, with two twists driven by
+`WaveManager.reset(endless, cursed)`: **bosses every 5 waves** (`bossEvery = 5`) and
+base difficulty bumps on regular enemies, plus **one more random curse per boss kill**
+(`applyNextCurse()` → `rollNextCurse`, no repeats), stacking until the pool is spent.
+
+**Registry — `curses.js` (the single data-driven source):**
+* `CURSES` entries carry `id`, `name`, `blurb`, `cry` (the familiar's one-line
+  herald), and their EFFECT FIELD(S). `CURSE_POOL` = eligible ids (order is cosmetic;
+  the picker is random). Helpers: `rollNextCurse(activeIds)`,
+  `curseValue(activeIds, field, fallback)`.
+* **The eight curses → effect field → where it's read:**
+  * Darkness (`vision: 230`) → dark-veil spotlight radius (game.js renderer).
+  * Withering (`noFlasks: true`) → the flask-drop roll skips (game.js).
+  * Cursed Ground (`groundHazard: true`) → ambient telegraphed HazardZone patches
+    bloom near the witch (game.js, `CG_*`).
+  * Quickening (`enemySpeedMult: 1.25`) → regular-enemy speed (game.js sets
+    `waveManager.curseSpeedMult`; bosses keep tuned speeds).
+  * Vengeful Dead (`deathPuddle: true`) → each slain NON-boss enemy drops a
+    `HazardPuddle` where it fell (game.js death block, `VD_PUDDLE_*`).
+  * Brittle (`damageMult: 1.5`) → multiplies ALL incoming player damage at the single
+    `player.takeDamage` chokepoint (game.js sets `player.damageTakenMult`).
+  * Teeming (`spawnMult: 1.5`, `maxAliveBonus: 6`) → bigger + denser waves (game.js
+    sets `waveManager.curseSpawnMult` + `curseMaxAliveBonus`).
+  * Spirit Drought (`frenzyMoteMult: 0.5`) → halves each mote's charge toward the
+    Spirit Imbued meter; XP/leveling untouched (game.js `collectPickup`).
+* **Adding a curse = a registry entry + the one place that reads its field.** HUD
+  icon, herald, archive, and pool all auto-flow. Keep this contract.
+
+**`HazardPuddle` (enemies.js):** a lingering ground DoT that damages the WITCH — the
+mirror of the Alchemist `Puddle` (which damages ENEMIES). They are kept SEPARATE; do
+not merge. Owned by `game.this.hazardPuddles` (init/update/draw/filter parallel to
+`this.hazards`). Tuning (game.js): `VD_PUDDLE_RADIUS 38`, `VD_PUDDLE_LIFE 1.8`,
+`VD_PUDDLE_TICK 0.5`, `VD_PUDDLE_DAMAGE 10`, `VD_PUDDLE_MAX 16`. Dark code-drawn
+fallback; sprite `assets/sprites/projectiles/puddle_dark.png`.
+
+**Feedback:**
+* **HUD curse icons** — `ui.drawCurseIcons` renders the active curses' 64×64 icons at
+  32px, bottom-left during play; fallback = rune box + initial. Icons at
+  `assets/sprites/curses/<id>.png`.
+* **Familiar herald** — on each new curse, `applyNextCurse` calls
+  `sayFamiliar(CURSES[id].cry)` (reuses the dialogue bar; honors `TUTORIAL_HINTS_ENABLED`).
+* **Boss Incoming banner** — now correct in Cursed via `WaveManager.displayWaveIsBoss`
+  (`displayWave % bossEvery === 0`), not a hardcoded `% 10`.
+
+**Curses archive** — a third Arcane-Archive section (`STATE.CURSES`, `ui.drawCurses`),
+mirroring the Bestiary: each curse shows icon + name + blurb, blacked-out "???" until
+first suffered. Discovery persists in `ff_seenCurses` (marked in `applyNextCurse`);
+"N / total discovered" header.
+
+**Separate Cursed leaderboard** — `highScoreKey(mode)` → `ff_cursedHighscores` (cursed)
+vs `ff_highscores` (endless). The High Scores screen has **Endless / Cursed tabs**.
+Cursed runs route through NAME_ENTRY on qualifying; endless bests stay endless-only.
+
+**Unified Arcane-Archive pause (Option C)** — the pause menu replaced its separate
+Grimoire + Bestiary items with one **Arcane Archive** entry:
+`PAUSE_ITEMS = [Resume, Arcane Archive, Settings, Main Menu]`. The hub opens with
+return-to-Pause; Grimoire/Bestiary/Curses all open from it. Main menu and pause now
+both funnel through the hub.
+
+**Naming:** player-facing "Curses", internals stay `curse*` (`STATE.CURSES`,
+`drawCurses`, `openCurses`, `ff_seenCurses`) — same decoupling as Wardrobe/closet (§9).
+
+---
+
 ## 4. Architecture / File Map
 
 ```txt
@@ -263,7 +351,10 @@ familiar-frenzy/
     enemies.js   # ENEMY_TYPES, Enemy (wisp/gecko/bone_mage/goblin leap-stomp),
                  #   EnemyBolt (+ optional sprite opts), HazardZone, Boss /
                  #   WatchingHand / HiveWarden, WaveManager, BOSS_TYPES (3 bosses);
-                 #   DEBUG_FORCE_BOSS + DEBUG_BOSS_TYPE here  (Daniel's LOCAL file)
+                 #   DEBUG_FORCE_BOSS + DEBUG_BOSS_TYPE here  (Daniel's LOCAL file);
+                 #   HazardPuddle (1.9.0, Vengeful Dead — a ground DoT vs the PLAYER)
+    curses.js    # NEW (1.9.0): Cursed Mode curse registry (CURSES / CURSE_POOL) +
+                 #   rollNextCurse / curseValue. Data-driven — see §3a.
     pickups.js   # motes, flasks (+ spawn flash), Spirit Magnet
     upgrades.js  # UPGRADES + EVOLUTIONS (Phantom Pounce, Spirit Bond, Spirit Volley)
                  #   + Grimoire entries
@@ -285,8 +376,9 @@ familiar-frenzy/
     sprites/
       player/    # witch_* + outfit recolors witch_<color>_* (red/blue/gold)
       familiar/  # familiar_* + collar recolors familiar_<collar>_* (moonbeam/alchemist)
-      pickups/   projectiles/   # rune_*, flask_throw.png, puddle.png
+      pickups/   projectiles/   # rune_*, flask_throw.png, puddle.png, puddle_dark.png (1.9.0)
       upgrades/  # <id>.png 32x32
+      curses/    # <id>.png 64x64 — Cursed Mode curse icons (1.9.0)
       enemies/   ui/   # + spirit_crystal.png
         menu_button.png  upgrade_card.png  health_bar.png  spirit_bar.png  title_main.png  cursor.png
   README.md  CREDITS.md  AI_USAGE.md  PROJECT_HANDOFF.md  .gitignore
@@ -371,8 +463,26 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
 ## 6. Post-Launch Work Log (newest first)
 
 ```txt
-1.8.0 (built + tested 2026-06-19; NOT yet shipped — 3 mouse gaps remain, see §12) —
-  "feedback polish / mouse everywhere":
+1.9.0 (SHIPPED 2026-06-20) — "Cursed Mode":
+  - New hard run mode (Mode Select): Endless rules + bosses every 5 waves + base
+    difficulty bumps; each boss kill stacks one more random curse. Full system in the
+    NEW curses.js (CURSES / CURSE_POOL / rollNextCurse / curseValue). See §3a.
+  - Eight curses (data-driven; each = a registry entry + ONE read site): Darkness,
+    Withering, Cursed Ground, Quickening, Vengeful Dead (NEW HazardPuddle — a ground
+    DoT vs the player), Brittle (player.damageTakenMult), Teeming (waveManager
+    curseSpawnMult + curseMaxAliveBonus), Spirit Drought (frenzyMoteMult; XP untouched).
+  - Curse HUD icons (ui.drawCurseIcons) + the familiar heralds each curse by voice
+    (sayFamiliar(cry)). Boss Incoming banner fixed to fire on Cursed boss waves
+    (WaveManager.displayWaveIsBoss, not a hardcoded %10).
+  - Curses archive — a 3rd Arcane-Archive section (STATE.CURSES, drawCurses),
+    Bestiary-style "???" discovery, persisted in ff_seenCurses.
+  - Separate Cursed leaderboard (ff_cursedHighscores) with Endless/Cursed tabs on the
+    High Scores screen; cursed runs route through NAME_ENTRY on qualifying.
+  - Unified pause: the separate Grimoire + Bestiary pause items were replaced by one
+    Arcane Archive entry (PAUSE_ITEMS = Resume / Arcane Archive / Settings / Main Menu).
+  - Removed the arena swap-back-to-stone announce line (both floor themes are stone now).
+
+1.8.0 (SHIPPED 2026-06-20) — "feedback polish / mouse everywhere":
   - Bone Mage fix: the caster blink is now DIRECTION-AWARE (retreat when too close,
     approach when too far) + an approach trigger; MAGE_BLINK_COOLDOWN 1.5 -> 2.5.
   - Custom sprite cursor (assets/sprites/ui/cursor.png) on the canvas, HIDDEN during
@@ -391,8 +501,11 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
     highlights the row; keyboard unchanged. drawSettings returns slider/toggle zones.
   - input.js gained mouse: mouseX/Y, mouseMoved, mouseClicked, mouseHeld (held for
     drags; cleared on window mouseup/blur), wheelDelta (cleared each endFrame).
-  - PENDING to finish 1.8.0 (see §12): Wardrobe (STATE.CLOSET) has NO clickable
-    elements; Settings + High Scores need a clickable Back.
+  - Closed the three mouse gaps to finish 1.8.0: the Wardrobe (STATE.CLOSET) is now
+    fully click-driven (tabs / select / buy-equip / Back), and Settings + High Scores
+    got clickable Back rows.
+  - The Hourkeeper boss was added around this release and is now in BOSS_TYPES (4
+    bosses). CONFIRM the exact version + fill its detailed entry (§3 / §5 TODO).
 
 1.7.0 (SHIPPED) — "The Shifting Dungeon":
   - Rotating arena floor themes — the dungeon floor cycles visual themes as a run
@@ -513,7 +626,7 @@ volley shot). Missing files = silent.
 ## 9. State Machine
 
 ```txt
-MAIN_MENU, MODE_SELECT, HOW_TO_PLAY, GRIMOIRE, BESTIARY, ARCHIVE, CLOSET,
+MAIN_MENU, MODE_SELECT, HOW_TO_PLAY, GRIMOIRE, BESTIARY, CURSES, ARCHIVE, CLOSET,
 ENDLESS_PLACEHOLDER, HIGHSCORES_PLACEHOLDER, SETTINGS_PLACEHOLDER,
 PLAYING, PAUSED, CONFIRM_QUIT, LEVEL_UP, DYING, NAME_ENTRY, GAME_OVER, VICTORY
 ```
@@ -526,21 +639,28 @@ Main menu = Play / Wardrobe / Arcane Archive / High Scores / Settings.
   `drawCrystalTotal` (top-right crystal readout). Persistence: `ff_wardrobe`
   `{crystals, owned, equipped, collarsOwned, collarEquipped, firstBossClaimed}`
   (loadWardrobe defaults missing fields — old saves are forward-compatible).
-* **Arcane Archive** = `STATE.ARCHIVE` (`openArchive`/`updateArchive`,
-  `ARCHIVE_ITEMS = [Grimoire, Bestiary, Back]`; renders via `drawMenu`). Grimoire and
-  Bestiary back out to the hub (`grimoireReturn`/`bestiaryReturn = STATE.ARCHIVE`,
-  via `closeGrimoire`/`closeBestiary`); the hub backs out to the main menu with
-  "Arcane Archive" re-highlighted. The Pause-menu Grimoire path is unaffected
-  (`grimoireReturn = STATE.PAUSED`).
+* **Arcane Archive** = `STATE.ARCHIVE` (`openArchive(returnState)`/`updateArchive`,
+  `ARCHIVE_ITEMS = [Grimoire, Bestiary, Curses, Back]`; renders via `drawMenu`).
+  Grimoire / Bestiary / **Curses** each open from the hub and back out to it. **(1.9.0)
+  The hub tracks where it was opened from (`archiveReturn`):** from the main menu it
+  backs out to the menu; from PAUSE it backs out to Pause. The pause menu's old
+  separate Grimoire + Bestiary items were REPLACED by a single "Arcane Archive" entry
+  that opens the hub with return-to-Pause (Option C) — both entry points now funnel
+  through the hub.
+* **Curses** = `STATE.CURSES` (`openCurses(returnState)`/`updateCurses`/`closeCurses`;
+  `ui.drawCurses`) — a Bestiary-style scroll list; each curse is "???" until suffered;
+  discovery persists in `ff_seenCurses` (§3a).
 
-**Mouse (1.8.0):** every screen above is click-driven via `this.menuZones` (set in
-render, hit-tested next frame) EXCEPT **`STATE.CLOSET` (Wardrobe)** — it has NO click
-zones yet (keyboard only; `drawCloset` returns nothing). `STATE.SETTINGS_PLACEHOLDER`
-and `STATE.HIGHSCORES_PLACEHOLDER` are otherwise clickable but lack an on-screen
-**Back** (Esc/Backspace only). These three are the §12 pending fixes.
+**Mouse:** every screen above is click-driven via `this.menuZones` (set in render,
+hit-tested next frame) — INCLUDING the Wardrobe (`STATE.CLOSET`: tabs / select /
+buy-equip / Back) and the Settings + High Scores **Back** rows, all closed in 1.8.0.
+The Curses screen (1.9.0) follows the Bestiary's mouse model (wheel + draggable
+scrollbar).
 
-Flow: `DYING -> (endless + qualifies) -> NAME_ENTRY -> GAME_OVER`, else `GAME_OVER`.
-Bests in `ff_bestEndlessWave/Score`; scores in `ff_highscores`.
+Flow: `DYING -> (endless OR cursed, if it qualifies for THAT mode's board) ->
+NAME_ENTRY -> GAME_OVER`, else `GAME_OVER`. Bests in `ff_bestEndlessWave/Score`
+(endless only); scores in `ff_highscores` (endless) / `ff_cursedHighscores` (cursed),
+keyed by `highScoreKey(mode)`.
 
 Legacy names (cleanup candidates): `HIGHSCORES_PLACEHOLDER` / `SETTINGS_PLACEHOLDER`
 are functional screens with misleading names; `ENDLESS_PLACEHOLDER` is dead.
@@ -570,9 +690,10 @@ are functional screens with misleading names; `ENDLESS_PLACEHOLDER` is dead.
 player-facing, newest-first markdown entry for Daniel to post. **Standing
 convention: entries ALWAYS include tasteful emojis** (section headers + key bullets)
 matching the witch/spirit theme. Live posts: 1.4.0 ("The Coven Grows"), 1.5.0
-("Crystals & Collars"), 1.6.0 ("The Hive Warden"), 1.7.0 ("The Shifting Dungeon").
-**1.8.0 is drafted below (NOT yet posted — finish the §12 mouse gaps first, then post
-on package).**
+("Crystals & Collars"), 1.6.0 ("The Hive Warden"), 1.7.0 ("The Shifting Dungeon"),
+1.8.0 ("Point, Click, Conjure"), 1.9.0 ("Cursed Mode"). **All POSTED.** The 1.8.0
+draft kept below is a record — it was posted on release; the 1.9.0 entry was posted at
+the 1.9.0 ship.
 
 ### Devlog 8 — ready-to-paste draft (1.8.0)
 
@@ -611,29 +732,18 @@ alongside. Happy haunting! 👻
 ## 12. Current Backlog / Next Steps
 
 ```txt
-DONE — 1.5.0 / 1.6.0 / 1.7.0 all SHIPPED. 1.8.0 (mouse everywhere + Bone Mage fix)
-  built + tested 2026-06-19 but NOT yet shipped — the three mouse gaps below close it.
-
->>> PENDING — FINISH 1.8.0 (do these next; the rest of the mouse pass is done) <<<
-  1. WARDROBE (STATE.CLOSET) has NO clickable elements — it was missed in the mouse
-     pass. Add, mirroring the other screens: click the Outfits/Collars TABS, click an
-     entry to select it, click to buy/equip the selected entry, and a clickable BACK.
-     Pattern: drawCloset returns clickable {zones}; the CLOSET handler hit-tests
-     this.menuZones (mouseMenu/zoneAt); hover gated on mouseMoved; tabs + buy/equip are
-     discrete click targets. Keyboard stays primary. (Internals stay closet* — §9.)
-  2. SETTINGS (STATE.SETTINGS_PLACEHOLDER) needs a clickable BACK text — sliders +
-     toggles already click/drag, but only Esc/Backspace returns today. Add a "Back" hit
-     zone (like the Grimoire/Bestiary Back row) that returns to settingsReturn.
-  3. HIGH SCORES (STATE.HIGHSCORES_PLACEHOLDER) needs a clickable BACK text (today it's
-     click-anywhere-returns; a clear Back reads better + matches the rest).
-  THEN: re-verify DEBUG flags, run package_itch.bat 1.8.0, post the §11 devlog 8
-  (add the Wardrobe bullet once fix #1 lands).
+DONE — 1.5.0 through 1.9.0 all SHIPPED/LIVE. The 1.8.0 mouse cycle is complete
+  (Wardrobe fully click-driven; Settings + High Scores got Back rows), and CURSED MODE
+  shipped as 1.9.0 — the full eight-curse arc + a separate leaderboard + the Curses
+  archive + familiar heralds + the unified Arcane-Archive pause (see §3a). No release is
+  mid-flight. (Housekeeping TODO: fill in the Hourkeeper boss's detailed §3/§5 entry —
+  it's live in BOSS_TYPES but its specifics weren't re-verified for this update.)
 
 OPTIONAL POLISH (1.8.0+, only if Daniel wants):
   - Scrollbar / slider grab-band widths are one-number tunables if anything feels
     fiddly to grab (in the list handlers / drawVolumeSlider).
 
-NEXT CONTENT (pick one with Daniel, after 1.8.0 ships):
+NEXT CONTENT (pick one with Daniel, now that 1.9.0 has shipped):
   - Next content beat — one new gameplay system at a time (prior candidates: a
     Skeleton Mage area-control enemy [HazardZone is reusable], or a 3rd Spirit
     Grimoire / familiar evolution). Confirm direction first.
@@ -652,11 +762,12 @@ WHEN READY (housekeeping):
     done to avoid churn; display name already "Wardrobe").
 
 PERSISTENCE KEYS:
-  ff_musicVolume, ff_sfxVolume, ff_highscores, ff_bestEndlessWave/Score,
-  ff_seenEnemies (Bestiary), ff_enemyIntros (intro banners), ff_wardrobe (crystals +
+  ff_musicVolume, ff_sfxVolume, ff_highscores, ff_cursedHighscores (1.9.0 Cursed
+  leaderboard), ff_bestEndlessWave/Score, ff_seenEnemies (Bestiary), ff_seenCurses
+  (1.9.0 Curses archive), ff_enemyIntros (intro banners), ff_wardrobe (crystals +
   owned/equipped outfits & collars), ff_reducedFlash + ff_highVisWarnings (1.7.0
   Display & Accessibility toggles). A "reset progress" should clear ff_seenEnemies,
-  ff_enemyIntros, and consider ff_wardrobe.
+  ff_seenCurses, ff_enemyIntros, and consider ff_wardrobe.
 
 BALANCE WATCH (only if Daniel reports it):
   - Goblin now stomp-only (touch-safe). If too passive, re-add contact ONLY while
@@ -676,10 +787,10 @@ external libraries, or build tooling; data-driven tables over subclasses
 ## 13. First Response Required from Next Claude
 
 1. Confirm this handoff was read.
-2. Briefly summarize current state (1.5.0 / 1.6.0 / 1.7.0 are shipped/live; **1.8.0 —
-   mouse everywhere + the Bone Mage fix — was built + tested but is NOT yet shipped:
-   the Wardrobe still needs mouse support, and Settings + High Scores need a clickable
-   Back, per §12. Those three are the immediate priority unless Daniel redirects.**).
+2. Briefly summarize current state (**1.2.0–1.9.0 are all SHIPPED/LIVE; Cursed Mode
+   shipped as 1.9.0 — see §3a. No release is mid-flight.** Open follow-ups: the
+   camera-following larger world + drop-reach clamping (parked, §12), and filling in
+   the Hourkeeper boss's detailed §3/§5 entry).
 3. Verify `DEBUG_FORCE_BOSS` and `DEBUG_BOSS_TYPE` from `enemies.js` (don't trust
    this doc) and report.
 4. Note any stale-looking handoff items.
