@@ -2688,12 +2688,12 @@ export class Hourkeeper {
 // DEBUG_FORCE_BOSS: spawn a boss EVERY wave (testing). DEBUG_BOSS_TYPE picks
 // which: "elder_wisp", "watching_hand", or "auto" (the normal shuffled-bag
 // random rotation — no back-to-back repeats; order varies each run).
-const DEBUG_FORCE_BOSS = true;
-const DEBUG_BOSS_TYPE = "hourkeeper"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden" | "hourkeeper"
+const DEBUG_FORCE_BOSS = false;
+const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hive_warden" | "hourkeeper"
 
 // All boss types in the random rotation. Add a new boss here and it joins the
 // shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).
-const BOSS_TYPES = ["elder_wisp", "watching_hand", "hive_warden"];
+const BOSS_TYPES = ["elder_wisp", "watching_hand", "hive_warden", "hourkeeper"];
 
 export class WaveManager {
   constructor(maxWaves = 10) {
