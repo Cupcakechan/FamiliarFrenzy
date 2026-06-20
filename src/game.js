@@ -319,6 +319,7 @@ export class Game {
     this.settingsZones = null;             // hit zones fed back from the last Settings render
     this.closetZones = null;               // Wardrobe hit zones (rows/tabs/Back) from the last render
     this.highscoresBackHover = false;      // High Scores Back button hovered (mouse)
+    this.howToPlayBackHover = false;       // How to Play Back button hovered (mouse)
 
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
@@ -539,11 +540,16 @@ export class Game {
         break;
       }
 
-      case STATE.HOW_TO_PLAY:
-        // Lives under Play now, so it returns to Mode Select (How to Play is
-        // index 2 there, so restore that highlight).
-        if (this.backPressed() || this.confirmPressed() || Input.mouseClicked()) { this.state = STATE.MODE_SELECT; this.menuIndex = 2; }
+      case STATE.HOW_TO_PLAY: {
+        // Mouse: a single clickable Back button (hover-highlighted), matching High
+        // Scores/Settings. Clicking elsewhere no longer returns — only Back, or
+        // Esc/Backspace/Enter. Returns to Mode Select (How to Play is index 2 there).
+        const hov = this.zoneAt(this.menuZones);
+        if (Input.mouseMoved()) this.howToPlayBackHover = hov === 0;
+        const clickedBack = hov === 0 && Input.mouseClicked();
+        if (this.backPressed() || this.confirmPressed() || clickedBack) { this.state = STATE.MODE_SELECT; this.menuIndex = 2; }
         break;
+      }
 
       case STATE.GRIMOIRE:
         this.updateGrimoire();
@@ -1689,7 +1695,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.HOW_TO_PLAY) {
-      drawHowToPlay(ctx, this.width, this.height);
+      this.menuZones = drawHowToPlay(ctx, this.width, this.height, this.howToPlayBackHover).zones;
       return;
     }
     if (this.state === STATE.BESTIARY) {
