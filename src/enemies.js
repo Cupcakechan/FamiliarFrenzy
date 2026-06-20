@@ -51,6 +51,9 @@ const WISP_ATTACK_VISUAL_GAP = 6;
 //     cooldown       — seconds between flings (with a little jitter)
 //     projSpeed/projDamage/projLife — the flung ball
 //     fireRange      — max distance it will fling from
+//   separationWeight — soft crowd-separation strength (omit/0 = excluded). Regular
+//     enemies that carry it gently push apart when overlapping so a swarm doesn't
+//     collapse into one sprite (readability). See separateEnemies() below.
 // 4-way facing (n/s/e/w) for enemies that ship cardinal-only art (e.g. the Tin
 // Bulwark): pick the dominant axis so it never looks up a diagonal strip.
 function dir4(dx, dy) {
@@ -68,6 +71,8 @@ const ENEMY_TYPES = {
     fallbackInner: "#7d1f2e",
     ambientSfx: "wisp", // creature chitter, picked at random by the scheduler
     ranged: null,
+    separationWeight: 1.0, // soft crowd separation: how readily it yields when it
+                           // overlaps a neighbor (the wisp swarm is the worst stacker)
   },
   gutter_gecko: {
     spritePrefix: "gecko",
@@ -78,6 +83,8 @@ const ENEMY_TYPES = {
     fallbackOuter: "#5ad1d1",
     fallbackInner: "#1f6b6b",
     ambientSfx: "gecko_chitter",
+    separationWeight: 0.6, // lighter than a wisp — it fights from range, so it gives
+                           // way less and isn't yanked off its preferred distance
     ranged: {
       preferredRange: 280,
       slack: 40,
@@ -1530,6 +1537,104 @@ function clampToPlayfield(x, y, radius = 0, radiusY = radius) {
     x: clamp(x, mx, PLAYFIELD.worldW - mx),
     y: clamp(y, my, PLAYFIELD.worldH - my),
   };
+}
+
+// --- Soft crowd separation (regular enemies only) ----------------------------
+// Why: every regular enemy homes on the witch's EXACT position with zero
+// awareness of its neighbors, so a swarm converges to one point and N sprites
+// stack into a single blob (the wisp readability complaint). This is a gentle
+// post-MOVEMENT nudge — NOT a physics collider. For each overlapping pair it
+// pushes both apart by a FRACTION of the overlap (scaled by each one's weight),
+// the push shrinking to zero exactly at "just touching", so they ease apart
+// instead of snapping (no jitter, no rigid lattice). It only pushes enemies off
+// EACH OTHER, never off the witch, so the swarm still surrounds her and melee
+// can still reach her — swarm pressure is preserved.
+//
+// Scope is data-driven + deliberately narrow: only enemies whose ENEMY_TYPES row
+// carries `separationWeight > 0` take part (wisp + gecko for now). The stationary
+// Bone Mage and the committed-attack types (Goblin / Pronggeist / Tin Bulwark)
+// have no weight, so they're skipped and their locked positions are never
+// disturbed; bosses are separate classes with no `.def` and are skipped too.
+// Pairwise is correct here: the on-screen cap is ~18 (12 base + the Teeming
+// curse's +6), i.e. at most ~150 distance checks/frame — a spatial grid would be
+// over-engineering at this count.
+const SEPARATION_PUSH = 0.3;     // fraction of the (above-deadband) overlap each enemy
+                                 // moves per frame; <0.5 so a pair eases apart over a
+                                 // few frames rather than snapping (raise = firmer)
+const SEPARATION_DEADBAND = 2;   // px of overlap to ignore, and the point the push fades
+                                 // to zero — stops micro-jitter at the contact boundary
+const SEPARATION_MAX_STEP = 6;   // px hard cap on one enemy's separation move per frame
+                                 // (well under enemy speed; stops a deep pileup launching)
+
+// Mutates `enemies` in place: call ONCE per frame, AFTER every enemy.update() and
+// BEFORE player-contact checks (so the witch is hit at each enemy's resolved spot).
+export function separateEnemies(enemies) {
+  // Gather only the participants once (skips dead enemies, bosses [no .def], and
+  // any type without a separationWeight). Zero the per-frame accumulator here so
+  // the result never depends on a previous frame.
+  const movers = [];
+  for (const e of enemies) {
+    if (e.dead || !e.def || !e.def.separationWeight) continue;
+    e._sepX = 0;
+    e._sepY = 0;
+    movers.push(e);
+  }
+  if (movers.length < 2) return;
+
+  // Accumulate pushes over every unique pair (upper triangle), then apply once —
+  // so a still pair separates symmetrically regardless of array order.
+  for (let i = 0; i < movers.length; i++) {
+    const a = movers[i];
+    for (let j = i + 1; j < movers.length; j++) {
+      const b = movers[j];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const minDist = a.radius + b.radius; // both 13 -> 26px of personal space
+      const distSq = dx * dx + dy * dy;
+      if (distSq >= minDist * minDist) continue; // not overlapping
+
+      let dist = Math.sqrt(distSq);
+      let nx, ny;
+      if (dist > 1e-4) {
+        nx = dx / dist;
+        ny = dy / dist;
+      } else {
+        // Exactly coincident (the "stacked into one sprite" case): split along a
+        // stable per-enemy angle so they fan out and we never divide by zero.
+        nx = Math.cos(a.wobble);
+        ny = Math.sin(a.wobble);
+        dist = 0;
+      }
+
+      const overlap = minDist - dist;
+      if (overlap <= SEPARATION_DEADBAND) continue;
+      const push = (overlap - SEPARATION_DEADBAND) * SEPARATION_PUSH;
+      // Each enemy yields in proportion to its OWN weight: a light gecko holds its
+      // range better while a wisp gives way more readily.
+      a._sepX -= nx * push * a.def.separationWeight;
+      a._sepY -= ny * push * a.def.separationWeight;
+      b._sepX += nx * push * b.def.separationWeight;
+      b._sepY += ny * push * b.def.separationWeight;
+    }
+  }
+
+  // Apply the accumulated nudges (magnitude-capped), then re-clamp to the floor so
+  // nothing is shoved into or through the wall ring. Uses the live PLAYFIELD the
+  // WaveManager refreshes each frame.
+  for (const e of movers) {
+    let sx = e._sepX;
+    let sy = e._sepY;
+    if (!sx && !sy) continue;
+    const m = Math.hypot(sx, sy);
+    if (m > SEPARATION_MAX_STEP) {
+      const k = SEPARATION_MAX_STEP / m;
+      sx *= k;
+      sy *= k;
+    }
+    const pos = clampToPlayfield(e.x + sx, e.y + sy, e.radius);
+    e.x = pos.x;
+    e.y = pos.y;
+  }
 }
 
 // --- Boss: Elder Wisp (Wave 10) ------------------------------------------

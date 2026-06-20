@@ -19,7 +19,7 @@
 import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
-import { Enemy, WaveManager, HazardZone, HazardPuddle } from "./enemies.js";
+import { Enemy, WaveManager, HazardZone, HazardPuddle, separateEnemies } from "./enemies.js";
 import { CURSES, CURSE_POOL, rollNextCurse, curseValue } from "./curses.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
@@ -1494,8 +1494,19 @@ export class Game {
     }
     if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");
 
+    // Move every enemy first (each homes on the witch independently)...
     for (const enemy of this.enemies) {
       enemy.update(dt, this.player, this.enemyBolts, this.hazards);
+    }
+
+    // ...then gently un-stack overlapping regular enemies so a swarm doesn't
+    // collapse into a single sprite. Runs AFTER movement and BEFORE contact, so
+    // the witch is hit at each enemy's resolved position. Bosses + stationary /
+    // committed types are skipped inside separateEnemies (data-driven).
+    separateEnemies(this.enemies);
+
+    // ...then resolve body-contact damage at the post-separation positions.
+    for (const enemy of this.enemies) {
       // Goblin Bonker deals NO body-contact damage at all — its radial stomp is
       // its only damage. The Hourkeeper (noContactDamage) is the same: only its
       // telegraphed hazards hurt, so standing close during its alarm phase for the
