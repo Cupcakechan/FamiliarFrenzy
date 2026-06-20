@@ -73,6 +73,7 @@ export class Player {
     this.health = 100;
     this.invulnDuration = 1.0;
     this.invulnTimer = 0;
+    this.damageTakenMult = 1; // Brittle curse scales incoming damage (1 = normal); reset each run
 
     // Knockback impulse (Goblin Bonker club, etc.): a brief decaying shove the
     // witch can still move against — a push, not a stun.
@@ -193,7 +194,9 @@ export class Player {
   takeDamage(amount) {
     if (DEBUG_GOD_MODE) return false; // testing: invulnerable, never takes damage
     if (this.invulnTimer > 0) return false;
-    this.health -= amount;
+    // Brittle curse raises damageTakenMult above 1, so every source of damage
+    // (all of which funnel through here) bites harder. Round to keep HP integer.
+    this.health -= Math.round(amount * this.damageTakenMult);
     if (this.health < 0) this.health = 0;
     this.invulnTimer = this.invulnDuration;
     return true;
@@ -280,6 +283,7 @@ export class Player {
     this.maxHealth = 100;
     this.health = this.maxHealth;
     this.invulnTimer = 0;
+    this.damageTakenMult = 1; // Brittle: back to normal each run (set by applyNextCurse if rolled)
     this.knockVX = 0;
     this.knockVY = 0;
     this.knockTimer = 0;

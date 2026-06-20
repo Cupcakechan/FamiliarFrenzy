@@ -575,6 +575,10 @@ export class Game {
       for (const e of this.enemies) if (!e.isBoss) e.speed *= newMult / oldMult;
       this.waveManager.curseSpeedMult = newMult;
     }
+
+    // Brittle: scale all incoming player damage. Unlike Quickening there's nothing
+    // already-alive to adjust — it applies from the next hit on.
+    this.player.damageTakenMult = curseValue(this.activeCurses, "damageMult", 1);
   }
 
   // --- UPDATE ------------------------------------------------------------
