@@ -847,6 +847,70 @@ export class HazardZone {
   }
 }
 
+// The dark pool a slain enemy leaves behind under the Vengeful Dead curse: a
+// lingering ground DoT that damages the WITCH — the mirror of the Alchemist's
+// acid Puddle (which damages enemies). Kept as its own class so neither's tuning
+// disturbs the other and the shipped weapon stays untouched. game.js owns,
+// updates, and draws these exactly like it does HazardZone. Visual + hitbox share
+// `radius`. The witch's own 1.0s i-frames gate the ticks, so a fresh kill reads as
+// "a bite if you're caught, a second if you camp the corpse," not a melt.
+loadImage("puddle_dark", "assets/sprites/projectiles/puddle_dark.png");
+export class HazardPuddle {
+  // Required: position, radius, per-tick damage. Optional (with defaults): life,
+  // tickInterval, fade window, sprite key — so the class is reusable for any future
+  // ground DoT on the witch while Vengeful Dead's tuning lives in game.js.
+  constructor(x, y, radius, damage, opts = {}) {
+    this.x = x;
+    this.y = y;
+    this.radius = radius;       // gameplay hitbox == visible pool
+    this.damage = damage;       // damage per landed tick
+    this.life = opts.life != null ? opts.life : 1.8;
+    this.tickInterval = opts.tickInterval != null ? opts.tickInterval : 0.5;
+    this.fade = opts.fade != null ? opts.fade : 0.6; // fade-out window at end of life
+    this.spriteKey = opts.sprite || "puddle_dark";
+    this.tickTimer = this.tickInterval; // first tick one interval in (matches the Alchemist Puddle)
+    this.dead = false;
+  }
+
+  // `player` is the single target. player.takeDamage() applies its own i-frames,
+  // so we don't gate ticks here — a tick that lands during invulnerability is
+  // simply absorbed. Called every play frame by game.js.
+  update(dt, player) {
+    this.life -= dt;
+    if (this.life <= 0) { this.dead = true; return; }
+    this.tickTimer -= dt;
+    if (this.tickTimer <= 0) {
+      this.tickTimer += this.tickInterval;
+      if (player && !player.dead) {
+        const d = Math.hypot(player.x - this.x, player.y - this.y);
+        if (d <= this.radius + player.radius) player.takeDamage(this.damage);
+      }
+    }
+  }
+
+  draw(ctx) {
+    const fadeMul = this.life < this.fade ? this.life / this.fade : 1;
+    const pulse = 0.9 + 0.1 * Math.sin(performance.now() / 200);
+    const img = getImage(this.spriteKey);
+    ctx.save();
+    ctx.globalAlpha = 0.75 * fadeMul;
+    if (img && img.width > 0) {
+      const d = this.radius * 2;
+      ctx.drawImage(img, this.x - this.radius, this.y - this.radius, d, d);
+    } else {
+      // Fallback until the recolored sprite ships: a sinister dark pool with a
+      // faint violet rim, so the hazard still reads clearly on the stone floor.
+      const r = this.radius * pulse;
+      ctx.fillStyle = "#140d1c";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "rgba(124, 77, 158, 0.85)";
+      ctx.beginPath(); ctx.arc(this.x, this.y, r, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 export class Enemy {
   constructor(x, y, type = "wisp") {
     this.x = x;

@@ -14,10 +14,13 @@
    archive) so the pixel art stays crisp.
    ========================================================================= */
 
-// The registry. `id` is the stable key (and the icon basename later). Effect
-// fields are read by whichever system the curse touches:
-//   vision  -> the dark veil's spotlight radius (game.js renderer)
-// Pass 2+ will add more: noFlasks, enemySpeedMult, groundHazard, extraDamage...
+// The registry. `id` is the stable key (and the icon basename). Effect fields are
+// read by whichever system the curse touches:
+//   vision         -> the dark veil's spotlight radius (game.js renderer)
+//   noFlasks       -> the flask-drop roll skips entirely (game.js)
+//   groundHazard   -> the ambient cursed-patch spawner runs (game.js)
+//   enemySpeedMult -> regular enemies' speed multiplier (game.js / WaveManager)
+//   deathPuddle    -> a slain non-boss enemy leaves a HazardPuddle where it fell (game.js)
 export const CURSES = {
   darkness: {
     id: "darkness",
@@ -47,11 +50,18 @@ export const CURSES = {
     cry: "They move faster now… don't get cornered.",
     enemySpeedMult: 1.25, // applied to regular enemies' speed (bosses keep their tuned patterns)
   },
+  vengeful_dead: {
+    id: "vengeful_dead",
+    name: "Vengeful Dead",
+    blurb: "The slain don't rest — each leaves a seething pool behind.",
+    cry: "The dead leave something foul where they fall — don't linger.",
+    deathPuddle: true, // read by the enemy-death handler (game.js): drops a HazardPuddle where it fell
+  },
 };
 
 // Curses eligible to be rolled, in rough easiest->nastiest order. Pass 2+ extends
 // this as new CURSES entries land.
-export const CURSE_POOL = ["darkness", "withering", "cursed_ground", "quickening"];
+export const CURSE_POOL = ["darkness", "withering", "cursed_ground", "vengeful_dead", "quickening"];
 
 // Pick a random curse id that isn't active yet, or null once every pool curse is
 // on (so the escalation gracefully stops adding when exhausted).

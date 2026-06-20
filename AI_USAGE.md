@@ -151,3 +151,4 @@ This is an AI-focused jam, so this file tracks how AI tools were used.
 | 2026-06-19 | Cursed Mode (Pass 2b) | Curse HUD icons (bottom-left) + pause-menu curse list; shared draw helper; removed debug readout | ui.js, game.js | Claude |
 | 2026-06-19 | Cursed Mode (Pass 3a) | Separate Cursed leaderboard (ff_cursedHighscores) + Endless/Cursed tabs on High Scores (mouse + keyboard); pause CURSES nudge | ui.js, game.js | Claude |
 | 2026-06-19 | Cursed Mode 3b | Curses archive (blacked-out until discovered) + unified pause menu through the Arcane Archive | game.js, ui.js | Claude (Opus 4.8) |
+| 2026-06-20 | Cursed Mode polish | Fixed the Boss Incoming wave banner to fire on Cursed boss waves (every 5th, not hardcoded 10th); added a per-curse familiar herald line so new curses announce by voice | game.js, enemies.js, curses.js | Claude |

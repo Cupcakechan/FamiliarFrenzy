@@ -19,7 +19,7 @@
 import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
-import { Enemy, WaveManager, HazardZone } from "./enemies.js";
+import { Enemy, WaveManager, HazardZone, HazardPuddle } from "./enemies.js";
 import { CURSES, CURSE_POOL, rollNextCurse, curseValue } from "./curses.js";
 import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
@@ -159,6 +159,16 @@ const CG_TELEGRAPH = 1.1;       // windup before it bites (the escape window)
 const CG_DAMAGE = 14;           // damage if you're standing in it at bloom
 const CG_MIN_DIST = 90;         // patches bloom in a ring around the witch...
 const CG_MAX_DIST = 320;        // ...near enough to threaten, far enough to dodge
+
+// Vengeful Dead curse: each slain non-boss enemy leaves a brief dark pool where it
+// fell — a lingering ground DoT on the witch (HazardPuddle). The witch's 1.0s
+// i-frames gate the ticks, so camping a fresh kill costs ~one extra bite. All
+// one-value knobs; tune freely.
+const VD_PUDDLE_RADIUS = 38;    // pool hitbox/visual radius (px)
+const VD_PUDDLE_LIFE = 1.8;     // seconds the pool lingers before fading
+const VD_PUDDLE_TICK = 0.5;     // seconds between DoT ticks
+const VD_PUDDLE_DAMAGE = 10;    // damage per landed tick
+const VD_PUDDLE_MAX = 16;       // simultaneous-pool cap (oldest drops in big clears)
 
 // Emberheart Robe (red outfit) — emergency heal. When equipped and current HP dips
 // below EMBER_TRIGGER of max while alive, heal up to EMBER_HEAL_TO of max, once per
@@ -362,6 +372,7 @@ export class Game {
     this.enemies = [];
     this.enemyBolts = []; // Gutter Gecko projectiles (outlive their shooter)
     this.hazards = [];    // Bone Mage cursed-ground zones (telegraph -> blast)
+    this.hazardPuddles = []; // Vengeful Dead pools (lingering ground DoT on the witch)
     this.waveManager = new WaveManager(MAX_WAVES);
     this.pickups = [];
     this.flasks = [];
@@ -455,6 +466,7 @@ export class Game {
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
+    this.hazardPuddles = [];
     this.waveManager.reset(mode === "endless" || mode === "cursed", mode === "cursed");
     this.activeCurses = []; // Cursed Mode starts with none; one is added per boss kill
     this.cursedGroundTimer = CG_INTERVAL;
@@ -531,6 +543,7 @@ export class Game {
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
+    this.hazardPuddles = [];
     this.activeHint = null; // tutorial dialogue ends with the tutorial
     this.hintQueue = [];
     this.state = STATE.PLAYING;
@@ -1524,6 +1537,7 @@ export class Game {
     // Bone Mage cursed ground: each zone telegraphs then blasts (damage handled
     // inside HazardZone against the witch's i-frames), then fades and is culled.
     for (const hz of this.hazards) hz.update(dt, this.player);
+    for (const p of this.hazardPuddles) p.update(dt, this.player);
 
     // Cursed Ground curse: telegraphed cursed patches keep blooming in a ring
     // around the witch, forcing her to keep moving. Reuses the Bone Mage's
@@ -1541,6 +1555,7 @@ export class Game {
       }
     }
     this.hazards = this.hazards.filter((h) => !h.dead);
+    this.hazardPuddles = this.hazardPuddles.filter((p) => !p.dead);
 
     // Boss summons: release queued wisps ONE at a time (staggered) near the boss.
     const boss = this.waveManager.boss;
@@ -1620,6 +1635,13 @@ export class Game {
         if (enemy.type === "bone_mage" && enemy.def.caster) {
           const c = enemy.def.caster;
           this.hazards.push(new HazardZone(enemy.x, enemy.y, c.blastRadius, c.telegraph, c.blastDamage));
+        }
+        // Vengeful Dead curse: every slain non-boss enemy leaves a brief dark pool
+        // where it fell. The cap keeps big clears (and Teeming, later) bounded —
+        // oldest pool drops off. Bosses are exempt (their kill already pays out).
+        if (!enemy.isBoss && curseValue(this.activeCurses, "deathPuddle", false)) {
+          if (this.hazardPuddles.length >= VD_PUDDLE_MAX) this.hazardPuddles.shift();
+          this.hazardPuddles.push(new HazardPuddle(enemy.x, enemy.y, VD_PUDDLE_RADIUS, VD_PUDDLE_DAMAGE, { life: VD_PUDDLE_LIFE, tickInterval: VD_PUDDLE_TICK }));
         }
         if (enemy.isBoss) {
           this.bossesDefeated += 1;
@@ -2125,6 +2147,7 @@ export class Game {
     this.drawSlamMarker(ctx); // Watching Hand telegraph: on the floor, under actors
     this.drawSummonGlow(ctx);  // Watching Hand summon telegraph
     for (const hz of this.hazards) hz.draw(ctx); // Bone Mage cursed ground (under actors)
+    for (const p of this.hazardPuddles) p.draw(ctx); // Vengeful Dead pools (ground layer, under actors)
     this.familiar.drawPuddles(ctx); // Alchemist puddles: ground layer, beneath pickups + enemies
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
