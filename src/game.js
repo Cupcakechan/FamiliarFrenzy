@@ -579,6 +579,11 @@ export class Game {
     // Brittle: scale all incoming player damage. Unlike Quickening there's nothing
     // already-alive to adjust — it applies from the next hit on.
     this.player.damageTakenMult = curseValue(this.activeCurses, "damageMult", 1);
+
+    // Teeming: fuller, denser waves. The WaveManager reads these when it builds the
+    // next wave and gates spawning — so it takes hold from the next wave on.
+    this.waveManager.curseSpawnMult = curseValue(this.activeCurses, "spawnMult", 1);
+    this.waveManager.curseMaxAliveBonus = curseValue(this.activeCurses, "maxAliveBonus", 0);
   }
 
   // --- UPDATE ------------------------------------------------------------

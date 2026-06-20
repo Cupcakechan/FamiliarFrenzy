@@ -3026,6 +3026,8 @@ export class WaveManager {
     this.cursed = cursed;          // Cursed Mode: faster cadence + a base difficulty bump (see makeEnemy)
     this.bossEvery = cursed ? 5 : 10; // boss AND difficulty-tier interval — every 5 waves in Cursed
     this.curseSpeedMult = 1;       // Quickening curse multiplies new enemies' speed (1 = none)
+    this.curseSpawnMult = 1;       // Teeming curse multiplies the per-wave enemy budget (1 = none)
+    this.curseMaxAliveBonus = 0;   // Teeming curse raises the on-screen cap (0 = none)
     this.wave = 0;                 // becomes 1 when the first wave starts
     this.phase = "intermission";   // "intermission" | "spawning" | "boss"
     this.timer = 2.0;              // short "get ready" before wave 1
@@ -3089,7 +3091,7 @@ export class WaveManager {
     // phase === "spawning"
     if (this.toSpawn > 0) {
       this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0 && enemies.length < this.maxAlive) {
+      if (this.spawnTimer <= 0 && enemies.length < this.maxAlive + this.curseMaxAliveBonus) {
         enemies.push(this.makeEnemy(view, this.rollEnemyType(enemies)));
         this.toSpawn -= 1;
         this.spawnTimer = this.spawnGap();
@@ -3113,7 +3115,8 @@ export class WaveManager {
       enemies.push(this.boss);
     } else {
       this.phase = "spawning";
-      this.toSpawn = 5 + this.wave * 2 + this.endlessTier() * COUNT_PER_TIER;
+      // Teeming curse scales the whole wave budget (1 = unaffected).
+      this.toSpawn = Math.round((5 + this.wave * 2 + this.endlessTier() * COUNT_PER_TIER) * this.curseSpawnMult);
       this.spawnTimer = 0; // first enemy comes right away
     }
   }

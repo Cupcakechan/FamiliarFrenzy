@@ -22,6 +22,8 @@
 //   enemySpeedMult -> regular enemies' speed multiplier (game.js / WaveManager)
 //   deathPuddle    -> a slain non-boss enemy leaves a HazardPuddle where it fell (game.js)
 //   damageMult     -> multiplier on all incoming player damage (player.takeDamage, set via game.js)
+//   spawnMult      -> multiplier on the per-wave enemy budget (WaveManager, set via game.js)
+//   maxAliveBonus  -> added to the on-screen enemy cap (WaveManager, set via game.js)
 export const CURSES = {
   darkness: {
     id: "darkness",
@@ -65,11 +67,19 @@ export const CURSES = {
     cry: "Your wards are failing — don't let them touch you.",
     damageMult: 1.5, // scales ALL incoming player damage (player.takeDamage, set via game.js)
   },
+  teeming: {
+    id: "teeming",
+    name: "Teeming",
+    blurb: "The horde swells — they come in ever greater numbers.",
+    cry: "There are more of them now — don't get surrounded.",
+    spawnMult: 1.5,   // multiplies the per-wave enemy budget (WaveManager, set via game.js)
+    maxAliveBonus: 6, // raises the on-screen enemy cap (WaveManager, set via game.js)
+  },
 };
 
 // Curses eligible to be rolled, in rough easiest->nastiest order. Pass 2+ extends
 // this as new CURSES entries land.
-export const CURSE_POOL = ["darkness", "withering", "cursed_ground", "vengeful_dead", "brittle", "quickening"];
+export const CURSE_POOL = ["darkness", "withering", "cursed_ground", "vengeful_dead", "brittle", "teeming", "quickening"];
 
 // Pick a random curse id that isn't active yet, or null once every pool curse is
 // on (so the escalation gracefully stops adding when exhausted).
