@@ -75,6 +75,12 @@ export class Player {
     this.knockVY = 0;
     this.knockTimer = 0;
 
+    // Sustained push (Tin Bulwark wall): a per-frame directional shove, set while
+    // she overlaps an active push-wall and cleared every frame in update(). Kept
+    // separate from knockback so neither affects the other.
+    this.pushVX = 0;
+    this.pushVY = 0;
+
     // Animation state.
     this.facing = "s";
     this.animState = "idle"; // "idle" | "walk" | "die"
@@ -101,11 +107,21 @@ export class Player {
       this.knockTimer -= dt;
     }
 
+    // Tin Bulwark wall push: a sustained directional shove, set per-frame by an
+    // active push-wall she overlaps (HazardZone in "push" mode). She keeps WASD
+    // control on top, the clamp below keeps her on the floor, and it's cleared at
+    // the end of the frame so it self-cancels the instant no wall is pushing —
+    // which also makes it safe regardless of the wall/player update order.
+    this.x += this.pushVX * dt;
+    this.y += this.pushVY * dt;
+
     // Keep the whole circle inside the arena, minus an optional edge inset
     // (the wall-ring thickness) so the witch stays on the floor.
     const m = bounds.inset || 0;
     this.x = clamp(this.x, this.radius + m, bounds.width - this.radius - m);
     this.y = clamp(this.y, this.radius + m, bounds.height - this.radius - m);
+    this.pushVX = 0;
+    this.pushVY = 0;
 
     if (this.invulnTimer > 0) this.invulnTimer -= dt;
 
@@ -192,6 +208,17 @@ export class Player {
     this.knockTimer = KNOCK_TIME;
   }
 
+  // Sustained directional shove (Tin Bulwark wall). Called EVERY frame she
+  // overlaps the active wall; `speed` is px/s. The witch keeps her own movement
+  // on top and is never pinned (she can walk against it or slip out the sides).
+  // Additive so overlapping walls stack; update() zeroes it each frame, so it
+  // stops the instant no wall is pushing.
+  applyPush(dirX, dirY, speed) {
+    const len = Math.hypot(dirX, dirY) || 1;
+    this.pushVX += (dirX / len) * speed;
+    this.pushVY += (dirY / len) * speed;
+  }
+
   get isInvulnerable() {
     return this.invulnTimer > 0;
   }
@@ -250,6 +277,8 @@ export class Player {
     this.knockVX = 0;
     this.knockVY = 0;
     this.knockTimer = 0;
+    this.pushVX = 0;
+    this.pushVY = 0;
     this.facing = "s";
     this.animState = "idle";
     this.animFrame = 0;

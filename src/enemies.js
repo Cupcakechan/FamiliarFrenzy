@@ -51,6 +51,12 @@ const WISP_ATTACK_VISUAL_GAP = 6;
 //     cooldown       — seconds between flings (with a little jitter)
 //     projSpeed/projDamage/projLife — the flung ball
 //     fireRange      — max distance it will fling from
+// 4-way facing (n/s/e/w) for enemies that ship cardinal-only art (e.g. the Tin
+// Bulwark): pick the dominant axis so it never looks up a diagonal strip.
+function dir4(dx, dy) {
+  return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "e" : "w") : (dy > 0 ? "s" : "n");
+}
+
 const ENEMY_TYPES = {
   wisp: {
     spritePrefix: "wisp",
@@ -169,6 +175,43 @@ const ENEMY_TYPES = {
       spikesSfx: "pronggeist_spikes", // eruption cue, played by the first prong (graceful if missing)
     },
   },
+  tin_bulwark: {
+    spritePrefix: "tin_bulwark",
+    spriteScale: 0.9,    // tune independently once the art is in (visual only)
+    speedMult: 0.55,     // slow, deliberate trudge — slower than a wisp
+    healthMult: 2.5,     // tanky controller (between the Pronggeist's 2.0 and the Goblin's 3.0)
+    damage: 8,           // standard contact damage if you stand on it (the WALL does none)
+    fallbackOuter: "#9fb3c8", // tin/steel blue-grey
+    fallbackInner: "#4a5a6b",
+    ambientSfx: "tin_bulwark_step", // heavy footfall (data-driven scheduler; silent until registered)
+    ranged: null,
+    // bulwark: a position-control enemy. It advances to a casting distance, PLANTS,
+    // and raises a telegraphed broadside PUSH WALL centered on the witch's spot. The
+    // wall deals NO damage — while active it SHOVES her away from the Bulwark (she
+    // starts at its rear edge, so the full thickness pushes her through). The threat
+    // is being herded into other enemies / hazards / arena edges, not the wall
+    // itself. The wall is a rect HazardZone in "push" mode (skin "wall"), so game.js
+    // draws + applies it for free. WALK-ONLY art (freezes a frame while casting); it
+    // drives its own 4-way facing + animation. Distinct from the Pronggeist: a force
+    // barrier that MOVES you (no damage) vs a spike band that HITS you.
+    bulwark: {
+      castRange: 260,      // plants + walls when the witch is within this (center dist)
+      approachTime: 1.0,   // seconds of advancing before each wall attempt
+      windup: 0.9,         // wall telegraph — the escape window (sidestep it)
+      active: 1.2,         // seconds the wall stays up and pushes
+      recover: 0.8,        // planted recovery after the wall fades (before advancing again)
+      wallWidth: 240,      // broadside length of the wall (across the push)
+      wallThick: 90,       // push depth — she starts at the rear edge, shoved through this
+      pushSpeed: 140,      // px/s shove while she's inside the wall (vs the witch's 220)
+      wallSpeed: 130,      // px/s the ACTIVE wall ADVANCES along the push (moving barrier). Keep it a
+                           // touch UNDER pushSpeed so a still witch is driven forward riding the front
+                           // edge, then pops out (herded into danger, with a clear escape); and well
+                           // under 220 so she can always outrun it or cut sideways out of the band.
+      castFrame: 1,        // walk frame to freeze on while planted/casting
+      chargeSfx: "tin_bulwark_charge", // windup cue (graceful if missing)
+      wallSfx: "tin_bulwark_wall",     // wall-up cue, played as it goes active (graceful)
+    },
+  },
 };
 
 // Gutter Gecko sprite strips (anthropomorphic lizard with a pouch). Unlike
@@ -225,6 +268,17 @@ for (const anim of ["walk"]) {
   }
 }
 
+// Tin Bulwark sprite strips. WALK-ONLY by design (like the Pronggeist): it walks
+// while advancing and FREEZES a walk frame while planted/casting, so no idle/
+// attack/die strips. FOUR directions only (n/s/e/w) — its facing is clamped to
+// cardinals (dir4), so no diagonal strips are needed.
+//   tin_bulwark_walk_<dir>.png   (6 frames, loops — a heavy trudge)
+// Missing strips fall back to the steel placeholder per direction.
+for (const d of ["n", "s", "e", "w"]) {
+  const key = `tin_bulwark_walk_${d}`;
+  loadImage(key, `assets/sprites/enemies/${key}.png`);
+}
+
 // Per-prefix animation tables.
 const ENEMY_ANIMS = {
   wisp:  { anims: WISP_ANIMS, fps: WISP_FPS, looping: WISP_LOOPING },
@@ -246,6 +300,11 @@ const ENEMY_ANIMS = {
   pronggeist: {
     anims:   { walk: 4 },
     fps:     { walk: 8 },
+    looping: { walk: true }, // walk-only; the cast freezes a single walk frame
+  },
+  tin_bulwark: {
+    anims:   { walk: 6 },
+    fps:     { walk: 6 },    // a heavy, slow trudge
     looping: { walk: true }, // walk-only; the cast freezes a single walk frame
   },
 };
@@ -410,6 +469,15 @@ export class HazardZone {
     // Circle look: "curse" = Bone Mage cursed ground (rune/violet), "stomp" =
     // Goblin shockwave (green/amber, no rune). Rect ignores this.
     this.skin = opts.skin || "curse";
+
+    // Push mode (Tin Bulwark wall): when push > 0 the zone deals NO one-time hit
+    // and instead SHOVES the witch along pushAngle every frame she overlaps the
+    // ACTIVE phase, which lasts activeDuration (vs the brief blast flash). Default
+    // push 0 -> the classic telegraph -> one-time blast, completely unchanged.
+    this.push = opts.push || 0;            // sustained shove speed (px/s); 0 = off
+    this.pushAngle = opts.pushAngle || 0;  // direction of the shove (radians)
+    this.activeDuration = opts.activeDuration != null ? opts.activeDuration : HAZARD_BLAST_TIME;
+    this.driftSpeed = opts.driftSpeed || 0; // px/s the ACTIVE wall advances along pushAngle (moving wall); 0 = stationary
   }
 
   // Is the witch inside the danger area right now? (expanded by her radius so a
@@ -431,9 +499,11 @@ export class HazardZone {
     this.timer -= dt;
     if (this.phase === "telegraph") {
       if (this.timer <= 0) {
-        // Detonate: damage once if the witch is inside right now. A LANDED hit
-        // (one that beat her i-frames) also knocks her back from the origin.
-        if (!this.hasHit && player && !player.dead && this.hits(player)) {
+        // Push walls (Tin Bulwark) deal NO one-time hit — the shove happens over
+        // the active phase below. Everything else detonates once: damage if she's
+        // inside now, and a LANDED hit (one that beat her i-frames) knocks her
+        // back from the origin.
+        if (!this.push && !this.hasHit && player && !player.dead && this.hits(player)) {
           const landed = player.takeDamage(this.damage);
           if (landed && this.knockback > 0 && typeof player.applyKnockback === "function") {
             const kx = player.x - this.ox, ky = player.y - this.oy;
@@ -443,11 +513,26 @@ export class HazardZone {
         }
         this.hasHit = true;
         this.phase = "blast";
-        this.timer = HAZARD_BLAST_TIME;
+        // A push wall stays "live" for its full active window; plain hazards just
+        // flash briefly.
+        this.timer = this.push > 0 ? this.activeDuration : HAZARD_BLAST_TIME;
         if (this.sfx) playSfx(this.sfx); // null (extra prongs) = silent; registry is graceful otherwise
       }
-    } else if (this.timer <= 0) {
-      this.dead = true;
+    } else {
+      // ACTIVE phase. A "moving wall" first ADVANCES along pushAngle (driftSpeed)
+      // so it FOLLOWS the witch instead of letting her step off the front — the
+      // advancing barrier is the threat. Then it shoves anyone inside along
+      // pushAngle (no damage); she keeps WASD control and escapes by cutting
+      // sideways out of the band. Drift direction is LOCKED at cast (no tracking).
+      if (this.driftSpeed > 0) {
+        this.x += Math.cos(this.pushAngle) * this.driftSpeed * dt;
+        this.y += Math.sin(this.pushAngle) * this.driftSpeed * dt;
+      }
+      if (this.push > 0 && player && !player.dead &&
+          typeof player.applyPush === "function" && this.hits(player)) {
+        player.applyPush(Math.cos(this.pushAngle), Math.sin(this.pushAngle), this.push);
+      }
+      if (this.timer <= 0) this.dead = true;
     }
   }
 
@@ -461,6 +546,7 @@ export class HazardZone {
   drawRect(ctx) {
     if (this.skin === "spikes") { this.drawRectSpikes(ctx); return; } // Pronggeist look
     if (this.skin === "clock") { this.drawRectClock(ctx); return; }   // Hourkeeper clock hand
+    if (this.skin === "wall") { this.drawRectWall(ctx); return; }     // Tin Bulwark push wall
     const hl = this.length / 2, hw = this.width / 2;
     ctx.save();
     ctx.translate(this.x, this.y);
@@ -483,6 +569,71 @@ export class HazardZone {
     ctx.strokeRect(-hl, -hw, this.length, this.width);
     ctx.fillStyle = `rgba(226, 83, 107, ${0.10 + 0.16 * pulse})`;
     ctx.fillRect(-hl, -hw, this.length * fill, this.width); // sweeps outward
+    ctx.restore();
+  }
+
+  // Tin Bulwark push wall (skin "wall"): a STEEL panel that telegraphs (outline +
+  // pulsing fill) then turns near-solid while it shoves. The push-direction arrows
+  // (drawn in WORLD space along pushAngle) make the shove unmistakable — that's the
+  // whole read of the attack. Code-drawn; a panel sprite can replace it later, this
+  // stays as the fallback. Distinct steel #9fb3c8 vs the goblin red / spike gold.
+  drawRectWall(ctx) {
+    const hl = this.length / 2, hw = this.width / 2;
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.angle);
+    if (this.phase === "blast") {
+      // ACTIVE: a near-solid slab, easing out across the active window.
+      const p = 1 - Math.max(0, this.timer) / this.activeDuration; // 0 -> 1
+      ctx.globalAlpha = 0.55 * (1 - p * 0.35);
+      ctx.fillStyle = "#9fb3c8";
+      ctx.fillRect(-hl, -hw, this.length, this.width);
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "#cfe0ef";
+      ctx.strokeRect(-hl, -hw, this.length, this.width);
+    } else {
+      // TELEGRAPH: outline that brightens as it charges + a pulsing wash.
+      const fill = 1 - Math.max(0, this.timer) / this.telegraph; // 0 -> 1
+      const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 110);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = `rgba(159, 179, 200, ${0.4 + 0.45 * fill})`;
+      ctx.strokeRect(-hl, -hw, this.length, this.width);
+      ctx.fillStyle = `rgba(159, 179, 200, ${(0.08 + 0.14 * pulse) * (0.5 + 0.5 * fill)})`;
+      ctx.fillRect(-hl, -hw, this.length, this.width);
+    }
+    ctx.restore();
+    this.drawPushArrows(ctx);
+  }
+
+  // A short row of arrows pointing along pushAngle (world space) so the witch sees
+  // which way the wall shoves her. Brighter once the wall is active.
+  drawPushArrows(ctx) {
+    const ax = Math.cos(this.pushAngle), ay = Math.sin(this.pushAngle); // push dir
+    const px = -ay, py = ax;                                            // along the wall
+    const reach = Math.min(this.width * 0.6, 26);
+    const active = this.phase === "blast";
+    ctx.save();
+    ctx.strokeStyle = active ? "rgba(226, 240, 255, 0.95)" : "rgba(220, 235, 250, 0.7)";
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.lineWidth = 3;
+    for (let i = -1; i <= 1; i++) {
+      const ox = this.x + px * (i * this.length * 0.3);
+      const oy = this.y + py * (i * this.length * 0.3);
+      const tx = ox + ax * reach, ty = oy + ay * reach;
+      ctx.beginPath();
+      ctx.moveTo(ox - ax * reach * 0.5, oy - ay * reach * 0.5);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      const hsz = 7;
+      const la = this.pushAngle + 2.5, ra = this.pushAngle - 2.5;
+      ctx.beginPath();
+      ctx.moveTo(tx, ty);
+      ctx.lineTo(tx + Math.cos(la) * hsz, ty + Math.sin(la) * hsz);
+      ctx.lineTo(tx + Math.cos(ra) * hsz, ty + Math.sin(ra) * hsz);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
   }
 
@@ -737,6 +888,11 @@ export class Enemy {
     this.ppPhase = "shuffle";   // "shuffle" (repositioning) | "cast" (planted, frozen)
     this.ppTimer = this.def.lineCaster ? randomRange(0.4, this.def.lineCaster.shuffleTime) : 0;
 
+    // Tin Bulwark (bulwark) phase machine: advance -> plant + raise a push wall ->
+    // recover. Randomized start so a pair doesn't wall in lockstep.
+    this.tbPhase = "approach";  // "approach" (advancing) | "cast" (planted, frozen)
+    this.tbTimer = this.def.bulwark ? randomRange(0.4, this.def.bulwark.approachTime) : 0;
+
     // Animation state (visual only). Start frame is randomized so a swarm
     // doesn't pulse in perfect lockstep.
     const animCfg = ENEMY_ANIMS[this.def.spritePrefix];
@@ -744,7 +900,7 @@ export class Enemy {
     // Resting state differs per model: the ghostly wisp floats; the grounded
     // gecko and the Bone Mage idle; the Goblin has no rest pose (it's always
     // advancing or mid-swing), so its "rest" is the walk loop.
-    this.restState = (this.def.bruiser || this.def.lineCaster) ? "walk" : (this.def.ranged || this.def.caster) ? "idle" : "float";
+    this.restState = (this.def.bruiser || this.def.lineCaster || this.def.bulwark) ? "walk" : (this.def.ranged || this.def.caster) ? "idle" : "float";
     this.animState = this.restState;
     this.animFrame = randomInt(0, animCfg.anims[this.restState] - 1);
     this.animTimer = 0;
@@ -808,6 +964,12 @@ export class Enemy {
       // the witch's CURRENT spot (it does NOT track). Handles its own facing +
       // animation (walk while shuffling, frozen frame while casting). ---
       this.updatePronggeist(dt, player, len, hazards);
+    } else if (this.def.bulwark) {
+      // --- Tin Bulwark: advance, plant, and raise a telegraphed PUSH WALL on the
+      // witch that shoves her away (NO damage — the danger is where it puts her).
+      // Handles its own 4-way facing + animation (walk while advancing, frozen
+      // frame while casting). ---
+      this.updateBulwark(dt, player, len, hazards);
     } else {
       // --- Melee chaser (wisp): walk straight at the witch (unchanged) ---
       this.x += (dx / len) * this.speed * dt;
@@ -835,7 +997,7 @@ export class Enemy {
     // LOCKS them through the wind-up/swing), and the Pronggeist (lineCaster) does
     // the same in updatePronggeist (walk while shuffling, frozen while casting), so
     // both opt out of the generic path.
-    if (!this.def.bruiser && !this.def.lineCaster) {
+    if (!this.def.bruiser && !this.def.lineCaster && !this.def.bulwark) {
       this.facing = dirFromVector(dx, dy);
 
       // Wisp: ATTACK while touching (reads the same proximity the contact-damage
@@ -1074,6 +1236,81 @@ export class Enemy {
       if (this.ppTimer <= 0) {
         this.ppPhase = "shuffle";
         this.ppTimer = lc.shuffleTime;
+      }
+    }
+  }
+
+  // Tin Bulwark brain: advance toward a wall-casting distance, PLANT, and raise a
+  // broadside PUSH WALL centered on the witch (she sits at its rear edge, so the
+  // full thickness shoves her AWAY from the Bulwark — toward whatever's behind her).
+  // The wall is a rect HazardZone in "push" mode (no damage; game.js draws + shoves
+  // for free). Drives its own 4-way facing + animation: WALK while advancing, a
+  // frozen frame while planted. The push is LOCKED at cast time — she dodges by
+  // sidestepping the telegraphed wall during the windup.
+  updateBulwark(dt, player, len, hazards) {
+    const bw = this.def.bulwark;
+    const dx = player.x - this.x, dy = player.y - this.y;
+    this.tbTimer -= dt;
+
+    if (this.tbPhase === "approach") {
+      // Ease toward a comfortable casting distance: close in if far, back off if
+      // crowded, hold otherwise — plus a slight strafe so the push angle varies.
+      let mx = 0, my = 0;
+      if (len > bw.castRange * 0.8)        { mx = dx / len;  my = dy / len; }  // too far
+      else if (len < bw.castRange * 0.35)  { mx = -dx / len; my = -dy / len; } // too close
+      const strafe = Math.sin(this.wobble * 0.5) * 0.4;
+      mx += (-dy / len) * strafe;
+      my += (dx / len) * strafe;
+      const mlen = Math.hypot(mx, my);
+      if (mlen > 1) { mx /= mlen; my /= mlen; }
+      this.x += mx * this.speed * dt;
+      this.y += my * this.speed * dt;
+
+      this.facing = dir4(dx, dy); // cardinal-only art
+      if (this.animState !== "walk") { this.animState = "walk"; this.animFrame = 0; this.animTimer = 0; }
+      this.advanceFrames(dt);
+
+      // Approach window up: plant + wall if she's in range; otherwise reset it so
+      // it keeps closing the gap instead of walling empty floor.
+      if (this.tbTimer <= 0) {
+        if (len <= bw.castRange && hazards) {
+          // Push AWAY from the Bulwark (bulwark -> witch). Center the wall a half-
+          // thickness PAST her along that line, so she's at the rear edge and the
+          // whole depth shoves her forward. Long axis is broadside to the push.
+          const pushAng = Math.atan2(dy, dx);
+          const cx = player.x + Math.cos(pushAng) * (bw.wallThick / 2);
+          const cy = player.y + Math.sin(pushAng) * (bw.wallThick / 2);
+          hazards.push(new HazardZone(cx, cy, 0, bw.windup, 0, {
+            shape: "rect",
+            angle: pushAng + Math.PI / 2, // long axis perpendicular to the shove
+            length: bw.wallWidth,
+            width: bw.wallThick,
+            skin: "wall",
+            push: bw.pushSpeed,
+            pushAngle: pushAng,
+            driftSpeed: bw.wallSpeed, // moving wall: advances along the push, locked at cast
+            activeDuration: bw.active,
+            sfx: bw.wallSfx,
+          }));
+          playSfx(bw.chargeSfx); // windup cue (graceful if missing)
+          this.facing = dir4(dx, dy);
+          this.tbPhase = "cast";
+          this.tbTimer = bw.windup + bw.active + bw.recover; // planted through the whole wall + recovery
+          this.animState = "walk";
+          this.animFrame = bw.castFrame; // freeze a planted frame (no attack anim)
+          this.animTimer = 0;
+        } else {
+          this.tbTimer = bw.approachTime; // out of range — keep advancing
+        }
+      }
+    } else {
+      // CAST: planted + frozen. The wall HazardZone owns telegraph -> push -> fade;
+      // the Bulwark just holds its locked frame until recovery elapses.
+      this.animState = "walk";
+      this.animFrame = bw.castFrame;
+      if (this.tbTimer <= 0) {
+        this.tbPhase = "approach";
+        this.tbTimer = bw.approachTime;
       }
     }
   }
@@ -1534,6 +1771,9 @@ const GOBLIN_MAX_ALIVE = 2;       // never more than this many alive (displaceme
 const PRONG_INTRO_WAVE = 7;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
 const PRONG_SPAWN_CHANCE = 0.18;  // chance each eligible slot rolls a Pronggeist (bumped 0.13 -> 0.18)
 const PRONG_MAX_ALIVE = 2;        // never more than this many alive (line-zoning is oppressive in bulk)
+const TIN_INTRO_WAVE = 1;         // Tin Bulwarks join the spawn mix from this wave on (after gecko 5, goblin 6, pronggeist 7, mage 8)
+const TIN_SPAWN_CHANCE = 0.12;    // chance each eligible slot rolls a Tin Bulwark
+const TIN_MAX_ALIVE = 1;          // never more than this many alive at once (position-control is oppressive in bulk — start at one)
 
 // ===========================================================================
 //  WATCHING HAND — second boss (Phase 1: skeleton).
@@ -2826,13 +3066,14 @@ export class WaveManager {
   // GECKO_INTRO_WAVE, at GECKO_SPAWN_CHANCE per slot, capped at
   // GECKO_MAX_ALIVE simultaneously. Everything else is a wisp.
   rollEnemyType(enemies) {
-    let geckosAlive = 0, magesAlive = 0, goblinsAlive = 0, prongAlive = 0;
+    let geckosAlive = 0, magesAlive = 0, goblinsAlive = 0, prongAlive = 0, tinAlive = 0;
     for (const e of enemies) {
       if (e.dead) continue;
       if (e.type === "gutter_gecko") geckosAlive += 1;
       else if (e.type === "bone_mage") magesAlive += 1;
       else if (e.type === "goblin_bonker") goblinsAlive += 1;
       else if (e.type === "pronggeist") prongAlive += 1;
+      else if (e.type === "tin_bulwark") tinAlive += 1;
     }
     // Bone Mage rolls first (rarer + capped) so its zoning pressure isn't
     // crowded out by the more common gecko roll.
@@ -2843,6 +3084,10 @@ export class WaveManager {
     if (this.wave >= PRONG_INTRO_WAVE && prongAlive < PRONG_MAX_ALIVE &&
         Math.random() < PRONG_SPAWN_CHANCE) {
       return "pronggeist";
+    }
+    if (this.wave >= TIN_INTRO_WAVE && tinAlive < TIN_MAX_ALIVE &&
+        Math.random() < TIN_SPAWN_CHANCE) {
+      return "tin_bulwark";
     }
     if (this.wave >= GOBLIN_INTRO_WAVE && goblinsAlive < GOBLIN_MAX_ALIVE &&
         Math.random() < GOBLIN_SPAWN_CHANCE) {

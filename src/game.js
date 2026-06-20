@@ -145,6 +145,7 @@ const TUTORIAL_HINTS = {
   goblin_bonker: "A Goblin Bonker! Its club swing knocks you flying — dodge it.",
   pronggeist:  "That fork is aiming at the floor — move!",
   hourkeeper:  "It's gone — watch the clock hands!",
+  tin_bulwark: "Careful — that tin brute is trying to herd us!",
   spirit_crystal: "A Spirit Crystal! Spend these in the Wardrobe between runs.",
 };
 const FLASK_HEAL = 15;          // HP restored per flask
@@ -227,6 +228,11 @@ const BESTIARY = [
     id: "pronggeist", name: "Pronggeist", kind: "Enemy", enemyType: "pronggeist",
     spriteKey: "pronggeist_walk_s", frames: 4,
     blurb: "Plants itself, then rakes the ground with four spike rows.",
+  },
+  {
+    id: "tin_bulwark", name: "Tin Bulwark", kind: "Enemy", enemyType: "tin_bulwark",
+    spriteKey: "tin_bulwark_walk_s", frames: 6,
+    blurb: "Raises a moving wall that shoves witches into danger.",
   },
   {
     id: "elder_wisp", name: "Elder Wisp", kind: "Boss", bossName: "Elder Wisp",
@@ -1271,6 +1277,10 @@ export class Game {
       if (this.enemies.some((e) => e.type === "pronggeist")) {
         this.markSeen("pronggeist");
         this.showEnemyHint("pronggeist"); // both modes, once per run
+      }
+      if (this.enemies.some((e) => e.type === "tin_bulwark")) {
+        this.markSeen("tin_bulwark");
+        this.showEnemyHint("tin_bulwark"); // both modes, once per run
       }
     }
     if (this.frenzyTimer <= 0 && this.frenzyCharge >= FRENZY_MOTES) this.showHint("spirit");
