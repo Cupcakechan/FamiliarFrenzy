@@ -2274,7 +2274,7 @@ const HK_TIGHTEN = 0.85;         // < 30% HP: shorten warns + gaps for late pres
 // the punish (the offense/defense dilemma). Only below this HP fraction, so the
 // pressure ramps in as it weakens — phase 1 stays a clean teach. Set to 1.0 to
 // see it from the very first set when testing.
-const HK_GUARD_HAND_HP = 1;
+const HK_GUARD_HAND_HP = 0.6;
 
 // Idle (loops) + Attack (one-shot cast). Single front-facing strip each; the
 // drawn-clock fallback covers a missing file. 6 frames each, sliced at draw time.

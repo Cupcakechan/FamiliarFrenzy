@@ -36,7 +36,8 @@ html, body {
 }
 
 body {
-  /* Center the game both horizontally and vertically. */
+  /* Center the game both horizontally and vertically. The leftover space around
+     a scaled-up canvas (letterbox bars on non-16:9 screens) is this vignette. */
   display: grid;
   place-items: center;
 
@@ -54,7 +55,8 @@ body {
 }
 
 #game-wrapper {
-  /* Soft glow + crisp border frames the play area. */
+  /* Soft glow + crisp border frames the play area. The frame is a fixed ~22px,
+     so it stays a thin edge as the canvas scales up — accounted for below. */
   padding: 10px;
   border-radius: 6px;
   background: var(--bg-frame);
@@ -67,8 +69,27 @@ body {
 
 #game-canvas {
   display: block;
-  width: 960px;
-  height: 540px;
+
+  /* SCALE TO FIT — windowed, fullscreen, or inside the itch.io embed.
+     The canvas grows to the largest 16:9 box that fits the viewport, minus the
+     wrapper's ~22px frame plus a little breathing room for the glow. Both terms
+     of min() cap a different axis: the first keeps WIDTH within the viewport,
+     the second keeps the derived HEIGHT (width * 9/16) within it — so it never
+     overflows either way and the aspect ratio is preserved.
+
+     The INTERNAL render stays 960x540 (the <canvas width/height> attributes) —
+     only the on-screen SIZE changes here, so gameplay, the camera, and mouse
+     hit-testing (input.js maps through the live bounding rect) are all
+     untouched. This replaces the old small-screen-only media query; one rule now
+     covers every size, including itch's fullscreen button (which just resizes
+     the embed to the screen, which these vw/vh units follow automatically).
+
+     To go truly edge-to-edge in fullscreen, lower the 32px reserve toward 22px
+     (the bare frame). For a capped windowed size, add e.g. `max-width: 1280px`. */
+  width: min(calc(100vw - 32px), calc((100vh - 32px) * 16 / 9));
+  height: auto;
+  aspect-ratio: 16 / 9;
+
   background: #000;
   border-radius: 2px;
 
@@ -78,17 +99,8 @@ body {
   cursor: url("assets/sprites/ui/cursor.png") 0 0, default;
 
   /* CRISP PIXEL ART:
-     Tells the browser NOT to blur the canvas when it is scaled.
+     Tells the browser NOT to blur the canvas when it is scaled up.
      (We also turn off smoothing in JS via ctx.imageSmoothingEnabled = false.) */
   image-rendering: pixelated;
   image-rendering: crisp-edges;
-}
-
-/* On small screens, let the canvas shrink to fit while keeping its shape. */
-@media (max-width: 1000px), (max-height: 620px) {
-  #game-canvas {
-    width: min(96vw, 170vh);   /* 960/540 ≈ 1.778 aspect ratio kept */
-    height: auto;
-    aspect-ratio: 16 / 9;
-  }
 }
