@@ -864,6 +864,41 @@ function drawSkinnedBar(ctx, spriteKey, x, y, pct, fillColor, fallbackW, fallbac
   return { x, y, w: fallbackW, h: fallbackH };
 }
 
+// Active-curse icon row (Cursed Mode), shared by the HUD and the pause screen.
+// Draws curse icons left-to-right from (x, y) at `size` px each. Icons load from
+// assets/sprites/curses/<id>.png; a missing one degrades to a small rune box with
+// the curse's initial (never a crash). `curses` is [{ id, name }]. Returns row width.
+const registeredCurseIcons = new Set();
+function drawCurseIcons(ctx, curses, x, y, size = 32, gap = 6) {
+  ctx.save();
+  ctx.imageSmoothingEnabled = false; // 64px art -> 32px is a clean 0.5x; keep it crisp
+  let cx = x;
+  for (const c of curses) {
+    const key = "curse_icon_" + c.id;
+    if (!registeredCurseIcons.has(key)) {
+      registeredCurseIcons.add(key);
+      loadImage(key, "assets/sprites/curses/" + c.id + ".png");
+    }
+    const icon = getImage(key);
+    if (icon && icon.width > 0) {
+      ctx.drawImage(icon, Math.round(cx), Math.round(y), size, size);
+    } else {
+      // Fallback: a small rune box with the curse's initial.
+      ctx.fillStyle = "rgba(40, 30, 60, 0.85)";
+      roundRect(ctx, cx, y, size, size, 5);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(200, 150, 255, 0.7)";
+      ctx.lineWidth = 1.5;
+      roundRect(ctx, cx, y, size, size, 5);
+      ctx.stroke();
+      text(ctx, (c.name || "?")[0].toUpperCase(), cx + size / 2, y + size / 2, { size: 16, color: "#d2a0ff", weight: "700" });
+    }
+    cx += size + gap;
+  }
+  ctx.restore();
+  return Math.max(0, cx - x - gap);
+}
+
 export function drawHUD(ctx, w, h, state) {
   // XP strip: thin, frameless, flush along the very top edge (VS-style).
   const xpPct = state.xpToNext > 0 ? Math.max(0, Math.min(1, state.xp / state.xpToNext)) : 0;
@@ -915,6 +950,12 @@ export function drawHUD(ctx, w, h, state) {
   // Score + level (top-right, stacked).
   text(ctx, `Score: ${state.score}`, w - 16, 27, { size: 20, color: GOLD, align: "right" });
   text(ctx, `Lv ${state.level}`, w - 16, 49, { size: 16, color: DIM, align: "right" });
+
+  // Active curses (Cursed Mode): a small icon row in the bottom-left — clear of the
+  // top cluster and free to grow rightward as more curses stack.
+  if (state.curses && state.curses.length > 0) {
+    drawCurseIcons(ctx, state.curses, 16, h - 48, 32, 6);
+  }
 }
 
 // --- LEVEL-UP / UPGRADE SCREEN -------------------------------------------
@@ -1194,6 +1235,14 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
   ctx.fillRect(0, 0, w, h);
 
   text(ctx, "PAUSED", w / 2, 60, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+
+  // Active curses (Cursed runs): a centered icon row under the title.
+  if (info.curses && info.curses.length > 0) {
+    const cs = 32, cg = 8;
+    const rowW = info.curses.length * cs + (info.curses.length - 1) * cg;
+    text(ctx, "CURSES", w / 2, 92, { size: 14, color: PURPLE, weight: "700" });
+    drawCurseIcons(ctx, info.curses, (w - rowW) / 2, 102, cs, cg);
+  }
 
   // --- Run info: two columns, top-aligned ---
   const colTop = 150;

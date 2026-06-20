@@ -1830,16 +1830,6 @@ export class Game {
       case STATE.PLAYING:
         drawOffscreenIndicators(ctx, this.width, this.height, this.enemies, cam);
         drawHUD(ctx, this.width, this.height, this.hudState());
-        // TEMP (Pass 1): plain readout of active curses — replaced by HUD icons in
-        // Pass 2. Confirms the escalating-curse framework is live during testing.
-        if (this.gameMode === "cursed" && this.activeCurses.length > 0) {
-          ctx.save();
-          ctx.font = "12px monospace";
-          ctx.fillStyle = "rgba(210, 160, 255, 0.9)";
-          ctx.textAlign = "left";
-          ctx.fillText("CURSES: " + this.activeCurses.map((id) => CURSES[id].name).join(", "), 12, this.height - 14);
-          ctx.restore();
-        }
         if (this.waveManager.boss && !this.waveManager.boss.dead) {
           drawBossBar(ctx, this.width, this.height, this.waveManager.boss);
         }
@@ -2516,6 +2506,7 @@ export class Game {
       upgrades,
       evolution: [this.phantomPounceUnlocked && "Phantom Pounce", this.spiritBondUnlocked && "Spirit Bond", this.spiritVolleyUnlocked && "Spirit Volley"]
         .filter(Boolean).join(" + ") || "None",
+      curses: this.activeCurses.map((id) => ({ id, name: CURSES[id].name })),
     };
   }
 
@@ -2534,6 +2525,7 @@ export class Game {
       frenzyActive: this.frenzyTimer > 0,
       frenzyTimer: this.frenzyTimer,
       frenzyDuration: FRENZY_DURATION,
+      curses: this.activeCurses.map((id) => ({ id, name: CURSES[id].name })),
     };
   }
 }
