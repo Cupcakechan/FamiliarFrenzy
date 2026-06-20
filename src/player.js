@@ -44,7 +44,7 @@ const KNOCK_TIME = 0.22; // seconds
 // DEBUG: flip to true to make the witch invulnerable (effectively unlimited HP)
 // for testing — she takes no damage and never dies. Pushes/knockback still apply
 // so you can test those. SHIP AS false.
-const DEBUG_GOD_MODE = true;
+const DEBUG_GOD_MODE = false;
 
 // Register sprites. The default purple set is "witch"; outfit recolors use the
 // same strips under a prefixed name (e.g. witch_red_walk_ne.png). Any recolor

@@ -1887,7 +1887,8 @@ export class Game {
     // Charge the frenzy meter (only while not already frenzied / not full).
     // Frenzy Focus raises how much each mote adds (this.frenzyPerMote).
     if (this.frenzyTimer <= 0 && this.frenzyCharge < FRENZY_MOTES) {
-      this.frenzyCharge = Math.min(FRENZY_MOTES, this.frenzyCharge + this.frenzyPerMote);
+      // Spirit Drought scales each mote's contribution (1 = unaffected); the XP above is untouched.
+      this.frenzyCharge = Math.min(FRENZY_MOTES, this.frenzyCharge + this.frenzyPerMote * curseValue(this.activeCurses, "frenzyMoteMult", 1));
     }
 
     while (this.xp >= this.xpToNext) {

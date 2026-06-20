@@ -24,6 +24,7 @@
 //   damageMult     -> multiplier on all incoming player damage (player.takeDamage, set via game.js)
 //   spawnMult      -> multiplier on the per-wave enemy budget (WaveManager, set via game.js)
 //   maxAliveBonus  -> added to the on-screen enemy cap (WaveManager, set via game.js)
+//   frenzyMoteMult -> multiplier on each mote's charge toward Spirit Imbued; XP untouched (game.js)
 export const CURSES = {
   darkness: {
     id: "darkness",
@@ -75,11 +76,18 @@ export const CURSES = {
     spawnMult: 1.5,   // multiplies the per-wave enemy budget (WaveManager, set via game.js)
     maxAliveBonus: 6, // raises the on-screen enemy cap (WaveManager, set via game.js)
   },
+  spirit_drought: {
+    id: "spirit_drought",
+    name: "Spirit Drought",
+    blurb: "Spirit runs thin — the motes barely feed your burst.",
+    cry: "The motes are hollow — your burst will be slow to gather.",
+    frenzyMoteMult: 0.5, // scales each mote's charge toward Spirit Imbued; XP is unaffected (game.js collectPickup)
+  },
 };
 
 // Curses eligible to be rolled, in rough easiest->nastiest order. Pass 2+ extends
 // this as new CURSES entries land.
-export const CURSE_POOL = ["darkness", "withering", "cursed_ground", "vengeful_dead", "brittle", "teeming", "quickening"];
+export const CURSE_POOL = ["darkness", "withering", "cursed_ground", "vengeful_dead", "brittle", "teeming", "spirit_drought", "quickening"];
 
 // Pick a random curse id that isn't active yet, or null once every pool curse is
 // on (so the escalation gracefully stops adding when exhausted).
