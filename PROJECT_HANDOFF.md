@@ -1,18 +1,24 @@
 # Familiar Frenzy — Project Handoff
 
 Last updated: **2026-06-20** — **1.8.0** (mouse everywhere + the Bone Mage fix; the
-three pending mouse gaps were closed) and **1.9.0** ("Cursed Mode") are both now
+three pending mouse gaps were closed; the Hourkeeper boss enrolled into the live
+roster) and **1.9.0** ("Cursed Mode" + the Tin Bulwark enemy + a fixed normal-mode
+boss rotation) are both now
 SHIPPED/LIVE.
 Covers all post-launch work through **1.9.0**.
 **1.2.0–1.9.0 are all SHIPPED/LIVE.** The 1.8.0 mouse cycle is complete (Wardrobe is
-fully click-driven; Settings + High Scores have clickable Back). **1.9.0 added the
+fully click-driven; Settings + High Scores have clickable Back) and the Hourkeeper
+(4th boss) went live in 1.8.0. **1.9.0 added the
 whole Cursed Mode arc — a separate hard mode with eight stacking curses, a separate
 leaderboard, curse HUD icons + familiar heralds, a Curses archive, and a unified
 Arcane-Archive pause menu (see §3a).** No release is mid-flight.
 
-> The Hourkeeper boss is now in `BOSS_TYPES` (4 bosses). It was added between this
-> doc's prior update and 1.9.0; its detailed entry below is marked TODO/verify —
-> fill it from `enemies.js` next session.
+> The Hourkeeper boss is in `BOSS_TYPES` (4 bosses: elder_wisp, watching_hand,
+> hive_warden, hourkeeper) and its detailed entry is now filled in (§3 / §5); the
+> Tin Bulwark enemy (1.9.0) is likewise documented (§3 / §5). The boss roster + Tin
+> Bulwark + Hourkeeper specifics in this doc were verified against the review-only
+> repo on 2026-06-20 — confirm the tuned values against your local `enemies.js`
+> before treating them as preservation values.
 
 > Versioning note: the Spirit Crystals / Wardrobe / Collars bundle shipped as
 > **1.5.0**, not 1.4.0. 1.4.0 was the prior asset-completion release (Spirit
@@ -64,14 +70,41 @@ anything. Update it at the end of any session that completes work.
     1.5); caster tuning to preserve: `damage 8`, `fireRange 460`, `preferredRange 300`,
     `blinkRange 150`, `blinkDist 200`, `blastRadius 70`, `blastDamage 15`,
     `telegraph 1.1`, `castCooldown 3.5`, `speedMult 0`. `MAGE_INTRO_WAVE = 8`.
+  * **Tin Bulwark (1.9.0):** a slow position-control enemy — `spriteScale 0.9`,
+    `speedMult 0.55`, `healthMult 2.5`, contact `damage 8` (the WALL itself deals
+    NONE). Its `bulwark` def: `castRange 260`, `approachTime 1.0`, `windup 0.9`
+    (wall telegraph), `active 1.2`, `recover 0.8`, `wallWidth 240`, `wallThick 90`,
+    `pushSpeed 140`, `wallSpeed 130` (keep wallSpeed < pushSpeed < the witch's 220 so
+    she can always cut out of the band), `castFrame 1`. Wave composition:
+    `TIN_INTRO_WAVE 9`, `TIN_SPAWN_CHANCE 0.12`, `TIN_MAX_ALIVE 1`. Mechanic in §3, art
+    in §5.
+  * **The Hourkeeper boss (1.8.0):** `HK_RADIUS 30`, `HK_HP_MULT 1.0`, `HK_DMG_BASE 12`,
+    `HK_DMG_PER_TIER 4`, `HK_RANGE 220`; fades `HK_APPEAR_TIME 0.6` / `HK_VANISH_TIME
+    0.35` / `HK_REAPPEAR_TIME 0.35` / `HK_BLINK_TIME 0.2` / `HK_FX_LIFE 0.35`; sweep
+    `HK_HAND_WARN 0.7`, `HK_STRIKE_GAP 0.5`, `HK_HAND_LENGTH 1200` (spans the 960×540
+    view through the pivot — the camera knob), `HK_HAND_WIDTH 52`, `HK_HAND_KNOCKBACK
+    0`; alarm `HK_RUNE_WARN 0.9`, `HK_RUNE_RADIUS 60`, `HK_RUNE_FIELD 170`,
+    `HK_RUNE_STAGGER 0.12`, `HK_RECOVER 1.0`, `HK_TIGHTEN 0.85`; punish-window
+    `HK_GUARD_HAND_HP 0.6` (set to `1.0` ONLY to test it from the first set — ship at
+    `0.6`). `spriteScale 1.0` (body radius 30). Full fight in §3.
+  * **Boss rotation:** `BOSS_TYPES = ["elder_wisp","watching_hand","hive_warden",
+    "hourkeeper"]` is the shuffled bag, used ONLY by Cursed Mode (`drawBossFromBag`).
+    NORMAL play steps a FIXED easiest→hardest `BOSS_ORDER = ["elder_wisp",
+    "hive_warden","watching_hand","hourkeeper"]` via `nextOrderedBoss()` (wave 10 Elder
+    Wisp, 20 Hive Warden, 30 Watching Hand, 40 Hourkeeper, then loops); `_bossIndex`
+    resets per run in `WaveManager.reset()`. `DEBUG_FORCE_BOSS` + `DEBUG_BOSS_TYPE`
+    still override both paths (each forced boss simply takes the next slot in order).
   * `audio.js`: `POOL_COUNT = 9` (NEVER lower — §8); `MENU_POOL_COUNT = 3`
     (menu pool = themes 01-03, gameplay = 04-09); `DEFAULT_VOLUME = 60`;
     `DEFAULT_SFX_VOLUME = 50`.
   * `game.js`: `FLASK_HEAL = 15`; `LEVEL_FLASH_TIME = 0.55`; innate magnet
-    `BASE_MAGNET_RANGE` (40); `SCORE_PER_PICKUP = 10`. Goblin body-contact guard in
-    the contact loop is **boss-safe**: `if (enemy.def && enemy.def.bruiser) continue;`
-    (bosses are separate classes with NO `.def` — the `enemy.def &&` prefix prevents
-    a boss-wave crash; do not drop it). **Floor-decoration bands (1.6.0):**
+    `BASE_MAGNET_RANGE` (40); `SCORE_PER_PICKUP = 10`. The body-contact guard in the
+    contact loop is **boss-safe AND skips no-contact enemies**:
+    `if ((enemy.def && enemy.def.bruiser) || enemy.noContactDamage) continue;` — the
+    `enemy.def &&` prefix prevents a boss-wave crash (bosses are separate classes with
+    NO `.def`), the `bruiser` branch keeps the Goblin's stomp its only damage, and
+    `noContactDamage` keeps the Hourkeeper's body harmless. Do not drop any part.
+    **Floor-decoration bands (1.6.0):**
     `RUNE_CHANCE = 0.07` / `RUNE_COUNT = 20` (subtle runes, sheet cells 0-19);
     `OBJECT_CHANCE = 0.012` / `OBJECT_START = 20` / `OBJECT_COUNT = 12` (rare bold
     objects, cells 20-31). These two independent seeded bands REPLACED the old single
@@ -127,8 +160,9 @@ git push
 ## 3. Game Summary & Current Feature Set
 
 Player controls a young witch (move/collect only); her ghost cat **familiar**
-auto-attacks. EXP motes → level-ups → upgrades; **a boss every 10 waves**, picked
-from a shuffled-bag roster (no back-to-back repeats). Tutorial mode ends after
+auto-attacks. EXP motes → level-ups → upgrades; **a boss every 10 waves**, stepping a FIXED easiest→hardest rotation
+(`BOSS_ORDER`) in normal play, looping (Cursed Mode draws a shuffled bag instead —
+§3a). Tutorial mode ends after
 Wave 10 (Victory, can carry into Endless); Endless runs until death with per-tier
 scaling, personal bests, a run recap, and a top-10 leaderboard. Bosses now drop
 **Spirit Crystals**, a between-runs currency spent in the **Wardrobe**.
@@ -187,8 +221,11 @@ Implemented and tested:
     ×1.05), Gilded Mantle (8◆, score ×1.05). Witch skin via `player.spritePrefix`.
   * **Collars** — swap the familiar's whole attack (see Familiar below): Spirit
     Collar (0◆, rune), Moon Beam Collar (10◆), Alchemist Collar (12◆).
-* **Bosses (shuffled-bag `BOSS_TYPES` = elder_wisp, watching_hand, hive_warden,
-  hourkeeper):**
+* **Bosses (`BOSS_TYPES` = elder_wisp, watching_hand, hive_warden, hourkeeper):**
+  Normal play steps a FIXED easiest→hardest `BOSS_ORDER` (Elder Wisp → Hive Warden →
+  Watching Hand → Hourkeeper, looping); Cursed Mode draws the shuffled bag for
+  run-to-run variety. All four are SEPARATE classes (no `.def`) and implement
+  `consumeSummon()`.
   * **Elder Wisp** — wobble-follow, telegraphed dash (charge wind-up, **tightened
     contact radius 22 while dashing**), staggered wisp summons. `spriteScale = 1.0`.
   * **The Watching Hand** — hops; locked-marker jump slam (`hand_slam` SFX);
@@ -201,14 +238,35 @@ Implemented and tested:
     aura + aim guide + a `bee_charge` grunt; fires with a `bee_sting` shot. Stingers
     are `EnemyBolt`s with sprite opts (`bee_stinger`, velocity-oriented). Does **NOT**
     summon — it carries a `consumeSummon(){ return false; }` no-op stub that ALL
-    three bosses now implement (game.js calls it unguarded). `spriteScale = 1.0`.
-  * **The Hourkeeper (added between this doc's prior update and 1.9.0)** — a
-    teleporting time-themed boss now in `BOSS_TYPES`. **TODO/verify from `enemies.js`:**
-    its full fight (notes from build: an APPEAR → VANISH → SWEEP → REAPPEAR → ALARM →
-    BLINK loop; a code-drawn sweep ~1200×44 sized to span the embed diagonal; an
-    untargetable/`noContactDamage` window during the vanish; single-facing front/south
-    Idle + Attack strips, 6 frames each; optional `clock_rune.png` ground marker). Fill
-    this in once re-checked against source.
+    four bosses now implement (game.js calls it unguarded). `spriteScale = 1.0`.
+  * **The Hourkeeper (1.8.0, class `Hourkeeper`)** — a teleporting, rhythm /
+    vulnerability-window boss. State loop: **appear → vanish → sweep → reappear →
+    (alarm → blink)×N → vanish → …**, where N is the alarm-set count for the current
+    HP phase. It is **`untargetable`** (the familiar skips it — familiar.js) and
+    `vulnerable === false` (its `takeDamage` no-ops) EXCEPT during the alarm window —
+    so it can ONLY be hurt while it casts. `noContactDamage` keeps its body harmless
+    (its telegraphed hazards are its only damage). Every attack reuses `HazardZone`
+    pushed into the shared `hazards` array (game.js drives telegraph / blast / damage /
+    draw), so it runs fully code-drawn and lights up when art lands. Two attacks:
+    * **Clock-Hand Sweep** (while vanished / untargetable — pure dodge): rect
+      HazardZones (`skin "clock"`) fired one-at-a-time through a LOCKED pivot at its
+      last-seen spot. `HK_HAND_ANGLES` apply IN ORDER (vertical, horizontal, then
+      diagonals + off-axis tilts), `HK_HAND_WARN 0.7` tell each, `HK_STRIKE_GAP 0.5`
+      between, `HK_HAND_LENGTH 1200`, `HK_HAND_WIDTH 52`, no knockback.
+    * **Alarm Rune Burst** (after it reappears, VULNERABLE + static — punish it):
+      circle HazardZones (`skin "clock"`) scattered uniformly over a disc of radius
+      `HK_RUNE_FIELD 170` centred on the witch (covers her spot, so standing still is
+      risky), `HK_RUNE_RADIUS 60`, `HK_RUNE_WARN 0.9` tell, `HK_RUNE_STAGGER 0.12`
+      apart; it stays vulnerable `HK_RECOVER 1.0` after the last rune.
+    * **HP-phase ramp** (`hkPhase()`, re-evaluated each sweep / alarm): ≥60% HP →
+      3 hands / 4 runes / 1 set; ≥30% → 4 / 5 / 2; <30% → 5 / 6 / 2 with timings
+      tightened by `HK_TIGHTEN 0.85`.
+    * **Guard hand** (below `HK_GUARD_HAND_HP 0.6`): during the vulnerable recovery it
+      sweeps ONE extra hand through its OWN position (random 0..π orientation, same
+      0.7s tell), fired shortly AFTER the runes burst — the offense / defense dilemma
+      (keep punishing while you step off the line). Phase 1 stays a clean teach.
+    SFX: `hourkeeper_sweep` (a hand strike) + `hourkeeper_alarm` (a cast), both
+    graceful-silent until registered.
   * New bosses go in `BOSS_TYPES`. Bosses are SEPARATE classes (no `.def`) and must
     implement `consumeSummon()`.
 * **Player:** 8-dir idle/walk/die sprites, i-frames, death animation,
@@ -235,10 +293,23 @@ Implemented and tested:
     (`GOBLIN_LUNGE_TIME`), then drops a radial **stomp HazardZone** (green) which is
     its ONLY damage. **No body-contact damage** (suppressed via the boss-safe bruiser
     guard in game.js). Knockback on stomp. `windup 0.55` (Daniel-tuned). `spriteScale 0.9`.
-  * **Pronggeist (1.7.0)** — a heavy spectral charger introduced ~Wave 7
-    (`PRONG_INTRO_WAVE 7`); tanky at `healthMult 2.0`. (Re-verify its exact movement/
-    attack from `enemies.js` `ENEMY_TYPES` next session — behaviour wasn't re-checked
-    for this handoff.)
+  * **Pronggeist (1.7.0)** — a heavy spectral charger (`PRONG_INTRO_WAVE 7`, ~18%
+    spawn, cap 2; `healthMult 2.0`). It SHUFFLES into position, PLANTS, then erupts a
+    fan of 4 parallel rotated-rect spike `HazardZone`s (`skin "spikes"`) after an
+    ~0.85s telegraph — one combined hit (her i-frames swallow the simultaneous prongs).
+    A wide DIRECTIONAL band you sidestep, vs the Bone Mage's circular curse. (Top-level
+    `spriteScale` not re-captured this session.)
+  * **Tin Bulwark (1.9.0)** — a slow, tanky **position-control** enemy. It advances to
+    `castRange 260`, PLANTS, and raises a telegraphed broadside **push wall** (a rect
+    `HazardZone` in "push" mode, `skin "wall"`) centred just past the witch so its full
+    thickness shoves her away from the Bulwark. **The wall deals NO damage** — the
+    threat is being herded into other enemies / hazards / arena edges. The wall is a
+    *moving* barrier (`wallSpeed 130`, kept under both the push and her run speed so she
+    can always cut sideways out of the band). Body contact still deals `damage 8` if she
+    stands on it. WALK-only, 4-dir art (freezes a frame while planted). The shove is a
+    sustained `player.applyPush` (a per-frame directional push, separate from knockback
+    and cleared each frame so it's update-order-safe). `TIN_INTRO_WAVE 9`,
+    `TIN_SPAWN_CHANCE 0.12`, `TIN_MAX_ALIVE 1`.
 * **HazardZone (reusable telegraph → blast, in enemies.js):** circle + rotated-rect,
   optional knockback, i-frame-safe, code-drawn fallback. Damages the **player**.
   Owned by `game.this.hazards`. (The Alchemist `Puddle` is a SEPARATE familiar-owned
@@ -348,10 +419,13 @@ familiar-frenzy/
     familiar.js  # ghost cat + attack styles: Bolt (rune, +Spirit Volley spread),
                  #   Beam (Moon Beam), FlaskShot + Puddle (Alchemist DoT); collar
                  #   skin via spritePrefix; drawPuddles (ground layer); pointSegDist
-    enemies.js   # ENEMY_TYPES, Enemy (wisp/gecko/bone_mage/goblin leap-stomp),
-                 #   EnemyBolt (+ optional sprite opts), HazardZone, Boss /
-                 #   WatchingHand / HiveWarden, WaveManager, BOSS_TYPES (3 bosses);
-                 #   DEBUG_FORCE_BOSS + DEBUG_BOSS_TYPE here  (Daniel's LOCAL file);
+    enemies.js   # ENEMY_TYPES, Enemy (wisp/gecko/bone_mage/goblin leap-stomp/
+                 #   pronggeist/tin_bulwark), EnemyBolt (+ optional sprite opts),
+                 #   HazardZone (+ "push"/"wall", "spikes", "clock" skins), Boss /
+                 #   WatchingHand / HiveWarden / Hourkeeper, WaveManager,
+                 #   BOSS_TYPES (4 bosses) + BOSS_ORDER (fixed normal rotation) +
+                 #   nextOrderedBoss / drawBossFromBag; DEBUG_FORCE_BOSS +
+                 #   DEBUG_BOSS_TYPE here (Daniel's LOCAL file);
                  #   HazardPuddle (1.9.0, Vengeful Dead — a ground DoT vs the PLAYER)
     curses.js    # NEW (1.9.0): Cursed Mode curse registry (CURSES / CURSE_POOL) +
                  #   rollNextCurse / curseValue. Data-driven — see §3a.
@@ -415,14 +489,30 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
 * **Goblin Bonker:** 8 dirs, 6-frame strips, **WALK + ATTACK only** —
   `goblin_walk_<dir>.png`, `goblin_attack_<dir>.png`. Attack is PROGRESS-DRIVEN
   (leap → stomp wind-up → recover). `spriteScale 0.9`.
-* **Pronggeist (1.7.0):** confirm strip layout / dirs / `spriteScale` from
-  `ENEMY_TYPES` + its sprite files next session (not re-verified here).
+* **Pronggeist (1.7.0):** `pronggeist_walk_<dir>.png` — 4 dirs, **walk-only**,
+  4-frame strips (`ENEMY_ANIMS.pronggeist = { walk: 4 }`); the cast freezes a single
+  walk frame. (Top-level `spriteScale` not re-captured this session.)
+* **Tin Bulwark (1.9.0):** `tin_bulwark_walk_<dir>.png` — **4 dirs only** (n/s/e/w,
+  facing clamped via `dir4`; no diagonal strips), **walk-only**, **6-frame** strips
+  (a heavy trudge; `ENEMY_ANIMS.tin_bulwark = { walk: 6 }`). It freezes a walk frame
+  (`castFrame 1`) while planted — no idle/attack/die strips. `spriteScale 0.9`. Missing
+  strips fall back to the steel placeholder (`#9fb3c8` / `#4a5a6b`). The push WALL is
+  **code-drawn** (`HazardZone` `skin "wall"`: a steel panel with world-space push-
+  direction arrows); a panel sprite can replace it later.
 * **The Watching Hand boss:** sprite-driven. `watching_hand_*`.
 * **The Hive Warden boss (1.6.0):** `bee_fly_<dir>.png` — 8 dirs, 6-frame strips,
   reused for hover + charge (facing via `dirFromVector`). `spriteScale 1.0` (tune to
   the native art). Stinger projectile: `assets/sprites/projectiles/bee_stinger.png`
   (16x16, single frame, authored pointing EAST — code rotates it to travel; amber
   dart code fallback). The charge aura / aim guide / release flash are code-drawn.
+* **The Hourkeeper boss (1.8.0):** **single front-facing (south) strips only** —
+  `hourkeeper_idle_s.png` (6fr, loops) + `hourkeeper_attack_s.png` (6fr, one-shot cast
+  pose) — sliced at draw time (`HK_ANIMS = { idle: 6, attack: 6 }`, `HK_FPS { idle: 6,
+  attack: 10 }`). `spriteScale 1.0` (body radius 30). The vanish / reappear / blink are
+  **code fades + poof rings** (no sprites). The clock hands + alarm runes are code-drawn
+  `HazardZone`s (`skin "clock"`); `clock_rune.png` is an OPTIONAL alarm-rune ground mark
+  (code fallback if absent). A drawn-clock fallback covers a missing idle/attack file,
+  so the whole boss runs with no art.
 * **Collar attack art (projectiles/):** `flask_throw.png` (32x32, single frame,
   drawn 0.7 scale, code green-orb fallback); `puddle.png` (96x96 canvas, ~90px
   visible splash, single frame — code does fade+pulse; drawn at 2×radius so the
@@ -481,6 +571,15 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
   - Unified pause: the separate Grimoire + Bestiary pause items were replaced by one
     Arcane Archive entry (PAUSE_ITEMS = Resume / Arcane Archive / Settings / Main Menu).
   - Removed the arena swap-back-to-stone announce line (both floor themes are stone now).
+  - Tin Bulwark — a new slow position-control enemy (intro w9, 12%, cap 1) that plants
+    and raises a telegraphed MOVING push wall (no damage) to herd the witch into
+    danger. Reused HazardZone via a backward-compatible "push"/"wall" mode + a new
+    isolated player.applyPush sustained shove (knockback untouched). 4-dir walk-only
+    art; Bestiary + familiar hint; tin_bulwark_step/charge/wall SFX slots.
+  - Fixed easiest->hardest boss rotation for NORMAL play (BOSS_ORDER: Elder Wisp ->
+    Hive Warden -> Watching Hand -> Hourkeeper, looping) via nextOrderedBoss() + a
+    per-run index reset; the shuffled bag (drawBossFromBag) is now reserved for Cursed
+    Mode's random bosses. DEBUG override/force still honored.
 
 1.8.0 (SHIPPED 2026-06-20) — "feedback polish / mouse everywhere":
   - Bone Mage fix: the caster blink is now DIRECTION-AWARE (retreat when too close,
@@ -504,8 +603,13 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
   - Closed the three mouse gaps to finish 1.8.0: the Wardrobe (STATE.CLOSET) is now
     fully click-driven (tabs / select / buy-equip / Back), and Settings + High Scores
     got clickable Back rows.
-  - The Hourkeeper boss was added around this release and is now in BOSS_TYPES (4
-    bosses). CONFIRM the exact version + fill its detailed entry (§3 / §5 TODO).
+  - The Hourkeeper — a teleporting rhythm/vulnerability-window boss (4th in
+    BOSS_TYPES) — was enrolled into the live roster and shipped in 1.8.0. It is
+    untargetable while it sweeps clock-hand HazardZones (dodge), then reappears
+    VULNERABLE to cast scattered alarm runes (punish), blinking between sets, with an
+    HP-phase ramp + a sub-60%-HP "guard hand" punish-window. Detailed entry now in
+    §3 / §5; ship flags re-verified (DEBUG_FORCE_BOSS false, DEBUG_BOSS_TYPE "auto",
+    HK_GUARD_HAND_HP 0.6).
 
 1.7.0 (SHIPPED) — "The Shifting Dungeon":
   - Rotating arena floor themes — the dungeon floor cycles visual themes as a run
@@ -725,7 +829,21 @@ The coven heard you — **Familiar Frenzy is now mouse-friendly**. ✨
 alongside. Happy haunting! 👻
 ````
 
-(Add a "👗 Click into the Wardrobe" bullet once the §12 Wardrobe-mouse fix lands.)
+(The §12 Wardrobe-mouse fix landed in 1.8.0, so a "👗 Click into the Wardrobe"
+bullet can be appended to the live 1.8.0 post if you want it complete.)
+
+### Tin Bulwark addendum — append to the live 1.9.0 "Cursed Mode" post
+
+The Tin Bulwark shipped in 1.9.0 but was left out of the original post. Ready-to-paste
+under a new heading:
+
+````markdown
+### 🛡️ New foe — the Tin Bulwark
+- 🧱 A slow, armored sentinel that plants its feet and raises a **moving push wall** —
+  it deals no damage, but it **shoves you into whatever else is hunting you**.
+- 🏃 Read the telegraph and cut sideways out of the band before it herds you into the
+  swarm. Standing still is a mistake.
+````
 
 ---
 
@@ -733,11 +851,12 @@ alongside. Happy haunting! 👻
 
 ```txt
 DONE — 1.5.0 through 1.9.0 all SHIPPED/LIVE. The 1.8.0 mouse cycle is complete
-  (Wardrobe fully click-driven; Settings + High Scores got Back rows), and CURSED MODE
-  shipped as 1.9.0 — the full eight-curse arc + a separate leaderboard + the Curses
-  archive + familiar heralds + the unified Arcane-Archive pause (see §3a). No release is
-  mid-flight. (Housekeeping TODO: fill in the Hourkeeper boss's detailed §3/§5 entry —
-  it's live in BOSS_TYPES but its specifics weren't re-verified for this update.)
+  (Wardrobe fully click-driven; Settings + High Scores got Back rows) and the Hourkeeper
+  (4th boss) went live in 1.8.0. CURSED MODE shipped as 1.9.0 — the full eight-curse arc
+  + a separate leaderboard + the Curses archive + familiar heralds + the unified
+  Arcane-Archive pause (see §3a) — alongside the Tin Bulwark enemy and a fixed
+  easiest->hardest boss rotation for normal play. No release is mid-flight. (The
+  Hourkeeper §3/§5 entry + the Tin Bulwark §3/§5 entry are now filled in.)
 
 OPTIONAL POLISH (1.8.0+, only if Daniel wants):
   - Scrollbar / slider grab-band widths are one-number tunables if anything feels
@@ -776,6 +895,12 @@ BALANCE WATCH (only if Daniel reports it):
     a MOONBEAM_DAMAGE_SCALE (<1, integer-safe via round, floored at 1).
   - Alchemist puddles: cap 3, tick ceil(dmg*0.5)/0.5s; watch overlap double-dip.
   - Spirit Bond tick / Bone Mage hazard density on busy waves.
+  - Tin Bulwark: TIN_MAX_ALIVE is 1 on purpose (position-control stacks badly). If the
+    wall feels unfair, widen the escape — lower wallSpeed / active, or wallWidth.
+  - Hourkeeper: HK_GUARD_HAND_HP 0.6 gates the punish-window hand to phases 2-3; raise
+    toward 1.0 only if it feels too soft late. HK_HP_MULT 1.0 -> ~0.8 if the fight drags.
+  - Cursed Mode is under LIVE player testing for overall difficulty (see §3a) — hold
+    curse / scaling changes until there's feedback.
 ```
 
 Guardrails: one feature at a time; no large new systems, online leaderboards,
@@ -788,9 +913,9 @@ external libraries, or build tooling; data-driven tables over subclasses
 
 1. Confirm this handoff was read.
 2. Briefly summarize current state (**1.2.0–1.9.0 are all SHIPPED/LIVE; Cursed Mode
-   shipped as 1.9.0 — see §3a. No release is mid-flight.** Open follow-ups: the
-   camera-following larger world + drop-reach clamping (parked, §12), and filling in
-   the Hourkeeper boss's detailed §3/§5 entry).
+   shipped as 1.9.0 — see §3 / §3a; the Hourkeeper (4th boss) went live in 1.8.0. No
+   release is mid-flight.** Open follow-up: the camera-following larger world +
+   drop-reach clamping is parked, §12).
 3. Verify `DEBUG_FORCE_BOSS` and `DEBUG_BOSS_TYPE` from `enemies.js` (don't trust
    this doc) and report.
 4. Note any stale-looking handoff items.
