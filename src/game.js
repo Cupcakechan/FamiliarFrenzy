@@ -328,6 +328,8 @@ export class Game {
     this.settingsZones = null;             // hit zones fed back from the last Settings render
     this.closetZones = null;               // Wardrobe hit zones (rows/tabs/Back) from the last render
     this.highscoresBackHover = false;      // High Scores Back button hovered (mouse)
+    this.highscoresTab = "endless";        // active High Scores board: "endless" | "cursed"
+    this.highscoresTabHover = null;         // tab under the cursor: "endless" | "cursed" | null
     this.howToPlayBackHover = false;       // How to Play Back button hovered (mouse)
 
     // Upgrade Grimoire (read-only glossary) screen state.
@@ -569,7 +571,7 @@ export class Game {
           if (this.menuIndex === 0) { this.state = STATE.MODE_SELECT; this.menuIndex = 0; }
           else if (this.menuIndex === 1) this.openCloset();           // Wardrobe
           else if (this.menuIndex === 2) this.openArchive();          // Arcane Archive
-          else if (this.menuIndex === 3) this.state = STATE.HIGHSCORES_PLACEHOLDER;
+          else if (this.menuIndex === 3) { this.highscoresTab = "endless"; this.highscoresTabHover = null; this.state = STATE.HIGHSCORES_PLACEHOLDER; }
           else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
         }
         break;
@@ -624,10 +626,21 @@ export class Game {
         break;
 
       case STATE.HIGHSCORES_PLACEHOLDER: {
-        // Mouse: a single clickable Back button (hover-highlighted). Clicking
-        // elsewhere no longer returns — only Back, or Esc/Backspace/Enter.
+        // Zones: 0 = Back, 1 = Endless tab, 2 = Cursed tab. Tabs switch which
+        // leaderboard shows; Back (or Esc/Backspace/Enter) leaves. Mouse and
+        // keyboard drive the SAME tab state.
         const hov = this.zoneAt(this.menuZones);
-        if (Input.mouseMoved()) this.highscoresBackHover = hov === 0;
+        if (Input.mouseMoved()) {
+          this.highscoresBackHover = hov === 0;
+          this.highscoresTabHover = hov === 1 ? "endless" : hov === 2 ? "cursed" : null;
+        }
+        if (Input.mouseClicked()) {
+          if (hov === 1) this.highscoresTab = "endless";
+          else if (hov === 2) this.highscoresTab = "cursed";
+        }
+        // Left/Right (or A/D) flips between the two boards.
+        if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA")) this.highscoresTab = "endless";
+        if (Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) this.highscoresTab = "cursed";
         const clickedBack = hov === 0 && Input.mouseClicked();
         if (this.backPressed() || this.confirmPressed() || clickedBack) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         break;
@@ -782,9 +795,10 @@ export class Game {
       case STATE.DYING:
         this.player.updateDying(dt);
         if (this.player.deathDone) {
-          if (this.gameMode === "endless") {
-            // Personal bests always update immediately on death.
-            this.updateEndlessBests();
+          // Personal bests are Endless-only; the leaderboard now covers Endless
+          // AND Cursed (separate boards via highScoreKey).
+          if (this.gameMode === "endless") this.updateEndlessBests();
+          if (this.gameMode === "endless" || this.gameMode === "cursed") {
             if (this.qualifiesForTop10()) {
               // Made the top 10 → enter initials before the Game Over screen.
               this.nameLetters = ["A", "A", "A"];
@@ -1787,7 +1801,11 @@ export class Game {
       return;
     }
     if (this.state === STATE.HIGHSCORES_PLACEHOLDER) {
-      this.menuZones = drawHighScores(ctx, this.width, this.height, this.getHighScores(), this.highscoresBackHover).zones;
+      this.menuZones = drawHighScores(
+        ctx, this.width, this.height,
+        { endless: this.getHighScores("endless"), cursed: this.getHighScores("cursed") },
+        this.highscoresTab, this.highscoresTabHover, this.highscoresBackHover
+      ).zones;
       return;
     }
     if (this.state === STATE.SETTINGS_PLACEHOLDER) {
@@ -2185,7 +2203,13 @@ export class Game {
     return scores.indexOf(candidate) < 10;
   }
 
-  // Write this run into the top-10 Endless leaderboard under `name` (the
+  // localStorage key for a mode's leaderboard. Endless and Cursed keep separate
+  // boards; tutorial never records (it never reaches the save path).
+  highScoreKey(mode = this.gameMode) {
+    return mode === "cursed" ? "ff_cursedHighscores" : "ff_highscores";
+  }
+
+  // Write this run into the current mode's top-10 leaderboard under `name` (the
   // 3-letter arcade initials). Called once, when initials are confirmed.
   saveHighScore(name) {
     try {
@@ -2198,17 +2222,17 @@ export class Game {
       const scores = this.getHighScores();
       scores.push(entry);
       scores.sort((a, b) => (b.score - a.score) || (b.wave - a.wave));
-      localStorage.setItem("ff_highscores", JSON.stringify(scores.slice(0, 10)));
+      localStorage.setItem(this.highScoreKey(), JSON.stringify(scores.slice(0, 10)));
     } catch (e) {
       /* localStorage unavailable — skip the leaderboard write */
     }
   }
 
-  // Read the Endless leaderboard, failing safely to an empty list if the
-  // stored value is missing or corrupt. Sorted best-first for display.
-  getHighScores() {
+  // Read a mode's leaderboard (defaults to the current mode), failing safely to an
+  // empty list if the stored value is missing or corrupt. Sorted best-first.
+  getHighScores(mode = this.gameMode) {
     try {
-      const raw = localStorage.getItem("ff_highscores");
+      const raw = localStorage.getItem(this.highScoreKey(mode));
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
