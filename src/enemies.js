@@ -1771,7 +1771,7 @@ const GOBLIN_MAX_ALIVE = 2;       // never more than this many alive (displaceme
 const PRONG_INTRO_WAVE = 7;       // Pronggeists join the spawn mix from this wave on (spaces the intros: gecko 5, goblin 6, pronggeist 7, mage 8)
 const PRONG_SPAWN_CHANCE = 0.18;  // chance each eligible slot rolls a Pronggeist (bumped 0.13 -> 0.18)
 const PRONG_MAX_ALIVE = 2;        // never more than this many alive (line-zoning is oppressive in bulk)
-const TIN_INTRO_WAVE = 1;         // Tin Bulwarks join the spawn mix from this wave on (after gecko 5, goblin 6, pronggeist 7, mage 8)
+const TIN_INTRO_WAVE = 9;         // Tin Bulwarks join the spawn mix from this wave on (after gecko 5, goblin 6, pronggeist 7, mage 8)
 const TIN_SPAWN_CHANCE = 0.12;    // chance each eligible slot rolls a Tin Bulwark
 const TIN_MAX_ALIVE = 1;          // never more than this many alive at once (position-control is oppressive in bulk — start at one)
 
@@ -2934,6 +2934,11 @@ const DEBUG_BOSS_TYPE = "auto"; // "auto" | "elder_wisp" | "watching_hand" | "hi
 // All boss types in the random rotation. Add a new boss here and it joins the
 // shuffled bag automatically (DEBUG_BOSS_TYPE can still force a specific one).
 const BOSS_TYPES = ["elder_wisp", "watching_hand", "hive_warden", "hourkeeper"];
+// Fixed easiest -> hardest rotation for NORMAL play: the boss at each 10-wave
+// block steps through this order and loops (wave 10 = Elder Wisp, 20 = Hive
+// Warden, 30 = The Watching Hand, 40 = Hourkeeper, 50 = Elder Wisp again...).
+// Cursed Mode will instead use the shuffled bag (drawBossFromBag) for variety.
+const BOSS_ORDER = ["elder_wisp", "hive_warden", "watching_hand", "hourkeeper"];
 
 export class WaveManager {
   constructor(maxWaves = 10) {
@@ -2955,6 +2960,7 @@ export class WaveManager {
     this.toSpawn = 0;              // enemies left to spawn this wave
     this.spawnTimer = 0;
     this.boss = null;              // the current boss, once spawned
+    this._bossIndex = 0;           // steps through BOSS_ORDER for the fixed normal-mode rotation (per run)
   }
 
   // How many full 10-wave blocks have passed (0 for waves 1-10, 1 for 11-20...).
@@ -3032,20 +3038,30 @@ export class WaveManager {
 
   makeBoss(view, tier = 1) {
     const pos = spawnOutsideView(view);
-    // Which boss: debug override wins; otherwise draw from a shuffled "bag" of
-    // all boss types. The bag cycles through every type in random order and
-    // reshuffles when empty, so you never face the same boss twice in a row and
-    // the ORDER varies run to run (true random can repeat or starve a type).
+    // Which boss: debug override wins; otherwise NORMAL play steps through a fixed
+    // easiest -> hardest rotation (BOSS_ORDER), looping. Cursed Mode will instead
+    // draw from the shuffled bag below for run-to-run variety.
     let type = DEBUG_BOSS_TYPE;
-    if (type === "auto") type = this.drawBossFromBag();
+    if (type === "auto") type = this.nextOrderedBoss();
     return type === "watching_hand" ? new WatchingHand(pos.x, pos.y, tier)
          : type === "hive_warden"   ? new HiveWarden(pos.x, pos.y, tier)
          : type === "hourkeeper"    ? new Hourkeeper(pos.x, pos.y, tier)
          : new Boss(pos.x, pos.y, tier);
   }
 
-  // Shuffled-bag boss draw. Refills + shuffles when empty. Avoids an immediate
-  // repeat across a bag boundary (e.g. last of one bag == first of the next).
+  // Fixed-order boss pick for normal play: returns the next type in BOSS_ORDER and
+  // advances, looping. The index resets per run (in reset()). Works under
+  // DEBUG_FORCE_BOSS too — each forced boss simply takes the next slot in order.
+  nextOrderedBoss() {
+    const type = BOSS_ORDER[this._bossIndex % BOSS_ORDER.length];
+    this._bossIndex += 1;
+    return type;
+  }
+
+  // Shuffled-bag boss draw — RESERVED FOR CURSED MODE (random bosses). Currently
+  // UNUSED: normal play uses the fixed nextOrderedBoss() rotation above. Refills +
+  // shuffles when empty, and avoids an immediate repeat across a bag boundary
+  // (e.g. last of one bag == first of the next).
   drawBossFromBag() {
     if (!this._bossBag || this._bossBag.length === 0) {
       this._bossBag = BOSS_TYPES.slice();

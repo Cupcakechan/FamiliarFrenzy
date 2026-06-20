@@ -397,7 +397,7 @@ export function drawSettings(ctx, w, h, musicVolume, sfxVolume, reducedFlash, hi
 
 // --- HOW TO PLAY ----------------------------------------------------------
 // Single-screen instructions (Option A): everything fits at 960x540.
-export function drawHowToPlay(ctx, w, h) {
+export function drawHowToPlay(ctx, w, h, backHover = false) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
@@ -434,8 +434,10 @@ export function drawHowToPlay(ctx, w, h) {
 
   const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
   ctx.globalAlpha = pulse;
-  text(ctx, "Press Esc or Backspace to return", w / 2, h - 40, { size: 16, color: PURPLE, weight: "500" });
+  text(ctx, "Esc / Backspace / click Back to return", w / 2, h - 76, { size: 14, color: PURPLE, weight: "500" });
   ctx.globalAlpha = 1;
+
+  return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
 }
 
 // --- UPGRADE GRIMOIRE -----------------------------------------------------
