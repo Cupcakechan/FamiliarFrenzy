@@ -899,6 +899,125 @@ function drawCurseRow(ctx, e, leftX, y, rightX, rowH, iconBox, textX, blurbLines
   });
 }
 
+// --- Familiars catalog ----------------------------------------------------
+// Full catalog (every familiar shown, with details) so players can see what's
+// buyable. Mirrors drawCurses' scaffolding (scroll, zones, Back, scrollbar);
+// each row shows the aspect portrait, name, owned/equipped/cost status, and the
+// passive + Spirit Imbued behavior. Data-driven from the FAMILIARS table.
+export function drawFamiliars(ctx, w, h, entries, selectedIndex, scrollIn = 0, followSel = true) {
+  ctx.fillStyle = MENU_BG;
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "FAMILIARS", w / 2, 46, { size: 34, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  const ownedCount = entries.filter((e) => e.owned).length;
+  text(ctx, `${ownedCount} / ${entries.length} owned`, w / 2, 74, { size: 14, color: DIM, weight: "500" });
+
+  const leftX = 200;
+  const rightX = w - 200;
+  const iconBox = 72;
+  const gap = 8;
+  const backIndex = entries.length;
+  const textX = leftX + iconBox + 22;
+  const textW = rightX - textX;
+
+  const viewTop = 94;
+  const viewBottom = h - 40;
+  const viewH = viewBottom - viewTop;
+
+  // Pass 1: build each row's info lines (flavor + passive + Spirit Imbued) and
+  // measure its height from the wrapped result.
+  const rows = [];
+  let cy = 0;
+  entries.forEach((e, i) => {
+    const lines = [];
+    if (e.blurb) for (const ln of wrapText(ctx, e.blurb, textW, { size: 14, weight: "500", maxLines: 2 })) lines.push({ t: ln, c: CREAM });
+    const passiveText = (e.passive && e.passive !== "None") ? `Passive — ${e.passive}: ${e.passiveDesc}` : "Passive: None";
+    for (const ln of wrapText(ctx, passiveText, textW, { size: 14, weight: "500", maxLines: 2 })) lines.push({ t: ln, c: "#c9b8ff" });
+    for (const ln of wrapText(ctx, `Spirit Imbued — ${e.frenzyName}: ${e.frenzyDesc}`, textW, { size: 14, weight: "500", maxLines: 2 })) lines.push({ t: ln, c: GOLD });
+    const textBlock = 30 + 6 + lines.length * 20;
+    const height = Math.max(iconBox, textBlock) + 16;
+    rows.push({ kind: "entry", i, e, lines, y: cy, height });
+    cy += height + gap;
+  });
+  const backRow = { kind: "back", i: backIndex, y: cy, height: 40 };
+  rows.push(backRow);
+  cy += backRow.height;
+  const contentH = cy;
+
+  const maxScroll = Math.max(0, contentH - viewH);
+  let scroll;
+  if (followSel) {
+    const selRow = rows.find((r) => r.i === selectedIndex) || backRow;
+    scroll = 0;
+    if (selRow.y < scroll) scroll = selRow.y;
+    if (selRow.y + selRow.height > scroll + viewH) scroll = selRow.y + selRow.height - viewH;
+  } else {
+    scroll = scrollIn;
+  }
+  scroll = Math.max(0, Math.min(maxScroll, scroll));
+
+  const zones = [];
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, viewTop, w, viewH);
+  ctx.clip();
+
+  for (const r of rows) {
+    const ry = viewTop + r.y - scroll;
+    if (ry + r.height < viewTop || ry > viewBottom) continue; // cull offscreen rows
+
+    {
+      const zy = Math.max(viewTop, ry);
+      const zBottom = Math.min(viewBottom, ry + r.height);
+      if (zBottom > zy) zones.push({ x: leftX - 16, y: Math.round(zy), w: rightX - leftX + 32, h: Math.round(zBottom - zy), index: r.i });
+    }
+
+    if (r.kind === "back") {
+      const sel = selectedIndex === backIndex;
+      text(ctx, `${sel ? "> " : "  "}Back`, leftX, ry + 20, {
+        size: 22, color: sel ? GOLD : CREAM, align: "left", weight: sel ? "700" : "500",
+      });
+      continue;
+    }
+
+    drawFamiliarRow(ctx, r.e, leftX, ry, rightX, r.height, iconBox, textX, r.lines, r.i === selectedIndex);
+  }
+  ctx.restore();
+
+  const scrollbar = maxScroll > 0 ? drawScrollbar(ctx, rightX + 16, viewTop, viewH, scroll, maxScroll, contentH) : null;
+  return { zones, scroll, maxScroll, scrollbar };
+}
+
+// One familiar row: portrait + name + status (Equipped / Owned / cost) + the
+// info lines built above, inside a highlighted panel when selected. Full catalog,
+// so every entry is fully shown; the status badge conveys ownership.
+function drawFamiliarRow(ctx, e, leftX, y, rightX, rowH, iconBox, textX, lines, selected) {
+  if (selected) {
+    ctx.fillStyle = "rgba(244, 213, 141, 0.07)";
+    ctx.fillRect(leftX - 16, y, rightX - leftX + 32, rowH - 6);
+    ctx.strokeStyle = "rgba(244, 213, 141, 0.3)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(leftX - 16, y, rightX - leftX + 32, rowH - 6);
+  }
+
+  const boxY = y + (rowH - iconBox) / 2 - 3;
+  // Reuse the strip-aware creature portrait. Full catalog -> always "seen"; the
+  // selected row plays its idle loop.
+  drawCreaturePortrait(ctx, { img: e.img, frames: e.frames, seen: true }, leftX, boxY, iconBox, selected, selected);
+
+  text(ctx, e.name, textX, y + 24, { size: 22, color: GOLD, align: "left", weight: "700" });
+
+  let badge, badgeColor;
+  if (e.equipped) { badge = "EQUIPPED"; badgeColor = GOLD; }
+  else if (e.owned) { badge = "OWNED"; badgeColor = "#8fd1a0"; }
+  else { badge = `${e.cost} crystals`; badgeColor = DIM; }
+  text(ctx, badge, rightX, y + 24, { size: 14, color: badgeColor, align: "right", weight: "700" });
+
+  lines.forEach((ln, li) => {
+    text(ctx, ln.t, textX, y + 52 + li * 20, { size: 14, color: ln.c, align: "left", weight: "500" });
+  });
+}
+
 // Shared creature portrait: lit box + sprite (or silhouette if unseen, or "?" if
 // no art). `animated` plays the idle loop (used in the big expanded view).
 function drawCreaturePortrait(ctx, e, x, y, box, animated, highlighted) {

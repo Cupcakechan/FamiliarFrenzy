@@ -25,7 +25,7 @@ import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawFamiliars, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 import { getReducedFlash, setReducedFlash, getHighVisWarnings, setHighVisWarnings } from "./settings.js";
 
@@ -74,7 +74,8 @@ const STATE = {
   GRIMOIRE: "grimoire",
   BESTIARY: "bestiary",
   CURSES: "curses", // Curses archive (Cursed Mode), reached via the Arcane Archive
-  ARCHIVE: "archive", // Arcane Archive hub (Grimoire + Bestiary + Curses)
+  FAMILIAR_ARCHIVE: "familiarArchive", // Familiars catalog, reached via the Arcane Archive
+  ARCHIVE: "archive", // Arcane Archive hub (Grimoire + Bestiary + Curses + Familiars)
   CLOSET: "closet", // Wardrobe: buy/equip outfits with Spirit Crystals
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
@@ -90,7 +91,7 @@ const STATE = {
 };
 
 const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings"];
-const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Curses", "Back"]; // Arcane Archive hub
+const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Curses", "Familiars", "Back"]; // Arcane Archive hub
 const MODE_SELECT_ITEMS = ["Tutorial Mode", "Casual Mode", "Cursed Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Casual Frenzy", "Replay Tutorial", "Main Menu"];
 const PAUSE_ITEMS = ["Resume", "Arcane Archive", "Settings", "Main Menu"];
@@ -226,8 +227,21 @@ const COLLAR_ORDER = ["default", "moonbeam", "alchemist"];
 // Spirit) — see startGame. `frenzy` is the Spirit Imbued behavior id read by
 // familiar.js; `frenzyMoteMult` is the Star-Eyed Focus mote bonus (collectPickup).
 const FAMILIARS = {
-  default: { name: "Cat Familiar", cost: 0, swatch: "#1c1a26", spritePrefix: "familiar",     frenzy: "default", frenzyMoteMult: 1,    desc: "Classic familiar companion" },
-  owl:     { name: "Owl Familiar", cost: 6, swatch: "#3a2f5e", spritePrefix: "familiar_owl", frenzy: "astral",  frenzyMoteMult: 1.05, desc: "Star-Eyed Focus + Astral Judgment" },
+  default: {
+    name: "Cat Familiar", cost: 0, swatch: "#1c1a26", spritePrefix: "familiar",
+    frenzy: "default", frenzyMoteMult: 1, desc: "Classic familiar companion",
+    // Arcane Archive (Familiars catalog) copy — future familiars just fill these.
+    blurb: "A steadfast spirit companion.",
+    passive: "None", passiveDesc: "",
+    frenzyName: "Surge", frenzyDesc: "Attacks rapidly.",
+  },
+  owl: {
+    name: "Owl Familiar", cost: 6, swatch: "#3a2f5e", spritePrefix: "familiar_owl",
+    frenzy: "astral", frenzyMoteMult: 1.05, desc: "Star-Eyed Focus + Astral Judgment",
+    blurb: "A wise spirit that sharpens the bond.",
+    passive: "Star-Eyed Focus", passiveDesc: "Spirit Imbued fills slightly faster from motes.",
+    frenzyName: "Astral Judgment", frenzyDesc: "Strikes the most dangerous foe with arcane precision.",
+  },
 };
 const FAMILIAR_ORDER = ["default", "owl"];
 
@@ -659,6 +673,9 @@ export class Game {
       case STATE.CURSES:
         this.updateCurses();
         break;
+      case STATE.FAMILIAR_ARCHIVE:
+        this.updateFamiliarsArchive();
+        break;
 
       case STATE.ARCHIVE:
         this.updateArchive();
@@ -941,10 +958,11 @@ export class Game {
   // a boss is alive during play; otherwise gameplay states use the GAMEPLAY
   // pool and menus use the MENU pool (the two pools are split in audio.js).
   updateMusic() {
-    // Any archive screen opened from pause (hub, Grimoire, Bestiary, Curses) is
-    // still "in the run" for music — keep the gameplay/boss track, don't drop to menu.
+    // Any archive screen opened from pause (hub, Grimoire, Bestiary, Curses,
+    // Familiars) is still "in the run" for music — keep the gameplay/boss track.
     const inArchiveFromPause = (this.state === STATE.ARCHIVE || this.state === STATE.GRIMOIRE
-      || this.state === STATE.BESTIARY || this.state === STATE.CURSES)
+      || this.state === STATE.BESTIARY || this.state === STATE.CURSES
+      || this.state === STATE.FAMILIAR_ARCHIVE)
       && this.archiveReturn === STATE.PAUSED;
     const inPlay = this.state === STATE.PLAYING || this.state === STATE.LEVEL_UP
       || this.state === STATE.PAUSED || this.state === STATE.DYING
@@ -1125,6 +1143,81 @@ export class Game {
     else if (this.state === STATE.ARCHIVE) this.archiveIndex = 2; // land back on "Curses"
   }
 
+  // --- Familiars catalog (Arcane Archive) --------------------------------
+  // Full catalog: every familiar is shown (so players can see what's buyable),
+  // data-driven from the FAMILIARS table. Sprites are already loaded by
+  // familiar.js and ownership comes from ff_wardrobe — no extra load/persist.
+  openFamiliarsArchive(returnState) {
+    this.familiarsArchiveReturn = returnState || STATE.ARCHIVE;
+    this.familiarsArchiveIndex = 0;
+    this.familiarsArchiveScroll = 0;
+    this.familiarsArchiveFollowSel = true; // start pinned to the top entry
+    this.familiarsArchiveScrollDragging = false;
+    this.state = STATE.FAMILIAR_ARCHIVE;
+  }
+
+  closeFamiliarsArchive() {
+    this.state = this.familiarsArchiveReturn || STATE.MAIN_MENU;
+    if (this.state === STATE.MAIN_MENU) this.menuIndex = 0;
+    else if (this.state === STATE.ARCHIVE) this.archiveIndex = 3; // land back on "Familiars"
+  }
+
+  updateFamiliarsArchive() {
+    const count = FAMILIAR_ORDER.length + 1; // entries + Back
+    const backIndex = FAMILIAR_ORDER.length;
+
+    // Scrollbar drag (mouse): grab the thumb to scrub, click the track to jump.
+    let consumedClick = false;
+    const sb = this.familiarsArchiveScrollbar;
+    if (sb) {
+      const mx = Input.mouseX(), my = Input.mouseY();
+      const onBar = mx >= sb.x - 2 && mx <= sb.x + 18 && my >= sb.top && my <= sb.top + sb.viewH;
+      if (Input.mouseClicked() && onBar) {
+        const onThumb = my >= sb.thumbY && my <= sb.thumbY + sb.thumbH;
+        this.familiarsArchiveDragOffset = onThumb ? my - sb.thumbY : sb.thumbH / 2;
+        this.familiarsArchiveScrollDragging = true;
+        this.familiarsArchiveFollowSel = false;
+        consumedClick = true;
+      }
+      if (this.familiarsArchiveScrollDragging && Input.mouseHeld()) {
+        const travel = sb.viewH - sb.thumbH;
+        const frac = travel > 0 ? Math.max(0, Math.min(1, (my - this.familiarsArchiveDragOffset - sb.top) / travel)) : 0;
+        this.familiarsArchiveScroll = frac * sb.maxScroll;
+        this.familiarsArchiveFollowSel = false;
+      }
+    }
+    if (!Input.mouseHeld()) this.familiarsArchiveScrollDragging = false;
+
+    // Mouse wheel scrolls freely (drops follow-selection). Clamped to last max.
+    const wheel = Input.wheelDelta();
+    if (wheel !== 0) {
+      this.familiarsArchiveScroll = Math.max(0, Math.min(this.familiarsArchiveMaxScroll || 0, this.familiarsArchiveScroll + wheel));
+      this.familiarsArchiveFollowSel = false;
+    }
+
+    // Click a row (selecting it) or Back. Skipped if the click hit the scrollbar.
+    const click = (!consumedClick && Input.mouseClicked()) ? this.zoneAt(this.menuZones) : -1;
+    if (click >= 0) {
+      if (click === backIndex) { this.closeFamiliarsArchive(); return; }
+      this.familiarsArchiveIndex = click;
+      this.familiarsArchiveFollowSel = true;
+    }
+
+    if (Input.wasPressed("ArrowUp") || Input.wasPressed("KeyW")) {
+      this.familiarsArchiveIndex = (this.familiarsArchiveIndex - 1 + count) % count;
+      this.familiarsArchiveFollowSel = true;
+    }
+    if (Input.wasPressed("ArrowDown") || Input.wasPressed("KeyS")) {
+      this.familiarsArchiveIndex = (this.familiarsArchiveIndex + 1) % count;
+      this.familiarsArchiveFollowSel = true;
+    }
+    if (this.confirmPressed()) {
+      if (this.familiarsArchiveIndex === backIndex) this.closeFamiliarsArchive(); // Back row
+    } else if (this.backPressed()) {
+      this.closeFamiliarsArchive();
+    }
+  }
+
   // --- Arcane Archive hub ---------------------------------------------------
   // A small hub holding the Grimoire + Bestiary + Curses. Each backs out to here;
   // the hub backs out to wherever it was opened from (main menu or pause).
@@ -1156,6 +1249,7 @@ export class Game {
       if (this.archiveIndex === 0) this.openGrimoire(STATE.ARCHIVE);
       else if (this.archiveIndex === 1) this.openBestiary(STATE.ARCHIVE);
       else if (this.archiveIndex === 2) this.openCurses(STATE.ARCHIVE);
+      else if (this.archiveIndex === 3) this.openFamiliarsArchive(STATE.ARCHIVE);
       else this.closeArchive(); // Back
     } else if (this.backPressed()) {
       this.closeArchive();
@@ -1998,6 +2092,28 @@ export class Game {
       this.cursesScroll = cz.scroll;
       this.cursesMaxScroll = cz.maxScroll;
       this.cursesScrollbar = cz.scrollbar;
+      return;
+    }
+
+    if (this.state === STATE.FAMILIAR_ARCHIVE) {
+      const entries = FAMILIAR_ORDER.map((id) => {
+        const f = FAMILIARS[id];
+        return {
+          id, name: f.name, blurb: f.blurb,
+          passive: f.passive, passiveDesc: f.passiveDesc,
+          frenzyName: f.frenzyName, frenzyDesc: f.frenzyDesc,
+          cost: f.cost,
+          owned: this.wardrobe.familiarsOwned.includes(id),
+          equipped: this.wardrobe.familiarEquipped === id,
+          img: getImage(f.spritePrefix + "_idle_s"), // base aspect, south idle strip
+          frames: 4, // FAMILIAR_ANIMS.idle (familiar.js)
+        };
+      });
+      const fz = drawFamiliars(ctx, this.width, this.height, entries, this.familiarsArchiveIndex, this.familiarsArchiveScroll, this.familiarsArchiveFollowSel);
+      this.menuZones = fz.zones;
+      this.familiarsArchiveScroll = fz.scroll;
+      this.familiarsArchiveMaxScroll = fz.maxScroll;
+      this.familiarsArchiveScrollbar = fz.scrollbar;
       return;
     }
 
