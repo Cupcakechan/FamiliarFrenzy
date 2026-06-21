@@ -68,6 +68,15 @@ const PUDDLE_FADE = 0.6;           // seconds over which a dying puddle fades ou
 const PUDDLE_FLASH = 0.9;          // white-flash duration on each DoT tick. >0.5 (the tick
                                    //   interval) keeps them lit the whole time they're in
                                    //   the acid, so the damage reads clearly.
+const PUDDLE_SPLASH_SCALE = 0.6;   // on-LAND burst dmg = ceil(familiar.damage * this), min 1.
+                                   //   A guaranteed bite the instant the flask shatters, so
+                                   //   enemies that pass through without lingering still take
+                                   //   a hit (the DoT alone whiffed on mobile chasers).
+const ACID_SLOW_LINGER = 0.2;      // seconds the acid slow clings after an enemy leaves a
+                                   //   puddle (re-set every frame it's inside) — a small
+                                   //   linger so the slow fades smoothly instead of flickering.
+                                   //   The slow STRENGTH (ACID_SLOW_MULT) lives in enemies.js,
+                                   //   where the enemy applies it to its own movement.
 
 // Shortest distance from point (px,py) to segment (ax,ay)->(bx,by). Used for the
 // Moon Beam's capsule hit test (no projectile, so the pierce upgrade never applies).
@@ -229,7 +238,7 @@ class Beam {
 
 // --- Alchemist: a thrown flask that lands and leaves a puddle -------------
 class FlaskShot {
-  constructor(x, y, tx, ty, tickDamage, puddleRadius) {
+  constructor(x, y, tx, ty, tickDamage, splashDamage, puddleRadius) {
     this.x = x; this.y = y;
     this.tx = tx; this.ty = ty;
     this.radius = 6;
@@ -241,7 +250,8 @@ class FlaskShot {
     this.spin = 0;
     this.landed = false;
     this.dead = false;
-    this.tickDamage = tickDamage;   // carried to the puddle it spawns
+    this.tickDamage = tickDamage;     // carried to the puddle it spawns
+    this.splashDamage = splashDamage; // one-time corrosive burst when it shatters
     this.puddleRadius = puddleRadius;
   }
 
@@ -288,16 +298,22 @@ class Puddle {
     this.life -= dt;
     if (this.life <= 0) { this.dead = true; return; }
     this.tickTimer -= dt;
-    if (this.tickTimer <= 0) {
-      this.tickTimer += PUDDLE_TICK_INTERVAL;
-      for (const t of targets) {
-        if (t.dead || t.untargetable) continue;
-        if (distance(this.x, this.y, t.x, t.y) <= this.radius + t.radius) {
-          t.takeDamage(this.tickDamage);
-          // Extend the enemy's existing white hit-flash (set ~0.1 by takeDamage)
-          // so the DoT pulses clearly while they stand in the acid.
-          t.hitFlash = Math.max(t.hitFlash || 0, PUDDLE_FLASH);
-        }
+    const doTick = this.tickTimer <= 0;
+    if (doTick) this.tickTimer += PUDDLE_TICK_INTERVAL;
+    // Every frame: SLOW regular enemies standing in the acid so they bog down and
+    // actually eat the DoT (the tar-pit effect). On a tick frame, also corrode them.
+    // The slow is just a short-lived timer the enemy reads in its OWN movement
+    // (enemies.js applies ACID_SLOW_MULT). Bosses move via their own classes and
+    // carry no `.def`, so they're naturally exempt.
+    for (const t of targets) {
+      if (t.dead || t.untargetable) continue;
+      if (distance(this.x, this.y, t.x, t.y) > this.radius + t.radius) continue;
+      if (t.def) t.acidSlowTimer = ACID_SLOW_LINGER;
+      if (doTick) {
+        t.takeDamage(this.tickDamage);
+        // Extend the enemy's existing white hit-flash (set ~0.1 by takeDamage)
+        // so the DoT pulses clearly while they stand in the acid.
+        t.hitFlash = Math.max(t.hitFlash || 0, PUDDLE_FLASH);
       }
     }
   }
@@ -378,7 +394,7 @@ export class Familiar {
       const target = this.findNearestTarget(targets);
       if (target) {
         if (this.attackStyle === "moonbeam") this.fireMoonBeam(target, targets);
-        else if (this.attackStyle === "alchemist") this.fireFlask(target, targets);
+        else if (this.attackStyle === "alchemist") this.fireFlask(target, targets, player);
         else this.fireBolts(target);
         this.attackTimer = this.attackCooldown * (frenzyActive ? FRENZY_COOLDOWN_SCALE : 1);
         this.facing = dirFromVector(target.x - this.x, target.y - this.y); // face the shot
@@ -430,6 +446,16 @@ export class Familiar {
     for (const fs of this.flaskShots) {
       fs.update(dt);
       if (fs.landed) {
+        // On-land splash: a one-time corrosive burst at the landing point, so even
+        // enemies passing through (who won't linger for the DoT) take a guaranteed
+        // bite the instant the flask shatters.
+        for (const t of targets) {
+          if (t.dead || t.untargetable) continue;
+          if (distance(fs.tx, fs.ty, t.x, t.y) <= fs.puddleRadius + t.radius) {
+            t.takeDamage(fs.splashDamage);
+            t.hitFlash = Math.max(t.hitFlash || 0, PUDDLE_FLASH);
+          }
+        }
         if (this.puddles.length >= PUDDLE_MAX) this.puddles.shift(); // drop the oldest
         this.puddles.push(new Puddle(fs.tx, fs.ty, fs.puddleRadius, fs.tickDamage));
       }
@@ -506,21 +532,41 @@ export class Familiar {
 
   // --- Alchemist Collar -----------------------------------------------------
   // Lob a flask at the target; with Spirit Volley, +1 flask at the next-nearest
-  // distinct target (reduced puddle damage). Pierce grows the puddle radius.
-  fireFlask(target, targets) {
+  // distinct target (reduced damage). Pierce grows the puddle radius. The throw is
+  // LED along the target's path (toward the witch) so the acid lands where the
+  // enemy is heading — into the tar pit — instead of behind it.
+  fireFlask(target, targets, player) {
     const radius = PUDDLE_RADIUS + this.pierce * PUDDLE_PIERCE_RADIUS;
     const tick = Math.max(1, Math.ceil(this.damage * PUDDLE_TICK_SCALE));
-    this.spawnFlask(target.x, target.y, tick, radius);
+    const splash = Math.max(1, Math.ceil(this.damage * PUDDLE_SPLASH_SCALE));
+    const aim = this.leadPoint(target, player);
+    this.spawnFlask(aim.x, aim.y, tick, splash, radius);
     if (this.spreadShot) {
       const sideTick = Math.max(1, Math.ceil(this.damage * PUDDLE_TICK_SCALE * SIDE_DAMAGE_SCALE));
+      const sideSplash = Math.max(1, Math.ceil(this.damage * PUDDLE_SPLASH_SCALE * SIDE_DAMAGE_SCALE));
       for (const t of this.findExtraTargets(targets, target, 1)) {
-        this.spawnFlask(t.x, t.y, sideTick, radius);
+        const sideAim = this.leadPoint(t, player);
+        this.spawnFlask(sideAim.x, sideAim.y, sideTick, sideSplash, radius);
       }
     }
   }
 
-  spawnFlask(tx, ty, tickDamage, puddleRadius) {
-    this.flaskShots.push(new FlaskShot(this.x, this.y, tx, ty, tickDamage, puddleRadius));
+  // Where to actually throw: enemies chase the witch, so aim ahead along the
+  // target's path (toward the player) by ~how far it travels while the flask is
+  // airborne, capped so the puddle never overshoots past the witch. A stationary
+  // target (speed 0) just gets its current spot. The puddle only damages enemies,
+  // so landing it near the witch is fine — that's where the swarm is densest.
+  leadPoint(target, player) {
+    const flight = distance(this.x, this.y, target.x, target.y) / FLASK_SHOT_SPEED;
+    const pdx = player.x - target.x, pdy = player.y - target.y;
+    const pd = Math.hypot(pdx, pdy);
+    if (pd < 1e-3) return { x: target.x, y: target.y };
+    const lead = Math.min((target.speed || 0) * flight, pd);
+    return { x: target.x + (pdx / pd) * lead, y: target.y + (pdy / pd) * lead };
+  }
+
+  spawnFlask(tx, ty, tickDamage, splashDamage, puddleRadius) {
+    this.flaskShots.push(new FlaskShot(this.x, this.y, tx, ty, tickDamage, splashDamage, puddleRadius));
   }
 
   // Up to `n` nearest in-range targets, excluding the primary, for collar spread.

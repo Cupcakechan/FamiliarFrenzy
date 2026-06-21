@@ -41,6 +41,16 @@ for (const anim of ["float", "attack"]) {
 // Attack animation. VISUAL ONLY — does not change when contact damage occurs.
 const WISP_ATTACK_VISUAL_GAP = 6;
 
+// Speed multiplier for a regular enemy standing in the Alchemist's acid (the
+// "tar pit"). The Puddle (familiar.js) sets a short-lived `acidSlowTimer` on
+// enemies it overlaps; while that timer is live, the chaser moves at this
+// fraction so the swarm bogs down and actually eats the DoT. Lower = stickier
+// pit. The clinginess (how long the slow lasts after leaving) is ACID_SLOW_LINGER
+// in familiar.js. Bosses move via their own classes and never read this, so
+// they're exempt; committed attacks (leap/cast) use their own step math, so only
+// the generic chase is slowed.
+const ACID_SLOW_MULT = 0.65;
+
 // --- Enemy type table -------------------------------------------------------
 // Data-driven per-type tuning (per the handoff guardrail: a new enemy is a
 // table row, not a subclass). Wisp stats reproduce the original formula
@@ -936,6 +946,8 @@ export class Enemy {
     this.dead = false;
     this.hitFlash = 0;
     this.wobble = randomRange(0, Math.PI * 2);
+    this.acidSlowTimer = 0;     // >0 while standing in the Alchemist's acid (set by
+                                // the Puddle in familiar.js); slows the generic chase
 
     // Ranged (Gutter Gecko) / caster (Bone Mage) state.
     this.fireTimer = this.def.ranged
@@ -1042,9 +1054,12 @@ export class Enemy {
       // frame while casting). ---
       this.updateBulwark(dt, player, len, hazards);
     } else {
-      // --- Melee chaser (wisp): walk straight at the witch (unchanged) ---
-      this.x += (dx / len) * this.speed * dt;
-      this.y += (dy / len) * this.speed * dt;
+      // --- Melee chaser (wisp): walk straight at the witch. The Alchemist's acid
+      // (familiar.js) sets acidSlowTimer while it stands in a puddle, so the swarm
+      // bogs down in the tar pit and eats the DoT instead of striding through. ---
+      const slow = this.acidSlowTimer > 0 ? ACID_SLOW_MULT : 1;
+      this.x += (dx / len) * this.speed * slow * dt;
+      this.y += (dy / len) * this.speed * slow * dt;
     }
 
     // Keep the whole BODY (its visual footprint, not just the hitbox) on the
@@ -1059,6 +1074,9 @@ export class Enemy {
 
     this.wobble += dt * 6;
     if (this.hitFlash > 0) this.hitFlash -= dt;
+    // The acid slow is re-set every frame the enemy stands in a puddle, so this
+    // just lets it lapse a few frames after it steps out (smooth, no flicker).
+    if (this.acidSlowTimer > 0) this.acidSlowTimer -= dt;
 
     // --- Animation (visual only) ---
     // Both types always face the witch (the gecko backs away while facing her,
