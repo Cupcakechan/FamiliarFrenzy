@@ -2786,23 +2786,28 @@ export class Game {
 
   // View-model for the Closet renderer (both tabs + which is active).
   closetData() {
-    const rows = (order, table, owned, equippedId) => order.map((id) => {
+    const rows = (order, table, owned, equippedId, spriteKeyFn) => order.map((id) => {
       const o = table[id];
       return {
         id, name: o.name, cost: o.cost, desc: o.desc, swatch: o.swatch,
-        spriteKey: `${o.spritePrefix}_idle_s`, // portrait: witch- or familiar-idle-south frame 0
+        spriteKey: spriteKeyFn ? spriteKeyFn(id, o) : `${o.spritePrefix}_idle_s`, // portrait frame 0
         owned: owned.includes(id),
         equipped: equippedId === id,
         affordable: this.wardrobe.crystals >= o.cost,
       };
     });
+    // The Collars tab previews the EQUIPPED familiar wearing each collar (its
+    // recolor) so the preview matches what you'll see in-game — base prefix for the
+    // Spirit/default collar, <base>_<collarId> for the others (same rule as run start).
+    const famBase = (FAMILIARS[this.wardrobe.familiarEquipped] || FAMILIARS.default).spritePrefix;
+    const collarSpriteKey = (id) => `${famBase}${id === "default" ? "" : "_" + id}_idle_s`;
     return {
       crystals: this.wardrobe.crystals,
       tab: this.closetTab,
       index: this.closetIndex,
       outfits: rows(OUTFIT_ORDER, OUTFITS, this.wardrobe.owned, this.wardrobe.equipped),
       familiars: rows(FAMILIAR_ORDER, FAMILIARS, this.wardrobe.familiarsOwned, this.wardrobe.familiarEquipped),
-      collars: rows(COLLAR_ORDER, COLLARS, this.wardrobe.collarsOwned, this.wardrobe.collarEquipped),
+      collars: rows(COLLAR_ORDER, COLLARS, this.wardrobe.collarsOwned, this.wardrobe.collarEquipped, collarSpriteKey),
     };
   }
 
