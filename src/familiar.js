@@ -40,9 +40,11 @@ const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 // bruiser > nearest) for a flat, capped amount — repeated over the Spirit Imbued
 // window rather than a melt. It runs ALONGSIDE the normal collar attack (which keeps
 // firing at nearest) and any Spirit Bond link; it never changes the collar attack.
-const ASTRAL_STRIKE_INTERVAL = 0.7; // seconds between strikes
-const ASTRAL_STRIKE_DAMAGE = 14;    // flat damage per strike (one-shots most trash; chips bosses)
-const ASTRAL_STAR_LIFE = 0.35;      // seconds the code-drawn star lingers/fades
+const ASTRAL_STRIKE_INTERVAL = 0.9; // seconds between strikes (slower = more deliberate, less boss-melt)
+const ASTRAL_STRIKE_DAMAGE = 6;     // flat CHIP per strike — the Owl's value is its targeting + passive,
+                                    //   not raw DPS (~7 strikes x 6 = ~42 over a 6s Spirit Imbued, so it
+                                    //   chips a boss rather than soloing it, and won't one-shot mid-tier trash)
+const ASTRAL_STAR_LIFE = 0.45;      // seconds the code-drawn star lingers/fades (a touch longer = more readable)
 
 // Threat tier for Astral Judgment's priority pick. Higher = struck first. Reads
 // only existing enemy fields (isBoss + the def flags), so no enemy code changes.
@@ -396,7 +398,8 @@ export class Familiar {
     // "default" (Cat: faster firing only) | "astral" (Owl: Astral Judgment strikes).
     this.frenzyBehavior = "default";
     this.astralTimer = 0;     // counts down to the next Astral Judgment strike
-    this.astralStrikes = [];  // brief code-drawn star flashes { x, y, life }
+    this.astralStrikes = [];  // brief code-drawn star flashes { x, y, ox, oy, life }
+    this.astralMark = null;   // the enemy currently being judged (drives the reticle)
 
     // Collar attack style + skin (set by game.startGame from the equipped collar).
     this.attackStyle = "rune";      // "rune" | "moonbeam" | "alchemist"
@@ -452,15 +455,21 @@ export class Familiar {
     // a flat capped amount, with a code-drawn star. Timer resets whether or not a
     // target was in reach, so strikes stay evenly paced.
     if (frenzyActive && this.frenzyBehavior === "astral") {
+      // Recompute the judged target every frame so the reticle (drawn in draw())
+      // tracks the current highest-threat enemy; the timed strike smites that mark.
+      this.astralMark = this.findPriorityTarget(targets);
       this.astralTimer -= dt;
       if (this.astralTimer <= 0) {
-        const mark = this.findPriorityTarget(targets);
-        if (mark) {
-          mark.takeDamage(ASTRAL_STRIKE_DAMAGE);
-          this.astralStrikes.push({ x: mark.x, y: mark.y, life: ASTRAL_STAR_LIFE });
+        if (this.astralMark) {
+          this.astralMark.takeDamage(ASTRAL_STRIKE_DAMAGE);
+          // Record the Owl's position too, so draw() can flash a cast beam from the
+          // Owl to where the strike landed.
+          this.astralStrikes.push({ x: this.astralMark.x, y: this.astralMark.y, ox: this.x, oy: this.y, life: ASTRAL_STAR_LIFE });
         }
         this.astralTimer = ASTRAL_STRIKE_INTERVAL;
       }
+    } else {
+      this.astralMark = null; // no reticle outside the Owl's Spirit Imbued
     }
     // Age the star flashes regardless of behavior so a strike landed on the final
     // Spirit Imbued frame still finishes fading out.
@@ -779,12 +788,60 @@ export class Familiar {
       ctx.restore();
     }
 
-    // Astral Judgment stars: code-drawn gold/violet sparkles at struck enemies that
-    // expand slightly and fade. Drawn here (after enemies, before the cat) so they
-    // read as the Owl's strike landing on the target. No sprite — never a crash.
+    // Astral reticle: a slow-spinning gold ring + ticks on the enemy the Owl is
+    // judging RIGHT NOW (recomputed each frame in update). This is the legibility
+    // win — you can see it favor a caster/boss over nearby wisps. Skips a dead mark.
+    if (this.astralMark && !this.astralMark.dead) {
+      const m = this.astralMark;
+      const R = (m.radius || 12) + 8;
+      const rot = performance.now() / 600;
+      const pulse = 0.55 + 0.2 * Math.sin(performance.now() / 180);
+      ctx.save();
+      ctx.translate(m.x, m.y);
+      ctx.rotate(rot);
+      ctx.shadowColor = "#cdb4ff";
+      ctx.shadowBlur = 10;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#f4d58d";
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = pulse;
+      for (let i = 0; i < 4; i++) { // four arcs with gaps = a targeting lock
+        const a0 = i * (Math.PI / 2) + 0.28;
+        ctx.beginPath();
+        ctx.arc(0, 0, R, a0, a0 + (Math.PI / 2) - 0.56);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = pulse * 0.9;
+      for (let i = 0; i < 4; i++) { // inward ticks at the gaps
+        const a = i * (Math.PI / 2);
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * (R + 3), Math.sin(a) * (R + 3));
+        ctx.lineTo(Math.cos(a) * (R - 2), Math.sin(a) * (R - 2));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+
+    // Astral Judgment strikes: a quick cast beam from the Owl to the target, then a
+    // gold/violet star at the impact — both fade together. Drawn here (after enemies,
+    // before the cat) so they read as the Owl's strike landing. No sprite — no crash.
     for (const s of this.astralStrikes) {
       const t = s.life / ASTRAL_STAR_LIFE; // 1 -> 0 (always > 0 here; culled in update)
-      const R = 16 + (1 - t) * 10;         // expands as it fades
+      // Cast beam: Owl -> impact (only if we recorded an origin).
+      if (s.ox != null) {
+        ctx.save();
+        ctx.globalAlpha = t * 0.7;
+        ctx.shadowColor = "#cdb4ff";
+        ctx.shadowBlur = 8;
+        ctx.lineCap = "round";
+        ctx.strokeStyle = "#cdb4ff";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(s.ox, s.oy); ctx.lineTo(s.x, s.y);
+        ctx.stroke();
+        ctx.restore();
+      }
+      const R = 18 + (1 - t) * 12; // expands as it fades
       ctx.save();
       ctx.translate(s.x, s.y);
       ctx.shadowColor = "#cdb4ff";
@@ -805,7 +862,7 @@ export class Familiar {
       ctx.stroke();
       ctx.globalAlpha = t;
       ctx.fillStyle = "#fff6da";
-      ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
 
@@ -833,6 +890,7 @@ export class Familiar {
     this.frenzyBehavior = "default"; // game.startGame overrides from the equipped familiar
     this.astralTimer = 0;
     this.astralStrikes = [];
+    this.astralMark = null;
     this.attackStyle = "rune";      // game.startGame overrides from the equipped collar
     this.spritePrefix = "familiar";
     this.beams = [];
