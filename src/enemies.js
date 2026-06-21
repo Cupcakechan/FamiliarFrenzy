@@ -1944,7 +1944,17 @@ const SPAWN_DELAY_PER_TIER = 0.05; // spawn interval shaved per tier...
 // per-wave/per-tier scaling (the FASTER escalation comes from the every-5 tier
 // cadence — see reset()/endlessTier()). The stacking curses carry the rest.
 const CURSED_SPEED_MULT = 1.12;    // enemies a touch faster from the start
-const CURSED_HP_MULT = 1.25;       // and noticeably tankier
+const CURSED_HP_MULT = 1.12;       // a little tankier (trimmed from 1.25): the 2x-faster tier
+                                   //   cadence + per-type healthMults still make Cursed clearly
+                                   //   tankier than normal — the DANGER now comes from offense,
+                                   //   not from a damage-sponge baseline.
+const CURSED_DAMAGE_MULT = 1.20;   // Cursed enemies HIT HARDER from wave 1 (previously the game
+                                   //   had NO damage scaling at all). A flat bump to CONTACT
+                                   //   damage so getting surrounded actually hurts (the wisp
+                                   //   swarm's 8 -> 10). Specials keep their tuned damage (mage
+                                   //   blast / goblin stomp / gecko bolt / pronggeist eruption
+                                   //   live in their own fields), and the Brittle curse already
+                                   //   amplifies ALL incoming damage x1.5 later.
 const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 
 // DEBUG: when true, EVERY wave spawns the boss (handy for testing boss art /
@@ -3342,6 +3352,10 @@ export class WaveManager {
     e.speed = baseSpeed * speedMult * e.def.speedMult * (this.curseSpeedMult || 1);
     e.maxHealth = Math.max(1, Math.round(baseHealth * hpMult * e.def.healthMult));
     e.health = e.maxHealth;
+    // Offensive pressure: in Cursed, the swarm's CONTACT damage hits harder from the
+    // start. Scales each type by its OWN base (a Goblin still dwarfs a wisp), and is
+    // the only damage scaling in the game — normal mode keeps flat def damage.
+    if (this.cursed) e.damage = Math.max(1, Math.round(e.def.damage * CURSED_DAMAGE_MULT));
     return e;
   }
 }

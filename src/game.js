@@ -91,8 +91,8 @@ const STATE = {
 
 const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings"];
 const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Curses", "Back"]; // Arcane Archive hub
-const MODE_SELECT_ITEMS = ["Tutorial Mode", "Endless Mode", "Cursed Mode", "How to Play", "Back"];
-const VICTORY_ITEMS = ["Continue to Endless Frenzy", "Replay Tutorial", "Main Menu"];
+const MODE_SELECT_ITEMS = ["Tutorial Mode", "Casual Mode", "Cursed Mode", "How to Play", "Back"];
+const VICTORY_ITEMS = ["Continue to Casual Frenzy", "Replay Tutorial", "Main Menu"];
 const PAUSE_ITEMS = ["Resume", "Arcane Archive", "Settings", "Main Menu"];
 const CONFIRM_ITEMS = ["Yes", "No"];
 
@@ -645,7 +645,7 @@ export class Game {
         if (m.clicked >= 0) this.menuIndex = m.clicked;
         if (this.confirmPressed() || m.clicked >= 0) {
           if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Mode
-          else if (this.menuIndex === 1) this.startGame("endless");    // Endless Mode
+          else if (this.menuIndex === 1) this.startGame("endless");    // Casual Mode
           else if (this.menuIndex === 2) this.startGame("cursed");     // Cursed Mode
           else if (this.menuIndex === 3) { this.state = STATE.HOW_TO_PLAY; } // How to Play (returns to Mode Select)
           else if (this.menuIndex === 4) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
@@ -1984,7 +1984,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.ENDLESS_PLACEHOLDER) {
-      drawPlaceholder(ctx, this.width, this.height, "Endless Mode");
+      drawPlaceholder(ctx, this.width, this.height, "Casual Mode");
       return;
     }
     if (this.state === STATE.HIGHSCORES_PLACEHOLDER) {
@@ -2708,7 +2708,7 @@ export class Game {
       ? "ACTIVE"
       : `${Math.round((this.frenzyCharge / FRENZY_MOTES) * 100)}%`;
     return {
-      mode: this.gameMode === "endless" ? "Endless" : this.gameMode === "cursed" ? "Cursed" : "Tutorial",
+      mode: this.gameMode === "endless" ? "Casual" : this.gameMode === "cursed" ? "Cursed" : "Tutorial",
       wave: this.waveManager.displayWave,
       level: this.level,
       score: this.score,

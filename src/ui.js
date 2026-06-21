@@ -264,22 +264,22 @@ function drawCenteredBack(ctx, w, cy, active) {
   return { x: w / 2 - 90, y: cy - 20, w: 180, h: 40, index: 0 };
 }
 
-// --- HIGH SCORES (Endless + Cursed tabs) ---------------------------------
+// --- HIGH SCORES (Casual + Cursed tabs) ---------------------------------
 // boards = { endless: [...], cursed: [...] }, each an array of { name, score, wave,
 // date } already sorted best-first. activeTab = "endless" | "cursed". tabHover = the
 // tab the mouse is over, or null. backHover = Back button hovered. Returns clickable
-// zones: index 0 = Back, index 1 = Endless tab, index 2 = Cursed tab.
+// zones: index 0 = Back, index 1 = Casual tab, index 2 = Cursed tab.
 export function drawHighScores(ctx, w, h, boards, activeTab = "endless", tabHover = null, backHover = false) {
   ctx.fillStyle = MENU_BG;
   ctx.fillRect(0, 0, w, h);
 
   text(ctx, "High Scores", w / 2, 58, { size: 42, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
-  // Tabs: Endless | Cursed. Click a tab or press Left/Right (A/D) to switch; the
+  // Tabs: Casual | Cursed. Click a tab or press Left/Right (A/D) to switch; the
   // active board fills the table below. Underline marks the active tab.
   const tabY = 96;
   const tabDefs = [
-    { id: "endless", label: "Endless", cx: w / 2 - 78, index: 1 },
+    { id: "endless", label: "Casual", cx: w / 2 - 78, index: 1 },
     { id: "cursed",  label: "Cursed",  cx: w / 2 + 78, index: 2 },
   ];
   const tabZones = [];
@@ -306,7 +306,7 @@ export function drawHighScores(ctx, w, h, boards, activeTab = "endless", tabHove
 
   // Friendly empty state when the active board has no runs yet.
   if (entries.length === 0) {
-    const modeLabel = activeTab === "cursed" ? "Cursed" : "Endless";
+    const modeLabel = activeTab === "cursed" ? "Cursed" : "Casual";
     text(ctx, "No runs yet.", w / 2, h / 2 - 12, { size: 24, color: CREAM, weight: "500" });
     text(ctx, `Survive ${modeLabel} Mode to record a score.`, w / 2, h / 2 + 22, { size: 16, color: DIM, weight: "500" });
     return { zones: [drawCenteredBack(ctx, w, h - 40, backHover), ...tabZones] };
@@ -1541,7 +1541,7 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
 
 // --- GAME OVER ------------------------------------------------------------
 // --- NAME ENTRY (arcade initials) ------------------------------------------
-// Shown when an Endless run makes the top 10, before the Game Over screen.
+// Shown when a Casual run makes the top 10, before the Game Over screen.
 // info = { score, wave, letters: ["A","A","A"], slot: 0..2 }.
 const INITIAL_BOX = 64;   // size of each letter box
 const INITIAL_GAP = 18;   // gap between boxes
@@ -1670,7 +1670,7 @@ export function drawGameOver(ctx, w, h, info) {
       ctx.globalAlpha = 1;
     }
 
-    text(ctx, "ENDLESS RUN OVER", w / 2, titleY, { size: 44, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
+    text(ctx, "CASUAL RUN OVER", w / 2, titleY, { size: 44, color: RED, font: TITLE_FONT, maxWidth: w - 100 });
 
     // Run stats block.
     text(ctx, `Wave reached: ${info.wave}      Level: ${info.level}`, w / 2, h / 2 - 14, { size: 22, color: GOLD });
@@ -1687,7 +1687,7 @@ export function drawGameOver(ctx, w, h, info) {
 
     ctx.globalAlpha = pulse;
     const py = h / 2 + 124;
-    text(ctx, "R: new endless run", w / 2 - 130, py, { size: 18, color: PURPLE });
+    text(ctx, "R: new casual run", w / 2 - 130, py, { size: 18, color: PURPLE });
     text(ctx, "Esc: main menu",     w / 2 + 130, py, { size: 18, color: PURPLE });
     ctx.globalAlpha = 1;
     // Two click targets: index 0 = retry/new run (R), index 1 = main menu (Esc).
