@@ -1741,24 +1741,24 @@ export function drawCloset(ctx, w, h, data) {
   text(ctx, "WARDROBE", w / 2, 54, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   crystalLine(ctx, w / 2, 96, `Spirit Crystals: ${data.crystals}`, { size: 17, color: CREAM });
 
-  // Tab toggle (Outfits | Collars); A/D switches (hint in the footer).
-  const tabLabels = ["Outfits", "Collars"];
-  const tabY = 136, tabGap = 150;
+  // Tabs (Outfits | Familiars | Collars); A/D switches (hint in the footer).
+  const tabLabels = ["Outfits", "Familiars", "Collars"];
+  const tabY = 136, tabGap = 146, tabW = 124;
   const tabs = []; // clickable tab rects (mouse) — one per tab regardless of active state
   tabLabels.forEach((label, ti) => {
-    const tx = w / 2 + (ti === 0 ? -tabGap / 2 : tabGap / 2);
+    const tx = w / 2 + (ti - 1) * tabGap; // three across, centered (left / center / right)
     const active = ti === data.tab;
-    tabs.push({ x: tx - 62, y: tabY - 16, w: 124, h: 32, tab: ti });
+    tabs.push({ x: tx - tabW / 2, y: tabY - 16, w: tabW, h: 32, tab: ti });
     if (active) {
       ctx.fillStyle = "rgba(244, 213, 141, 0.16)";
-      roundRect(ctx, tx - 62, tabY - 16, 124, 32, 8); ctx.fill();
+      roundRect(ctx, tx - tabW / 2, tabY - 16, tabW, 32, 8); ctx.fill();
       ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
-      roundRect(ctx, tx - 62, tabY - 16, 124, 32, 8); ctx.stroke();
+      roundRect(ctx, tx - tabW / 2, tabY - 16, tabW, 32, 8); ctx.stroke();
     }
     text(ctx, label, tx, tabY, { size: 17, color: active ? GOLD : DIM, weight: "700" });
   });
 
-  const rowsData = data.tab === 0 ? data.outfits : data.collars;
+  const rowsData = data.tab === 0 ? data.outfits : data.tab === 1 ? data.familiars : data.collars;
   const startY = 190;
   const rowH = 60;
   const boxW = 560, boxH = 52;

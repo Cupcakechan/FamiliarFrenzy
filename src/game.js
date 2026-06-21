@@ -216,6 +216,20 @@ const COLLARS = {
 };
 const COLLAR_ORDER = ["default", "moonbeam", "alchemist"];
 
+// --- Familiars (Closet) ---------------------------------------------------
+// A familiar ASPECT sets the creature sprite, a minor passive, and the Spirit
+// Imbued behavior — independent of the collar (which still drives the normal
+// attack). `spritePrefix` is the portrait + run sprite; the Cat (default) is a
+// special case: at run start it KEEPS the equipped collar's recolor (so collar
+// recolors are untouched), while any other aspect owns its own sprite regardless
+// of collar. `frenzy` is the Spirit Imbued behavior id read by familiar.js;
+// `frenzyMoteMult` is the Star-Eyed Focus mote bonus (applied in collectPickup).
+const FAMILIARS = {
+  default: { name: "Cat Familiar", cost: 0, swatch: "#1c1a26", spritePrefix: "familiar",     frenzy: "default", frenzyMoteMult: 1,    desc: "Classic familiar companion" },
+  owl:     { name: "Owl Familiar", cost: 6, swatch: "#3a2f5e", spritePrefix: "familiar_owl", frenzy: "astral",  frenzyMoteMult: 1.05, desc: "Star-Eyed Focus + Astral Judgment" },
+};
+const FAMILIAR_ORDER = ["default", "owl"];
+
 // --- Bestiary -------------------------------------------------------------
 // Creature entries for the Bestiary screen. `id` is the seen-tracking key
 // (persisted in ff_seenEnemies); `match` decides what marks it encountered:
@@ -395,6 +409,7 @@ export class Game {
     // Upgrade-driven values (mutated by apply()); reset each run.
     this.magnetRange = BASE_MAGNET_RANGE; // pickup attraction radius (innate + Magnet Charm)
     this.frenzyPerMote = 1;   // Frenzy Focus: charge added per mote
+    this.familiarMoteMult = 1; // Star-Eyed Focus (Owl): per-mote frenzy bonus, set per run
     this.luckLevel = 0;       // Lucky Paws: drop-chance level
 
     // Evolution (one-shot).
@@ -441,7 +456,7 @@ export class Game {
     this.wardrobe = this.loadWardrobe();
     this.crystalsThisRun = 0;
     this.closetIndex = 0;
-    this.closetTab = 0; // 0 = Outfits, 1 = Collars
+    this.closetTab = 0; // 0 = Outfits, 1 = Familiars, 2 = Collars
     // Fractional carries so the Blue/Gold outfit %-buffs stay accurate on small
     // per-pickup amounts (without these, +5% on a value of 10 rounds badly).
     this._scoreCarry = 0;
@@ -463,6 +478,14 @@ export class Game {
     this.familiar.attackStyle = collar.attackStyle;
     this.familiar.spritePrefix = collar.spritePrefix;
     this.familiar.attackCooldown = collar.cooldown;
+    // Equipped familiar aspect (independent of collar): the Cat (default) KEEPS the
+    // collar recolor set just above; any other aspect owns its own sprite regardless
+    // of collar. The aspect also sets the Spirit Imbued behavior and the Star-Eyed
+    // Focus mote bonus (read in collectPickup). Missing entry -> Cat.
+    const aspect = FAMILIARS[this.wardrobe.familiarEquipped] || FAMILIARS.default;
+    if (this.wardrobe.familiarEquipped !== "default") this.familiar.spritePrefix = aspect.spritePrefix;
+    this.familiar.frenzyBehavior = aspect.frenzy || "default";
+    this.familiarMoteMult = aspect.frenzyMoteMult || 1;
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
@@ -492,6 +515,7 @@ export class Game {
 
     this.magnetRange = BASE_MAGNET_RANGE;
     this.frenzyPerMote = 1;
+    this.familiarMoteMult = 1;
     this.luckLevel = 0;
     this.phantomPounceUnlocked = false;
     this.spiritBondUnlocked = false;
@@ -1899,7 +1923,10 @@ export class Game {
     // Frenzy Focus raises how much each mote adds (this.frenzyPerMote).
     if (this.frenzyTimer <= 0 && this.frenzyCharge < FRENZY_MOTES) {
       // Spirit Drought scales each mote's contribution (1 = unaffected); the XP above is untouched.
-      this.frenzyCharge = Math.min(FRENZY_MOTES, this.frenzyCharge + this.frenzyPerMote * curseValue(this.activeCurses, "frenzyMoteMult", 1));
+      // Star-Eyed Focus (Owl) multiplies the per-mote charge too — frenzy meter ONLY
+      // (XP/score/crystals are separate lines). Stacks with Spirit Drought's mult, so
+      // Owl + Drought = x0.5 x 1.05 = x0.525 (mitigates, never replaces the curse).
+      this.frenzyCharge = Math.min(FRENZY_MOTES, this.frenzyCharge + this.frenzyPerMote * curseValue(this.activeCurses, "frenzyMoteMult", 1) * (this.familiarMoteMult || 1));
     }
 
     while (this.xp >= this.xpToNext) {
@@ -2438,7 +2465,7 @@ export class Game {
   // (the Closet screen) needs no migration; Phase 1 only touches crystals +
   // firstBossClaimed. Any missing/corrupt field falls back to its default.
   loadWardrobe() {
-    const def = { crystals: 0, owned: ["default"], equipped: "default", collarsOwned: ["default"], collarEquipped: "default", firstBossClaimed: false };
+    const def = { crystals: 0, owned: ["default"], equipped: "default", collarsOwned: ["default"], collarEquipped: "default", familiarsOwned: ["default"], familiarEquipped: "default", firstBossClaimed: false };
     try {
       const raw = localStorage.getItem("ff_wardrobe");
       if (!raw) return def;
@@ -2450,6 +2477,10 @@ export class Game {
         equipped: typeof p.equipped === "string" ? p.equipped : "default",
         collarsOwned: Array.isArray(p.collarsOwned) && p.collarsOwned.includes("default") ? p.collarsOwned : ["default"],
         collarEquipped: typeof p.collarEquipped === "string" ? p.collarEquipped : "default",
+        // New in the Familiars pass — old saves lack these, so default to Cat
+        // owned + equipped without touching crystals/outfits/collars.
+        familiarsOwned: Array.isArray(p.familiarsOwned) && p.familiarsOwned.includes("default") ? p.familiarsOwned : ["default"],
+        familiarEquipped: typeof p.familiarEquipped === "string" ? p.familiarEquipped : "default",
         firstBossClaimed: p.firstBossClaimed === true,
       };
     } catch (e) {
@@ -2534,9 +2565,10 @@ export class Game {
 
   // Active tab's order/table/owned-array/equipped-key in one place.
   closetTabRefs() {
-    return this.closetTab === 0
-      ? { order: OUTFIT_ORDER, table: OUTFITS, owned: this.wardrobe.owned, equippedKey: "equipped" }
-      : { order: COLLAR_ORDER, table: COLLARS, owned: this.wardrobe.collarsOwned, equippedKey: "collarEquipped" };
+    // Tab order: 0 = Outfits, 1 = Familiars, 2 = Collars.
+    if (this.closetTab === 0) return { order: OUTFIT_ORDER, table: OUTFITS, owned: this.wardrobe.owned, equippedKey: "equipped" };
+    if (this.closetTab === 1) return { order: FAMILIAR_ORDER, table: FAMILIARS, owned: this.wardrobe.familiarsOwned, equippedKey: "familiarEquipped" };
+    return { order: COLLAR_ORDER, table: COLLARS, owned: this.wardrobe.collarsOwned, equippedKey: "collarEquipped" };
   }
 
   updateCloset() {
@@ -2577,10 +2609,15 @@ export class Game {
     }
 
     // --- Keyboard (primary; unchanged) ---
-    // Left/Right toggles the tab (only two), resetting the row cursor.
-    if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA") ||
-        Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
-      this.closetTab = this.closetTab === 0 ? 1 : 0;
+    // Left/Right cycle the three tabs (Outfits | Familiars | Collars), resetting
+    // the row cursor. Left goes back, Right goes forward, both wrap.
+    if (Input.wasPressed("ArrowLeft") || Input.wasPressed("KeyA")) {
+      this.closetTab = (this.closetTab + 2) % 3;
+      this.closetIndex = 0;
+      return;
+    }
+    if (Input.wasPressed("ArrowRight") || Input.wasPressed("KeyD")) {
+      this.closetTab = (this.closetTab + 1) % 3;
       this.closetIndex = 0;
       return;
     }
@@ -2642,6 +2679,7 @@ export class Game {
       tab: this.closetTab,
       index: this.closetIndex,
       outfits: rows(OUTFIT_ORDER, OUTFITS, this.wardrobe.owned, this.wardrobe.equipped),
+      familiars: rows(FAMILIAR_ORDER, FAMILIARS, this.wardrobe.familiarsOwned, this.wardrobe.familiarEquipped),
       collars: rows(COLLAR_ORDER, COLLARS, this.wardrobe.collarsOwned, this.wardrobe.collarEquipped),
     };
   }

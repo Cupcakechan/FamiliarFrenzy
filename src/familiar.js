@@ -34,6 +34,27 @@ const FOLLOW_OFFSET = 40;
 // During Familiar Frenzy the cat fires this fraction of its normal cooldown.
 const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 
+// --- Astral Judgment (Owl familiar's Spirit Imbued behavior) -------------------
+// While Spirit Imbued is active AND the equipped familiar is the Owl, the Owl
+// periodically smites the single highest-priority target (boss > caster > ranged >
+// bruiser > nearest) for a flat, capped amount — repeated over the Spirit Imbued
+// window rather than a melt. It runs ALONGSIDE the normal collar attack (which keeps
+// firing at nearest) and any Spirit Bond link; it never changes the collar attack.
+const ASTRAL_STRIKE_INTERVAL = 0.7; // seconds between strikes
+const ASTRAL_STRIKE_DAMAGE = 14;    // flat damage per strike (one-shots most trash; chips bosses)
+const ASTRAL_STAR_LIFE = 0.35;      // seconds the code-drawn star lingers/fades
+
+// Threat tier for Astral Judgment's priority pick. Higher = struck first. Reads
+// only existing enemy fields (isBoss + the def flags), so no enemy code changes.
+function threatScore(t) {
+  if (t.isBoss) return 5;                                // bosses first, always
+  const def = t.def;
+  if (def && (def.caster || def.lineCaster)) return 4;   // ground/line zoners (Bone Mage, Pronggeist)
+  if (def && def.ranged) return 3;                       // skirmishers (Gutter Gecko)
+  if (def && def.bruiser) return 2;                      // committed melee (Goblin)
+  return 1;                                              // wisps + everything else (nearest tiebreak)
+}
+
 // --- Spirit Volley evolution (spread-shot) -------------------------------
 // Once unlocked (familiar.spreadShot = true), every attack fires a center bolt
 // PLUS two angled side bolts. The center keeps full familiar damage; the side
@@ -102,6 +123,21 @@ const IMPRINT_ALPHA_MAX = 0.40; // opacity of a fresh imprint
 // fall back to the default cat per-frame at draw time — never a crash.
 const FAMILIAR_SKINS = ["familiar", "familiar_moonbeam", "familiar_alchemist"];
 for (const prefix of FAMILIAR_SKINS) {
+  for (const anim of ["idle", "attack"]) {
+    for (const d of DIRS) {
+      const key = `${prefix}_${anim}_${d}`;
+      loadImage(key, `assets/sprites/familiar/${key}.png`);
+    }
+  }
+}
+
+// Alternate familiar ASPECTS (Wardrobe "Familiars" tab) — each a full sprite set
+// under its own prefix, same anim structure as the cat (idle 4f, attack 6f). The
+// equipped aspect's prefix replaces the cat's at run start (see game.startGame), so
+// an aspect needs only ONE set regardless of collar. Owl is the first; add new
+// aspects here and to FAMILIARS in game.js. Missing files fall back to the cat.
+const FAMILIAR_ASPECTS = ["familiar_owl"];
+for (const prefix of FAMILIAR_ASPECTS) {
   for (const anim of ["idle", "attack"]) {
     for (const d of DIRS) {
       const key = `${prefix}_${anim}_${d}`;
@@ -356,6 +392,12 @@ export class Familiar {
     this.bolts = [];
     this.frenzyActive = false;
 
+    // Spirit Imbued behavior, set by game.startGame from the equipped familiar:
+    // "default" (Cat: faster firing only) | "astral" (Owl: Astral Judgment strikes).
+    this.frenzyBehavior = "default";
+    this.astralTimer = 0;     // counts down to the next Astral Judgment strike
+    this.astralStrikes = [];  // brief code-drawn star flashes { x, y, life }
+
     // Collar attack style + skin (set by game.startGame from the equipped collar).
     this.attackStyle = "rune";      // "rune" | "moonbeam" | "alchemist"
     this.spritePrefix = "familiar"; // collar recolor prefix (e.g. familiar_moonbeam)
@@ -401,6 +443,30 @@ export class Familiar {
         this.startAttackAnim();
         playFamiliarProjectileSfx(); // fire event only (throttled, autoplay-gated)
       }
+    }
+
+    // --- Astral Judgment (Owl): periodic precision strike during Spirit Imbued ---
+    // Runs ALONGSIDE the normal attack above (which keeps firing at nearest) and any
+    // Spirit Bond link — it never changes the collar attack. Each tick smites the
+    // single highest-priority target (boss > caster > ranged > bruiser > nearest) for
+    // a flat capped amount, with a code-drawn star. Timer resets whether or not a
+    // target was in reach, so strikes stay evenly paced.
+    if (frenzyActive && this.frenzyBehavior === "astral") {
+      this.astralTimer -= dt;
+      if (this.astralTimer <= 0) {
+        const mark = this.findPriorityTarget(targets);
+        if (mark) {
+          mark.takeDamage(ASTRAL_STRIKE_DAMAGE);
+          this.astralStrikes.push({ x: mark.x, y: mark.y, life: ASTRAL_STAR_LIFE });
+        }
+        this.astralTimer = ASTRAL_STRIKE_INTERVAL;
+      }
+    }
+    // Age the star flashes regardless of behavior so a strike landed on the final
+    // Spirit Imbued frame still finishes fading out.
+    if (this.astralStrikes.length) {
+      for (const s of this.astralStrikes) s.life -= dt;
+      this.astralStrikes = this.astralStrikes.filter((s) => s.life > 0);
     }
 
     // While idle (not mid-attack), face the way it's drifting.
@@ -619,6 +685,24 @@ export class Familiar {
     return nearest;
   }
 
+  // Astral Judgment's target picker: the single most dangerous in-reach enemy,
+  // ranked by threat tier (boss > caster/zoner > ranged > bruiser > everything
+  // else) with nearest as the tiebreak. Reads existing def flags + isBoss only —
+  // no enemy/boss changes. Honors attackRange so it strikes what the Owl can reach.
+  findPriorityTarget(targets) {
+    let best = null, bestScore = -1, bestDist = Infinity;
+    for (const t of targets) {
+      if (t.dead || t.untargetable) continue;
+      const d = distance(this.x, this.y, t.x, t.y);
+      if (d > this.attackRange) continue;
+      const score = threatScore(t);
+      if (score > bestScore || (score === bestScore && d < bestDist)) {
+        best = t; bestScore = score; bestDist = d;
+      }
+    }
+    return best;
+  }
+
   // Draw one cat (sprite or fallback) at a position + facing + frame, at a
   // given opacity. Used for BOTH the real cat (alpha 1) and the ghost-trail
   // afterimages (low alpha). Wrapped in save/restore so globalAlpha + shadow
@@ -695,6 +779,36 @@ export class Familiar {
       ctx.restore();
     }
 
+    // Astral Judgment stars: code-drawn gold/violet sparkles at struck enemies that
+    // expand slightly and fade. Drawn here (after enemies, before the cat) so they
+    // read as the Owl's strike landing on the target. No sprite — never a crash.
+    for (const s of this.astralStrikes) {
+      const t = s.life / ASTRAL_STAR_LIFE; // 1 -> 0 (always > 0 here; culled in update)
+      const R = 16 + (1 - t) * 10;         // expands as it fades
+      ctx.save();
+      ctx.translate(s.x, s.y);
+      ctx.shadowColor = "#cdb4ff";
+      ctx.shadowBlur = 14;
+      ctx.lineCap = "round";
+      ctx.strokeStyle = "#f4d58d";
+      ctx.lineWidth = 2;
+      ctx.globalAlpha = t;
+      ctx.beginPath();
+      ctx.moveTo(0, -R); ctx.lineTo(0, R);
+      ctx.moveTo(-R, 0); ctx.lineTo(R, 0);
+      ctx.stroke();
+      const r2 = R * 0.55;
+      ctx.globalAlpha = t * 0.6;
+      ctx.beginPath();
+      ctx.moveTo(-r2, -r2); ctx.lineTo(r2, r2);
+      ctx.moveTo(-r2, r2); ctx.lineTo(r2, -r2);
+      ctx.stroke();
+      ctx.globalAlpha = t;
+      ctx.fillStyle = "#fff6da";
+      ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
     // The real cat on top, full opacity.
     this.drawCat(ctx, this.x, this.y, this.facing, this.animState, this.animFrame, 1);
   }
@@ -716,6 +830,9 @@ export class Familiar {
     this.evolved = false;
     this.spreadShot = false;
     this.frenzyActive = false;
+    this.frenzyBehavior = "default"; // game.startGame overrides from the equipped familiar
+    this.astralTimer = 0;
+    this.astralStrikes = [];
     this.attackStyle = "rune";      // game.startGame overrides from the equipped collar
     this.spritePrefix = "familiar";
     this.beams = [];
