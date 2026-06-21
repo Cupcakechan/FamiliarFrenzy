@@ -219,11 +219,12 @@ const COLLAR_ORDER = ["default", "moonbeam", "alchemist"];
 // --- Familiars (Closet) ---------------------------------------------------
 // A familiar ASPECT sets the creature sprite, a minor passive, and the Spirit
 // Imbued behavior — independent of the collar (which still drives the normal
-// attack). `spritePrefix` is the portrait + run sprite; the Cat (default) is a
-// special case: at run start it KEEPS the equipped collar's recolor (so collar
-// recolors are untouched), while any other aspect owns its own sprite regardless
-// of collar. `frenzy` is the Spirit Imbued behavior id read by familiar.js;
-// `frenzyMoteMult` is the Star-Eyed Focus mote bonus (applied in collectPickup).
+// attack). `spritePrefix` is the aspect's BASE sprite (used for the Wardrobe
+// portrait and the Spirit/default collar). The Cat (default) keeps the equipped
+// collar's own recolor; any other aspect recolors per collar exactly like the cat
+// (`<spritePrefix>_<collarId>` for Moon Beam / Alchemist, the bare prefix for
+// Spirit) — see startGame. `frenzy` is the Spirit Imbued behavior id read by
+// familiar.js; `frenzyMoteMult` is the Star-Eyed Focus mote bonus (collectPickup).
 const FAMILIARS = {
   default: { name: "Cat Familiar", cost: 0, swatch: "#1c1a26", spritePrefix: "familiar",     frenzy: "default", frenzyMoteMult: 1,    desc: "Classic familiar companion" },
   owl:     { name: "Owl Familiar", cost: 6, swatch: "#3a2f5e", spritePrefix: "familiar_owl", frenzy: "astral",  frenzyMoteMult: 1.05, desc: "Star-Eyed Focus + Astral Judgment" },
@@ -479,11 +480,16 @@ export class Game {
     this.familiar.spritePrefix = collar.spritePrefix;
     this.familiar.attackCooldown = collar.cooldown;
     // Equipped familiar aspect (independent of collar): the Cat (default) KEEPS the
-    // collar recolor set just above; any other aspect owns its own sprite regardless
-    // of collar. The aspect also sets the Spirit Imbued behavior and the Star-Eyed
-    // Focus mote bonus (read in collectPickup). Missing entry -> Cat.
+    // collar recolor set just above; any other aspect owns its own sprite. Aspects
+    // recolor per collar exactly like the cat — the bare aspect prefix is the Spirit/
+    // default look, `<aspect>_<collarId>` is the recolor for the other collars.
+    // spritePrefixBase lets a missing recolor frame fall back to the base aspect.
     const aspect = FAMILIARS[this.wardrobe.familiarEquipped] || FAMILIARS.default;
-    if (this.wardrobe.familiarEquipped !== "default") this.familiar.spritePrefix = aspect.spritePrefix;
+    this.familiar.spritePrefixBase = aspect.spritePrefix;
+    if (this.wardrobe.familiarEquipped !== "default") {
+      const collarId = this.wardrobe.collarEquipped;
+      this.familiar.spritePrefix = aspect.spritePrefix + (collarId && collarId !== "default" ? "_" + collarId : "");
+    }
     this.familiar.frenzyBehavior = aspect.frenzy || "default";
     this.familiarMoteMult = aspect.frenzyMoteMult || 1;
     this.enemies = [];

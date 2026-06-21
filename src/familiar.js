@@ -41,8 +41,8 @@ const FRENZY_COOLDOWN_SCALE = 0.35; // ~3x faster
 // window rather than a melt. It runs ALONGSIDE the normal collar attack (which keeps
 // firing at nearest) and any Spirit Bond link; it never changes the collar attack.
 const ASTRAL_STRIKE_INTERVAL = 0.9; // seconds between strikes (slower = more deliberate, less boss-melt)
-const ASTRAL_STRIKE_DAMAGE = 6;     // flat CHIP per strike — the Owl's value is its targeting + passive,
-                                    //   not raw DPS (~7 strikes x 6 = ~42 over a 6s Spirit Imbued, so it
+const ASTRAL_STRIKE_DAMAGE = 5;     // flat CHIP per strike — the Owl's value is its targeting + passive,
+                                    //   not raw DPS (~7 strikes x 5 = ~35 over a 6s Spirit Imbued, so it
                                     //   chips a boss rather than soloing it, and won't one-shot mid-tier trash)
 const ASTRAL_STAR_LIFE = 0.45;      // seconds the code-drawn star lingers/fades (a touch longer = more readable)
 
@@ -133,12 +133,13 @@ for (const prefix of FAMILIAR_SKINS) {
   }
 }
 
-// Alternate familiar ASPECTS (Wardrobe "Familiars" tab) — each a full sprite set
-// under its own prefix, same anim structure as the cat (idle 4f, attack 6f). The
-// equipped aspect's prefix replaces the cat's at run start (see game.startGame), so
-// an aspect needs only ONE set regardless of collar. Owl is the first; add new
-// aspects here and to FAMILIARS in game.js. Missing files fall back to the cat.
-const FAMILIAR_ASPECTS = ["familiar_owl"];
+// Alternate familiar ASPECTS (Wardrobe "Familiars" tab) — each a full sprite set,
+// same anim structure as the cat (idle 4f, attack 6f). At run start the equipped
+// aspect's prefix replaces the cat's; like the cat, an aspect can ALSO carry per-
+// collar recolors (`<aspect>_<collarId>`), with the bare aspect prefix used for the
+// Spirit/default collar. List every prefix that has art here. Owl ships with all
+// three; missing files fall back to the base aspect, then the cat (see drawCat).
+const FAMILIAR_ASPECTS = ["familiar_owl", "familiar_owl_moonbeam", "familiar_owl_alchemist"];
 for (const prefix of FAMILIAR_ASPECTS) {
   for (const anim of ["idle", "attack"]) {
     for (const d of DIRS) {
@@ -404,6 +405,7 @@ export class Familiar {
     // Collar attack style + skin (set by game.startGame from the equipped collar).
     this.attackStyle = "rune";      // "rune" | "moonbeam" | "alchemist"
     this.spritePrefix = "familiar"; // collar recolor prefix (e.g. familiar_moonbeam)
+    this.spritePrefixBase = "familiar"; // aspect base (e.g. familiar_owl) — draw fallback before the cat
     this.beams = [];        // Moon Beam bursts (short-lived)
     this.flaskShots = [];   // Alchemist flasks in flight
     this.puddles = [];      // Alchemist ground DoT zones
@@ -717,10 +719,13 @@ export class Familiar {
   // afterimages (low alpha). Wrapped in save/restore so globalAlpha + shadow
   // never leak out and dim anything else on screen.
   drawCat(ctx, x, y, facing, animState, animFrame, alpha) {
-    // Prefer the equipped collar's recolor; fall back to the default cat per
-    // frame (so a partial recolor set never breaks), then the placeholder.
+    // Prefer the full prefix (aspect + collar recolor); per frame, fall back to the
+    // base aspect (e.g. familiar_owl), then the default cat, then the placeholder —
+    // so a missing recolor frame degrades to the base owl, never flashes a cat.
     const prefix = this.spritePrefix || "familiar";
+    const base = this.spritePrefixBase || "familiar";
     const img = getImage(`${prefix}_${animState}_${facing}`)
+             || (base !== prefix ? getImage(`${base}_${animState}_${facing}`) : null)
              || getImage(`familiar_${animState}_${facing}`);
 
     ctx.save();
@@ -893,6 +898,7 @@ export class Familiar {
     this.astralMark = null;
     this.attackStyle = "rune";      // game.startGame overrides from the equipped collar
     this.spritePrefix = "familiar";
+    this.spritePrefixBase = "familiar";
     this.beams = [];
     this.flaskShots = [];
     this.puddles = [];
