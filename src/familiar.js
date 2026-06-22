@@ -57,6 +57,24 @@ function threatScore(t) {
   return 1;                                              // wisps + everything else (nearest tiebreak)
 }
 
+// --- Foxfire Chain (Fox familiar's Spirit Imbued behavior) ---------------------
+// While Spirit Imbued + Fox: periodic VOLLEYS of foxfire wisps. Each wisp homes to
+// an enemy, deals a small hit, then chains to the nearest enemy it hasn't hit yet,
+// up to a bounce cap. Built for GROUPS (it spreads across a crowd) and deliberately
+// weak vs a lone boss: a per-volley boss-hit cap stops it melting one target. Runs
+// ALONGSIDE the collar attack — never replaces it. The crowd-clear counterpart to
+// the Owl's single-target Astral Judgment.
+const FOXFIRE_INTERVAL = 1.2;           // seconds between volleys
+const FOXFIRE_WISPS = 3;                // wisps launched per volley
+const FOXFIRE_BOUNCES = 3;              // hits per wisp (initial target + chains)
+const FOXFIRE_DAMAGE = 5;               // damage per hit (chips a crowd; won't one-shot mid-tier)
+const FOXFIRE_CHAIN_RANGE = 140;        // px a wisp will reach to find its next link
+const FOXFIRE_BOSS_HITS_PER_VOLLEY = 1; // hard cap on boss hits per volley (the anti-melt lever:
+                                        //   ~5 volleys x 1 x 5 = ~25 over a 6s Spirit Imbued, below
+                                        //   the Owl's ~35 — Fox is the crowd specialist, not a boss-killer)
+const FOXFIRE_WISP_SPEED = 460;         // px/s a wisp travels between links
+const FOXFIRE_HIT_LIFE = 0.28;          // seconds a chain-hit flash lingers/fades
+
 // --- Spirit Volley evolution (spread-shot) -------------------------------
 // Once unlocked (familiar.spreadShot = true), every attack fires a center bolt
 // PLUS two angled side bolts. The center keeps full familiar damage; the side
@@ -139,7 +157,7 @@ for (const prefix of FAMILIAR_SKINS) {
 // collar recolors (`<aspect>_<collarId>`), with the bare aspect prefix used for the
 // Spirit/default collar. List every prefix that has art here. Owl ships with all
 // three; missing files fall back to the base aspect, then the cat (see drawCat).
-const FAMILIAR_ASPECTS = ["familiar_owl", "familiar_owl_moonbeam", "familiar_owl_alchemist"];
+const FAMILIAR_ASPECTS = ["familiar_owl", "familiar_owl_moonbeam", "familiar_owl_alchemist", "familiar_fox", "familiar_fox_moonbeam", "familiar_fox_alchemist"];
 for (const prefix of FAMILIAR_ASPECTS) {
   for (const anim of ["idle", "attack"]) {
     for (const d of DIRS) {
@@ -396,11 +414,16 @@ export class Familiar {
     this.frenzyActive = false;
 
     // Spirit Imbued behavior, set by game.startGame from the equipped familiar:
-    // "default" (Cat: faster firing only) | "astral" (Owl: Astral Judgment strikes).
+    // "default" (Cat: faster firing only) | "astral" (Owl: Astral Judgment strikes) |
+    // "foxfire" (Fox: Foxfire Chain — chaining wisps).
     this.frenzyBehavior = "default";
     this.astralTimer = 0;     // counts down to the next Astral Judgment strike
     this.astralStrikes = [];  // brief code-drawn star flashes { x, y, ox, oy, life }
     this.astralMark = null;   // the enemy currently being judged (drives the reticle)
+    this.foxfireTimer = 0;            // counts down to the next Foxfire volley (Fox)
+    this.foxfireWisps = [];           // in-flight wisps { x, y, target, hit[], bounces }
+    this.foxfireHits = [];            // brief code-drawn chain-hit flashes { x, y, life }
+    this.foxfireBossHitsThisVolley = 0; // per-volley boss-hit counter (reset each launch)
 
     // Collar attack style + skin (set by game.startGame from the equipped collar).
     this.attackStyle = "rune";      // "rune" | "moonbeam" | "alchemist"
@@ -478,6 +501,26 @@ export class Familiar {
     if (this.astralStrikes.length) {
       for (const s of this.astralStrikes) s.life -= dt;
       this.astralStrikes = this.astralStrikes.filter((s) => s.life > 0);
+    }
+
+    // --- Foxfire Chain (Fox): volleys of chaining wisps during Spirit Imbued ---
+    // Like Astral, this rides on top of the collar attack. While Spirit Imbued, fire a
+    // volley every FOXFIRE_INTERVAL; outside it, hold the timer at 0 so the first volley
+    // lands promptly on the next activation. The wisps themselves are advanced every
+    // frame below, so any still mid-flight when Spirit Imbued ends finish gracefully.
+    if (frenzyActive && this.frenzyBehavior === "foxfire") {
+      this.foxfireTimer -= dt;
+      if (this.foxfireTimer <= 0) {
+        this.launchFoxfire(targets);
+        this.foxfireTimer = FOXFIRE_INTERVAL;
+      }
+    } else {
+      this.foxfireTimer = 0;
+    }
+    this.updateFoxfireWisps(dt, targets); // no-op when there are no wisps
+    if (this.foxfireHits.length) {
+      for (const f of this.foxfireHits) f.life -= dt;
+      this.foxfireHits = this.foxfireHits.filter((f) => f.life > 0);
     }
 
     // While idle (not mid-attack), face the way it's drifting.
@@ -714,6 +757,83 @@ export class Familiar {
     return best;
   }
 
+  // Foxfire Chain (Fox): launch a volley of wisps from the familiar. Initial targets
+  // PREFER non-bosses (nearest first) so the chain spreads through a crowd; the boss is
+  // only a starting target when it's the only enemy alive. Resets the per-volley boss cap.
+  launchFoxfire(targets) {
+    this.foxfireBossHitsThisVolley = 0;
+    const alive = targets.filter((t) => !t.dead && !t.untargetable);
+    if (!alive.length) return;
+    const byDist = (arr) => arr
+      .map((t) => ({ t, d: distance(this.x, this.y, t.x, t.y) }))
+      .sort((a, b) => a.d - b.d)
+      .map((o) => o.t);
+    const nonBoss = byDist(alive.filter((t) => !t.isBoss));
+    const pool = nonBoss.length ? nonBoss : byDist(alive); // boss-only fight: fall back to the boss
+    for (let i = 0; i < FOXFIRE_WISPS; i++) {
+      this.foxfireWisps.push({
+        x: this.x, y: this.y, target: pool[i % pool.length], hit: [], bounces: FOXFIRE_BOUNCES,
+      });
+    }
+  }
+
+  // Advance every in-flight wisp: home toward its current target, hit on arrival, then
+  // chain to the next link. Called every frame (even after Spirit Imbued ends) so wisps
+  // finish cleanly. Boss hits are gated by the per-volley cap — a capped boss arrival just
+  // fizzles, which is what makes Fox weak against a lone boss.
+  updateFoxfireWisps(dt, targets) {
+    if (!this.foxfireWisps.length) return;
+    const step = FOXFIRE_WISP_SPEED * dt;
+    for (const wisp of this.foxfireWisps) {
+      if (!wisp.target || wisp.target.dead || wisp.target.untargetable) {
+        wisp.target = this.pickFoxfireTarget(wisp.x, wisp.y, wisp, targets);
+        if (!wisp.target) { wisp._done = true; continue; }
+      }
+      const dx = wisp.target.x - wisp.x, dy = wisp.target.y - wisp.y;
+      const d = Math.hypot(dx, dy) || 1;
+      if (d <= step + 12) {
+        // Arrived. Boss hits respect the per-volley cap; if it's reached, the wisp ends
+        // without dealing damage rather than piling onto one target.
+        const isBoss = !!wisp.target.isBoss;
+        if (isBoss && this.foxfireBossHitsThisVolley >= FOXFIRE_BOSS_HITS_PER_VOLLEY) {
+          wisp._done = true; continue;
+        }
+        wisp.x = wisp.target.x; wisp.y = wisp.target.y;
+        wisp.target.takeDamage(FOXFIRE_DAMAGE);
+        this.foxfireHits.push({ x: wisp.target.x, y: wisp.target.y, life: FOXFIRE_HIT_LIFE });
+        if (isBoss) this.foxfireBossHitsThisVolley++;
+        else wisp.hit.push(wisp.target); // non-bosses are never hit twice by the same wisp
+        wisp.bounces--;
+        if (wisp.bounces <= 0) { wisp._done = true; continue; }
+        wisp.target = this.pickFoxfireTarget(wisp.x, wisp.y, wisp, targets);
+        if (!wisp.target) { wisp._done = true; continue; }
+      } else {
+        wisp.x += (dx / d) * step;
+        wisp.y += (dy / d) * step;
+      }
+    }
+    this.foxfireWisps = this.foxfireWisps.filter((w) => !w._done);
+  }
+
+  // Next chain link from (fromX, fromY): nearest non-boss within range that this wisp
+  // hasn't hit yet. The boss is a fallback only when no fresh non-boss is in range AND
+  // the per-volley cap still allows it — so the chain favors spreading over melting.
+  pickFoxfireTarget(fromX, fromY, wisp, targets) {
+    let best = null, bestD = FOXFIRE_CHAIN_RANGE;
+    let boss = null, bossD = FOXFIRE_CHAIN_RANGE;
+    for (const t of targets) {
+      if (t.dead || t.untargetable) continue;
+      const d = distance(fromX, fromY, t.x, t.y);
+      if (d > FOXFIRE_CHAIN_RANGE) continue;
+      if (t.isBoss) {
+        if (this.foxfireBossHitsThisVolley < FOXFIRE_BOSS_HITS_PER_VOLLEY && d < bossD) { boss = t; bossD = d; }
+      } else if (!wisp.hit.includes(t) && d < bestD) {
+        best = t; bestD = d;
+      }
+    }
+    return best || boss;
+  }
+
   // Draw one cat (sprite or fallback) at a position + facing + frame, at a
   // given opacity. Used for BOTH the real cat (alpha 1) and the ghost-trail
   // afterimages (low alpha). Wrapped in save/restore so globalAlpha + shadow
@@ -871,6 +991,34 @@ export class Familiar {
       ctx.restore();
     }
 
+    // Foxfire Chain (Fox): chain-hit flashes (expanding orange rings) + the in-flight
+    // wisps (orange core, blue-white center, blue glow). Code-drawn, no sprites — and
+    // capped at a few small wisps so a busy crowd never turns into screen soup.
+    for (const f of this.foxfireHits) {
+      const t = f.life / FOXFIRE_HIT_LIFE; // 1 -> 0 (culled in update)
+      const R = 10 + (1 - t) * 8;          // expands as it fades
+      ctx.save();
+      ctx.globalAlpha = t;
+      ctx.translate(f.x, f.y);
+      ctx.shadowColor = "#ff9a3c";
+      ctx.shadowBlur = 12;
+      ctx.strokeStyle = "#ffd9a0";
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+    for (const wisp of this.foxfireWisps) {
+      ctx.save();
+      ctx.translate(wisp.x, wisp.y);
+      ctx.shadowColor = "#5aa0ff";
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#ff9a3c"; // orange foxfire core
+      ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#bfe0ff"; // cool blue-white center
+      ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
     // The real cat on top, full opacity.
     this.drawCat(ctx, this.x, this.y, this.facing, this.animState, this.animFrame, 1);
   }
@@ -896,6 +1044,10 @@ export class Familiar {
     this.astralTimer = 0;
     this.astralStrikes = [];
     this.astralMark = null;
+    this.foxfireTimer = 0;
+    this.foxfireWisps = [];
+    this.foxfireHits = [];
+    this.foxfireBossHitsThisVolley = 0;
     this.attackStyle = "rune";      // game.startGame overrides from the equipped collar
     this.spritePrefix = "familiar";
     this.spritePrefixBase = "familiar";

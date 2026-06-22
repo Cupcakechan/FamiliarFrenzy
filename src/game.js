@@ -242,8 +242,22 @@ const FAMILIARS = {
     passive: "Star-Eyed Focus", passiveDesc: "Spirit Imbued fills slightly faster from motes.",
     frenzyName: "Astral Judgment", frenzyDesc: "Strikes the most dangerous foe with arcane precision.",
   },
+  fox: {
+    name: "Fox Familiar", cost: 6, swatch: "#7a3b1e", spritePrefix: "familiar_fox",
+    frenzy: "foxfire", frenzyMoteMult: 1, desc: "Trickster Luck + Foxfire Chain",
+    // Trickster Luck: small flat bumps to the two RARE on-kill drops (flask + Spirit
+    // Magnet), added at the drop rolls. Additive with Lucky Paws and well under a full
+    // build (3 lvls = +0.12 flask / +0.018 magnet). Does NOT touch Spirit Crystals,
+    // which roll separately on bosses. Kept in the table like frenzyMoteMult so tuning
+    // is one place; absent on Cat/Owl, defaulted to 0 at run start.
+    flaskLuck: 0.015,   // base flask 0.015 -> ~0.030
+    magnetLuck: 0.003,  // base magnet 0.008 -> ~0.011
+    blurb: "A sly spirit that spreads foxfire between foes.",
+    passive: "Trickster Luck", passiveDesc: "Rare pickups appear a little more often.",
+    frenzyName: "Foxfire Chain", frenzyDesc: "Wisps bounce between enemies.",
+  },
 };
-const FAMILIAR_ORDER = ["default", "owl"];
+const FAMILIAR_ORDER = ["default", "owl", "fox"];
 
 // --- Bestiary -------------------------------------------------------------
 // Creature entries for the Bestiary screen. `id` is the seen-tracking key
@@ -425,6 +439,8 @@ export class Game {
     this.magnetRange = BASE_MAGNET_RANGE; // pickup attraction radius (innate + Magnet Charm)
     this.frenzyPerMote = 1;   // Frenzy Focus: charge added per mote
     this.familiarMoteMult = 1; // Star-Eyed Focus (Owl): per-mote frenzy bonus, set per run
+    this.familiarFlaskLuck = 0;  // Trickster Luck (Fox): flat flask-drop bonus, set per run
+    this.familiarMagnetLuck = 0; // Trickster Luck (Fox): flat Spirit Magnet bonus, set per run
     this.luckLevel = 0;       // Lucky Paws: drop-chance level
 
     // Evolution (one-shot).
@@ -506,6 +522,8 @@ export class Game {
     }
     this.familiar.frenzyBehavior = aspect.frenzy || "default";
     this.familiarMoteMult = aspect.frenzyMoteMult || 1;
+    this.familiarFlaskLuck = aspect.flaskLuck || 0;   // Trickster Luck (Fox); 0 for others
+    this.familiarMagnetLuck = aspect.magnetLuck || 0;
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
@@ -536,6 +554,8 @@ export class Game {
     this.magnetRange = BASE_MAGNET_RANGE;
     this.frenzyPerMote = 1;
     this.familiarMoteMult = 1;
+    this.familiarFlaskLuck = 0;
+    this.familiarMagnetLuck = 0;
     this.luckLevel = 0;
     this.phantomPounceUnlocked = false;
     this.spiritBondUnlocked = false;
@@ -1819,8 +1839,9 @@ export class Game {
             this.showHint("flask"); // always — it's the lesson, and now on-screen
           } else {
             // Lucky Paws now boosts only the RARE drops (flask + magnet); there is
-            // no longer a bonus-mote roll, so it never doubles up XP.
-            const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP;
+            // no longer a bonus-mote roll, so it never doubles up XP. Trickster Luck
+            // (Fox) adds a small flat bump on top — additive, never compounding.
+            const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP + this.familiarFlaskLuck;
             // Withering curse: no flasks fall at all.
             const noFlasks = curseValue(this.activeCurses, "noFlasks", false);
             if (!noFlasks && Math.random() < flaskChance) {
@@ -1830,9 +1851,10 @@ export class Game {
             }
           }
 
-          // Rare Spirit Magnet — base chance by enemy type, plus a Lucky Paws bonus.
+          // Rare Spirit Magnet — base chance by enemy type, plus a Lucky Paws bonus
+          // and the Fox's Trickster Luck flat bump (additive). Crystals roll separately.
           const baseMagnet = enemy.isBoss ? SPIRIT_MAGNET_BOSS_CHANCE : SPIRIT_MAGNET_DROP_CHANCE;
-          const magnetChance = baseMagnet + this.luckLevel * LUCK_MAGNET_STEP;
+          const magnetChance = baseMagnet + this.luckLevel * LUCK_MAGNET_STEP + this.familiarMagnetLuck;
           if (Math.random() < magnetChance) {
             spot = this.findDropSpot(enemy.x, enemy.y, 10);
             this.magnets.push(new SpiritMagnet(spot.x, spot.y));
