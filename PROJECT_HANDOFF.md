@@ -1,17 +1,17 @@
 # Familiar Frenzy — Project Handoff
 
-Last updated: **2026-06-20** — **1.8.0** (mouse everywhere + the Bone Mage fix; the
-three pending mouse gaps were closed; the Hourkeeper boss enrolled into the live
-roster) and **1.9.0** ("Cursed Mode" + the Tin Bulwark enemy + a fixed normal-mode
-boss rotation) are both now
-SHIPPED/LIVE.
-Covers all post-launch work through **1.9.0**.
-**1.2.0–1.9.0 are all SHIPPED/LIVE.** The 1.8.0 mouse cycle is complete (Wardrobe is
-fully click-driven; Settings + High Scores have clickable Back) and the Hourkeeper
-(4th boss) went live in 1.8.0. **1.9.0 added the
-whole Cursed Mode arc — a separate hard mode with eight stacking curses, a separate
-leaderboard, curse HUD icons + familiar heralds, a Curses archive, and a unified
-Arcane-Archive pause menu (see §3a).** No release is mid-flight.
+Last updated: **2026-06-23** — **1.11.0** (the **Bat** + **Raven** familiars complete
+the five-familiar roster, plus a **pre-run Wardrobe loadout flow**) is SHIPPED/LIVE,
+on top of **1.10.0** (the **Owl** + **Fox** familiars, the new **Familiars** Wardrobe
+category + Familiars archive, a Cursed-Mode rebalance, and the Endless→**Casual**
+display rename).
+Covers all post-launch work through **1.11.0**.
+**1.2.0–1.11.0 are all SHIPPED/LIVE.** The big arc since 1.9.0 is the **alternate
+Familiar system** — five familiars (Cat / Owl / Fox / Bat / Raven), each changing only
+its aspect + a small passive + its Spirit Imbued behavior, all working with every
+collar (see **§3b**) — and a **loadout screen** that opens the Wardrobe before Casual /
+Cursed runs (Tutorial still starts directly; see §9). Raven introduced the one new
+pickup type, the **healing feather** (§3b). No release is mid-flight.
 
 > The Hourkeeper boss is in `BOSS_TYPES` (4 bosses: elder_wisp, watching_hand,
 > hive_warden, hourkeeper) and its detailed entry is now filled in (§3 / §5); the
@@ -177,13 +177,15 @@ Implemented and tested:
 
 * **Menus/screens:** Main Menu (**Play / Wardrobe / Arcane Archive / High Scores /
   Settings**; background + title-banner art; a small Spirit-Crystal readout sits
-  top-right via `drawCrystalTotal`), Mode Select (Tutorial Mode / Endless Mode /
-  How to Play / Back), How to Play, **Arcane Archive** (hub → Grimoire / Bestiary /
-  Back), **Grimoire** (flat scrolling glossary, detail on-SELECT, Upgrades/Evolutions
-  headers), **Bestiary** (scrolling accordion, animated portrait, silhouettes for
-  unseen), **Wardrobe** (Outfits/Collars tabs — buy/equip with crystals), Settings
-  (music + SFX sliders), High Scores, Pause, Confirm-Quit, Victory, Game Over,
-  Name Entry.
+  top-right via `drawCrystalTotal`), Mode Select (Tutorial Mode / **Casual Mode** /
+  **Cursed Mode** / How to Play / Back — "Casual" is the display rename of the internal
+  `endless` mode), How to Play, **Arcane Archive** (hub → Grimoire / Bestiary / Curses /
+  **Familiars** / Back), **Grimoire** (flat scrolling glossary, detail on-SELECT,
+  Upgrades/Evolutions headers), **Bestiary** (scrolling accordion, animated portrait,
+  silhouettes for unseen), **Wardrobe** (**Outfits / Familiars / Collars** tabs —
+  buy/equip with crystals; opens as a **pre-run loadout screen** with a Start button
+  before Casual/Cursed runs — §3b / §9), Settings (music + SFX sliders), High Scores,
+  Pause, Confirm-Quit, Victory, Game Over, Name Entry.
 * **Mouse support (1.8.0):** keyboard-primary; the mouse is ADDITIVE and drives the
   SAME selections the keys do. Clickable: Main Menu, Mode Select, Arcane Archive, the
   **level-up cards**, Pause, Confirm-Quit, Victory, Game Over (two regions), and the
@@ -393,6 +395,102 @@ both funnel through the hub.
 
 ---
 
+## 3b. Familiar System (1.10.0–1.11.0) — alternate familiars
+
+A data-driven roster of alternate familiars, bought/equipped in the Wardrobe's
+**Familiars** tab. Each familiar changes exactly three things and nothing else: its
+**sprite/aspect**, a small **passive**, and its **Spirit Imbued behavior** (internally
+the "frenzy"). **Collars still own the normal attack** — every familiar works with every
+collar (Spirit rune / Moon Beam / Alchemist). The Cat is the free default.
+
+**The five familiars** (`FAMILIAR_ORDER`):
+
+* **Cat** (`default`, 0◆) — baseline; Spirit Imbued = faster firing only (`frenzyBehavior "default"`).
+* **Owl** (`owl`, 6◆) — passive **Star-Eyed Focus** (`frenzyMoteMult 1.05`: Spirit Imbued
+  fills slightly faster from motes); Spirit Imbued **Astral Judgment** (`"astral"`) — a
+  timed precision strike on the most dangerous foe (threat score: boss > caster > ranged
+  > bruiser > else).
+* **Fox** (`fox`, 6◆) — passive **Trickster Luck** (small flat bump to the two RARE drops:
+  flask `+0.015`, magnet `+0.003`; additive with Lucky Paws, **crystals untouched**);
+  Spirit Imbued **Foxfire Chain** (`"foxfire"`) — volleys of wisps that chain between
+  enemies; strong vs groups, weak vs a lone boss (per-volley boss-hit cap = 1).
+* **Bat** (`bat`, 6◆) — passive **Night Sense** (`magnetBonus +10`px pickup magnet range,
+  added at `applyMagnet` so it stacks with the innate magnet + Magnet Charm and can't be
+  clobbered); Spirit Imbued **Echo Swarm** (`"echo"`) — expanding sonar rings that damage
+  each nearby enemy once per ring; reduced boss damage.
+* **Raven** (`raven`, 10◆, premium / Cursed survival) — passive **Scavenger's Gift**
+  (`scavengerChance 0.05`: a slain non-boss may drop a healing feather); Spirit Imbued
+  **Grave Tax** (`"raven"`) — on the rising edge of Spirit Imbued, marks several non-boss
+  enemies (Option D: wounded-near-the-player first, then nearest); a marked enemy KILLED
+  before its mark expires drops a GUARANTEED healing feather. Feathers are a NEW pickup
+  (below).
+
+**Architecture — a new familiar = `familiar.js` + `game.js` only (the catalog/Wardrobe/
+previews are data-driven):**
+
+* `FAMILIAR_ASPECTS` (familiar.js) — array of sprite prefixes (each aspect's base +
+  per-collar recolors) registered via one `loadImage` loop. A new familiar appends its 3
+  prefixes here.
+* `FAMILIARS` table + `FAMILIAR_ORDER` (game.js) — each entry: `name/cost/swatch/
+  spritePrefix/frenzy/frenzyMoteMult` + passive fields (`flaskLuck`/`magnetLuck`/
+  `magnetBonus`/`scavengerChance`, absent → 0) + archive copy (`blurb/passive/passiveDesc/
+  frenzyName/frenzyDesc`). This one table drives the Wardrobe Familiars tab, buy/equip,
+  persistence, the collar-row previews, AND the Arcane-Archive Familiars catalog —
+  automatically.
+* **Spirit Imbued dispatch:** `familiar.frenzyBehavior` (set per run from the equipped
+  aspect's `frenzy`) selects the behavior in `familiar.update`/`draw`. Each behavior is a
+  self-contained block + helpers in familiar.js: **Astral** (astralTimer / findPriorityTarget
+  / threatScore), **Foxfire** (launchFoxfire / updateFoxfireWisps / pickFoxfireTarget),
+  **Echo** (emitEcho / updateEchoRings), **Grave Tax** (markGraveTargets + per-frame mark
+  ageing; rising edge via `_wasFrenzy`; draws the omen above marked enemies — familiar.draw
+  runs AFTER the enemy pass, so marks sit on top).
+* **Per-run wiring** (game.js `startGame`): sets `familiar.frenzyBehavior`, plus
+  `familiarMoteMult` / `familiarFlaskLuck` / `familiarMagnetLuck` / `familiarMagnetBonus` /
+  `familiarScavengerChance` from the equipped aspect (0/1 defaults for the rest). The
+  per-collar recolor prefix is built like the cat's (`aspect.spritePrefix + (collar ===
+  "default" ? "" : "_" + collar)`); `spritePrefixBase` set for the draw fallback.
+* **Draw fallback chain:** full prefix (aspect + collar) → base aspect (`spritePrefixBase`)
+  → base cat → code placeholder. A missing aspect sprite degrades to the cat, never crashes.
+
+**Raven healing feathers — the one new pickup type:**
+
+* `RavenFeather` class in **pickups.js** (mirrors `HealthFlask`: x/y/`heal`/`dead`/update/
+  draw + magnet & vacuum pull). Loads `raven_feather` (`assets/sprites/pickups/
+  raven_feather.png`, 32×32) with a code-drawn dark-feather fallback. UNLIKE the other
+  pickups it has a short TTL + fade (`FEATHER_LIFE 10`s) — collect promptly, no hoarding.
+* `this.feathers[]` in game.js (constructor + reset); collect loop mirrors flasks
+  (walk-over → `player.heal(FEATHER_HEAL)` → `playSfx("heal")`).
+* **Two sources, one feather max per enemy:** in the death loop, a non-boss kill under the
+  cap drops a feather if `enemy.graveMarked` (Grave Tax, guaranteed) **OR** the Scavenger
+  roll passes — the `||` short-circuits, so Grave Tax wins and never double-rolls. Bosses
+  excluded. **Feathers are SEPARATE from the flask roll → NOT gated by Withering**
+  (intentional: Raven's premium Cursed counterplay; the player still must kill + collect).
+  Crystals / motes / magnets untouched.
+
+**Protected familiar constants (verify from source before any ship):**
+
+* familiar.js: `ASTRAL_STRIKE_INTERVAL 0.9` / `ASTRAL_STRIKE_DAMAGE 5` / `ASTRAL_STAR_LIFE
+  0.45`; `FOXFIRE_INTERVAL 1.2` / `FOXFIRE_WISPS 3` / `FOXFIRE_BOUNCES 3` / `FOXFIRE_DAMAGE
+  5` / `FOXFIRE_CHAIN_RANGE 140` / `FOXFIRE_BOSS_HITS_PER_VOLLEY 1` / `FOXFIRE_WISP_SPEED
+  460` / `FOXFIRE_HIT_LIFE 0.28`; `ECHO_INTERVAL 0.5` / `ECHO_START_RADIUS 24` /
+  `ECHO_MAX_RADIUS 200` / `ECHO_RING_LIFE 0.55` / `ECHO_DAMAGE 4` / **`ECHO_BOSS_DAMAGE 1`**
+  (lowered from 2 — at 2 it killed the first Cursed boss too fast); `GRAVE_MARK_COUNT 6` /
+  `GRAVE_MARK_DURATION 6` / `GRAVE_WOUNDED_FRAC 0.6`. `FAMILIAR_ASPECTS` = owl/fox/bat/raven
+  × (base / `_moonbeam` / `_alchemist`).
+* game.js: `FEATHER_HEAL 3` / `FEATHER_MAX 6` / `FEATHER_LIFE 10` / `SCAVENGER_CHANCE 0.05`;
+  Trickster `flaskLuck 0.015` / `magnetLuck 0.003`; Night Sense `magnetBonus 10`. Costs:
+  Cat 0, Owl/Fox/Bat 6, Raven 10.
+
+**Balance watch:** Raven's sustain in Cursed Mode — especially under **Withering** (feathers
+bypass the no-flask rule by design) — is the newest variable; `FEATHER_MAX 6 × 3 HP` + the
+5% passive. Watch whether an aggressive Withering run feels too survivable before changing
+anything.
+
+**Naming:** player-facing "Familiars"; internals stay `familiar*` and the Spirit Imbued
+behavior stays `frenzy*` — same decoupling as Wardrobe/closet (§9) and Casual/`endless`.
+
+---
+
 ## 4. Architecture / File Map
 
 ```txt
@@ -485,6 +583,17 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
   (must match `COLLARS[*].spritePrefix`); same native size + frame counts as the base
   cat; per-frame fallback to the base. The Wardrobe collar-row icon reuses
   `familiar_<collar>_idle_s.png` (idle-south frame 0); fallback = accent ring.
+* **Alternate familiar aspects (1.10.0–1.11.0):** the Owl / Fox / Bat / Raven use the
+  SAME layout as the cat — 8 dirs, idle 4 / attack 6 — with prefix
+  `familiar_<aspect>_<anim>_<dir>.png` (`<aspect>` ∈ `owl`, `fox`, `bat`, `raven`) plus
+  per-collar recolors `familiar_<aspect>_<collar>_<anim>_<dir>.png` (`<collar>` ∈
+  `moonbeam`, `alchemist`). All registered in `FAMILIAR_ASPECTS`; missing files degrade
+  through the fallback chain (aspect+collar → base aspect → base cat → placeholder), so
+  any familiar runs with no art. Spirit Imbued effects (Astral / Foxfire / Echo / Grave
+  Tax omen) are all CODE-DRAWN — no extra art (§3b).
+* **Raven feather pickup (1.11.0):** `assets/sprites/pickups/raven_feather.png` (32×32,
+  single frame), loaded in `pickups.js` like the other pickup sprites; code-drawn
+  dark-feather fallback. The healing pickup for Scavenger's Gift + Grave Tax (§3b).
 * **Wisp / Elder Wisp / Gutter Gecko / Bone Mage:** unchanged (see prior notes).
 * **Goblin Bonker:** 8 dirs, 6-frame strips, **WALK + ATTACK only** —
   `goblin_walk_<dir>.png`, `goblin_attack_<dir>.png`. Attack is PROGRESS-DRIVEN
@@ -553,6 +662,45 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
 ## 6. Post-Launch Work Log (newest first)
 
 ```txt
+1.11.0 (SHIPPED 2026-06-23) — "the roster is complete + loadout screen":
+  - Bat familiar (6◆): passive Night Sense (+10px magnet range, additive at applyMagnet);
+    Spirit Imbued Echo Swarm — expanding sonar rings, damage-each-once-per-ring, reduced
+    boss damage (ECHO_BOSS_DAMAGE lowered 2->1 after the first Cursed boss died too fast).
+    familiar.js + game.js only. See §3b.
+  - Raven familiar (10◆, premium / Cursed survival): passive Scavenger's Gift (5% feather
+    on a non-boss kill); Spirit Imbued Grave Tax — marks non-boss enemies (wounded-near-
+    player first), a marked KILL drops a guaranteed healing feather. Introduced the ONE new
+    pickup type, RavenFeather (pickups.js) — short TTL, code-drawn fallback; feathers are
+    separate from flasks so Withering does NOT block them (by design). Grave Tax wins over
+    the passive roll (one feather/enemy); capped at FEATHER_MAX. familiar.js + game.js +
+    pickups.js. See §3b.
+  - Pre-run Wardrobe loadout flow: Casual/Cursed now route Mode Select -> Wardrobe (with a
+    Start button) -> run; Tutorial still starts directly; the main-menu Wardrobe stays a
+    normal Back-only shop. New this.pendingRunMode context (null = shop, "endless"/"cursed"
+    = pre-run); openCloset(pendingMode); context-aware exitCloset (pre-run Back -> Mode
+    Select, shop Back -> Main Menu); Start = nav index order.length+1, keyboard + mouse.
+    drawCloset gained the mode-titled header ("WARDROBE — Cursed Run") + a live loadout
+    summary line. game.js + ui.js. See §9.
+
+1.10.0 (SHIPPED ~2026-06-22) — "the Familiars update (Owl + Fox)":
+  - New Familiars Wardrobe category — the Wardrobe split from Outfits/Collars into THREE
+    tabs (Outfits / Familiars / Collars). Established the whole data-driven familiar system
+    (FAMILIAR_ASPECTS + FAMILIARS + FAMILIAR_ORDER + the frenzyBehavior dispatch + the
+    per-collar recolor + draw fallback chain) — §3b. Persistence added familiarsOwned /
+    familiarEquipped to ff_wardrobe (old saves default to Cat).
+  - Owl familiar (6◆): Star-Eyed Focus (frenzyMoteMult 1.05) + Astral Judgment (smart
+    single-target strike, threat-scored).
+  - Fox familiar (6◆): Trickster Luck (flat rare-drop bump, flask +0.015 / magnet +0.003,
+    additive with Lucky Paws, crystals untouched) + Foxfire Chain (chaining wisps, group-
+    strong, lone-boss-weak via a per-volley boss cap).
+  - Arcane-Archive Familiars catalog — a 4th archive section, data-driven from FAMILIARS
+    (auto-includes new familiars). Collar-row previews now show the EQUIPPED familiar's
+    recolor.
+  - Cursed-Mode rebalance (Option D): CURSED_HP_MULT 1.25->1.12, added CURSED_DAMAGE_MULT
+    1.20 (contact damage). Less spongy, hits harder.
+  - Display rename Endless -> "Casual" (player-facing strings only; ALL internals —
+    "endless" ids/flags/STATE/keys — preserved). Bests/scores/saves carry over.
+
 1.9.0 (SHIPPED 2026-06-20) — "Cursed Mode":
   - New hard run mode (Mode Select): Endless rules + bosses every 5 waves + base
     difficulty bumps; each boss kill stacks one more random curse. Full system in the
@@ -736,13 +884,24 @@ PLAYING, PAUSED, CONFIRM_QUIT, LEVEL_UP, DYING, NAME_ENTRY, GAME_OVER, VICTORY
 ```
 
 Main menu = Play / Wardrobe / Arcane Archive / High Scores / Settings.
-* **Wardrobe** = `STATE.CLOSET` (`openCloset`/`updateCloset`/`closetSelect`/
-  `closetData`/`closetTab`/`closetIndex`; `ui.drawCloset`). Outfits/Collars tabs
-  (A/D switch). **Display name only is "Wardrobe" — ALL internals stay `closet*`.**
-  The old `drawClosetButton` corner affordance + `C` hotkey are REMOVED; replaced by
-  `drawCrystalTotal` (top-right crystal readout). Persistence: `ff_wardrobe`
-  `{crystals, owned, equipped, collarsOwned, collarEquipped, firstBossClaimed}`
-  (loadWardrobe defaults missing fields — old saves are forward-compatible).
+* **Wardrobe** = `STATE.CLOSET` (`openCloset(pendingMode = null)` / `updateCloset` /
+  `closetSelect` / `closetData` / `closetTab` / `closetIndex`; `ui.drawCloset`).
+  **Outfits / Familiars / Collars** tabs (A/D switch; tab 1 = Familiars, the §3b roster).
+  **Display name only is "Wardrobe" — ALL internals stay `closet*`.** Persistence:
+  `ff_wardrobe` `{crystals, owned, equipped, collarsOwned, collarEquipped,
+  familiarsOwned, familiarEquipped, firstBossClaimed}` (loadWardrobe defaults missing
+  fields — old saves forward-compatible; pre-familiar saves default to Cat
+  owned+equipped).
+  **Pre-run loadout flow (1.11.0):** Mode Select routes Casual → `openCloset("endless")`
+  and Cursed → `openCloset("cursed")` (Tutorial still calls `startGame` directly). The
+  context lives in `this.pendingRunMode` (`null` = normal shop opened from the main menu;
+  `"endless"`/`"cursed"` = pre-run loadout). When set, `drawCloset` titles the screen for
+  the run ("WARDROBE — Cursed Run"), shows a live **Loadout** summary line, and draws a
+  **Start Run** button (nav index `order.length + 1`, after Back; keyboard + mouse).
+  `updateCloset`'s `activate()` routes Start → `startGame(pendingRunMode)` and Back →
+  `exitCloset()`; **`exitCloset` is context-aware** — pre-run → `MODE_SELECT` (cursor on
+  the chosen mode), shop → `MAIN_MENU`. `pendingRunMode` is cleared on Start, on Back, and
+  at every `startGame`, so a stale Start never leaks into the menu Wardrobe.
 * **Arcane Archive** = `STATE.ARCHIVE` (`openArchive(returnState)`/`updateArchive`,
   `ARCHIVE_ITEMS = [Grimoire, Bestiary, Curses, Back]`; renders via `drawMenu`).
   Grimoire / Bestiary / **Curses** each open from the hub and back out to it. **(1.9.0)
@@ -850,13 +1009,15 @@ under a new heading:
 ## 12. Current Backlog / Next Steps
 
 ```txt
-DONE — 1.5.0 through 1.9.0 all SHIPPED/LIVE. The 1.8.0 mouse cycle is complete
-  (Wardrobe fully click-driven; Settings + High Scores got Back rows) and the Hourkeeper
-  (4th boss) went live in 1.8.0. CURSED MODE shipped as 1.9.0 — the full eight-curse arc
-  + a separate leaderboard + the Curses archive + familiar heralds + the unified
-  Arcane-Archive pause (see §3a) — alongside the Tin Bulwark enemy and a fixed
-  easiest->hardest boss rotation for normal play. No release is mid-flight. (The
-  Hourkeeper §3/§5 entry + the Tin Bulwark §3/§5 entry are now filled in.)
+DONE — 1.5.0 through 1.11.0 all SHIPPED/LIVE. The 1.8.0 mouse cycle is complete; the
+  Hourkeeper (4th boss) went live in 1.8.0; CURSED MODE shipped as 1.9.0 (eight-curse arc
+  + separate leaderboard + Curses archive + familiar heralds + unified Arcane-Archive
+  pause — §3a) alongside the Tin Bulwark and a fixed normal-mode boss rotation. **1.10.0 +
+  1.11.0 built out the whole alternate Familiar system** — five familiars (Cat / Owl / Fox
+  / Bat / Raven), the new Familiars Wardrobe tab + archive catalog, the RavenFeather
+  healing pickup, a Cursed-Mode rebalance, the Endless→Casual rename, and a pre-run
+  Wardrobe loadout flow (§3b / §9). No release is mid-flight. The five-familiar roster is
+  considered COMPLETE for now — do not add Raven/other familiars without Daniel's say-so.
 
 OPTIONAL POLISH (1.8.0+, only if Daniel wants):
   - Scrollbar / slider grab-band widths are one-number tunables if anything feels
@@ -884,7 +1045,8 @@ PERSISTENCE KEYS:
   ff_musicVolume, ff_sfxVolume, ff_highscores, ff_cursedHighscores (1.9.0 Cursed
   leaderboard), ff_bestEndlessWave/Score, ff_seenEnemies (Bestiary), ff_seenCurses
   (1.9.0 Curses archive), ff_enemyIntros (intro banners), ff_wardrobe (crystals +
-  owned/equipped outfits & collars), ff_reducedFlash + ff_highVisWarnings (1.7.0
+  owned/equipped outfits, collars, AND familiars — familiarsOwned/familiarEquipped added
+  1.10.0; pre-familiar saves default to Cat), ff_reducedFlash + ff_highVisWarnings (1.7.0
   Display & Accessibility toggles). A "reset progress" should clear ff_seenEnemies,
   ff_seenCurses, ff_enemyIntros, and consider ff_wardrobe.
 
@@ -901,21 +1063,28 @@ BALANCE WATCH (only if Daniel reports it):
     toward 1.0 only if it feels too soft late. HK_HP_MULT 1.0 -> ~0.8 if the fight drags.
   - Cursed Mode is under LIVE player testing for overall difficulty (see §3a) — hold
     curse / scaling changes until there's feedback.
+  - Familiars (1.10.0–1.11.0): Raven sustain in Cursed/Withering is the newest variable
+    (feathers bypass the no-flask rule by design; FEATHER_MAX 6 × 3 HP + 5% passive) —
+    levers SCAVENGER_CHANCE / FEATHER_HEAL / FEATHER_MAX / GRAVE_MARK_COUNT. Echo boss
+    damage was already nudged 2->1. Adjust only on reported feel (§3b).
 ```
 
 Guardrails: one feature at a time; no large new systems, online leaderboards,
 external libraries, or build tooling; data-driven tables over subclasses
-(ENEMY_TYPES / UPGRADES / BOSS_TYPES / OUTFITS / COLLARS patterns).
+(ENEMY_TYPES / UPGRADES / BOSS_TYPES / OUTFITS / COLLARS / FAMILIARS patterns).
 
 ---
 
 ## 13. First Response Required from Next Claude
 
 1. Confirm this handoff was read.
-2. Briefly summarize current state (**1.2.0–1.9.0 are all SHIPPED/LIVE; Cursed Mode
-   shipped as 1.9.0 — see §3 / §3a; the Hourkeeper (4th boss) went live in 1.8.0. No
-   release is mid-flight.** Open follow-up: the camera-following larger world +
-   drop-reach clamping is parked, §12).
+2. Briefly summarize current state (**1.2.0–1.11.0 are all SHIPPED/LIVE. The alternate
+   Familiar system is complete — five familiars (Cat / Owl / Fox / Bat / Raven), the
+   Familiars Wardrobe tab + archive, the RavenFeather healing pickup, and a pre-run
+   Wardrobe loadout flow; shipped across 1.10.0 + 1.11.0 — see §3b / §9. Cursed Mode
+   shipped as 1.9.0 (§3a). No release is mid-flight.** Open follow-ups: the
+   camera-following larger world + drop-reach clamping is parked (§12); Raven sustain in
+   Cursed/Withering is on balance-watch (§3b / §12)).
 3. Verify `DEBUG_FORCE_BOSS` and `DEBUG_BOSS_TYPE` from `enemies.js` (don't trust
    this doc) and report.
 4. Note any stale-looking handoff items.
