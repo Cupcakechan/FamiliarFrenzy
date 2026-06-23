@@ -75,6 +75,21 @@ const FOXFIRE_BOSS_HITS_PER_VOLLEY = 1; // hard cap on boss hits per volley (the
 const FOXFIRE_WISP_SPEED = 460;         // px/s a wisp travels between links
 const FOXFIRE_HIT_LIFE = 0.28;          // seconds a chain-hit flash lingers/fades
 
+// --- Echo Swarm (Bat familiar's Spirit Imbued behavior) -----------------------
+// While Spirit Imbued + Bat: emit one expanding echo ring every ECHO_INTERVAL from the
+// Bat's position. Each ring grows from ECHO_START_RADIUS to ECHO_MAX_RADIUS over its
+// life and damages each enemy ONCE as its edge passes them (tracked per ring). Pure
+// close-range AoE — best when a swarm presses the player; deliberately weak vs a lone
+// boss (reduced per-hit boss damage). Rides ON TOP of the collar attack. The crowd-wash
+// counterpart to Owl's single strike and Fox's chaining wisps.
+const ECHO_INTERVAL = 0.5;       // seconds between pulses (Option A: sustained sonar)
+const ECHO_START_RADIUS = 24;    // px a ring starts at
+const ECHO_MAX_RADIUS = 200;     // px a ring expands to (close-range CC around the Bat)
+const ECHO_RING_LIFE = 0.55;     // seconds to expand + fade (slight overlap reads as sonar)
+const ECHO_DAMAGE = 4;           // per enemy per ring (hits everything in range, so kept modest)
+const ECHO_BOSS_DAMAGE = 2;      // reduced per-hit vs bosses (~12 rings x 2 = ~24 over a 6s
+                                 //   Spirit Imbued, below Owl's ~35 — Bat is the swarm specialist)
+
 // --- Spirit Volley evolution (spread-shot) -------------------------------
 // Once unlocked (familiar.spreadShot = true), every attack fires a center bolt
 // PLUS two angled side bolts. The center keeps full familiar damage; the side
@@ -157,7 +172,7 @@ for (const prefix of FAMILIAR_SKINS) {
 // collar recolors (`<aspect>_<collarId>`), with the bare aspect prefix used for the
 // Spirit/default collar. List every prefix that has art here. Owl ships with all
 // three; missing files fall back to the base aspect, then the cat (see drawCat).
-const FAMILIAR_ASPECTS = ["familiar_owl", "familiar_owl_moonbeam", "familiar_owl_alchemist", "familiar_fox", "familiar_fox_moonbeam", "familiar_fox_alchemist"];
+const FAMILIAR_ASPECTS = ["familiar_owl", "familiar_owl_moonbeam", "familiar_owl_alchemist", "familiar_fox", "familiar_fox_moonbeam", "familiar_fox_alchemist", "familiar_bat", "familiar_bat_moonbeam", "familiar_bat_alchemist"];
 for (const prefix of FAMILIAR_ASPECTS) {
   for (const anim of ["idle", "attack"]) {
     for (const d of DIRS) {
@@ -415,7 +430,7 @@ export class Familiar {
 
     // Spirit Imbued behavior, set by game.startGame from the equipped familiar:
     // "default" (Cat: faster firing only) | "astral" (Owl: Astral Judgment strikes) |
-    // "foxfire" (Fox: Foxfire Chain — chaining wisps).
+    // "foxfire" (Fox: Foxfire Chain — chaining wisps) | "echo" (Bat: Echo Swarm rings).
     this.frenzyBehavior = "default";
     this.astralTimer = 0;     // counts down to the next Astral Judgment strike
     this.astralStrikes = [];  // brief code-drawn star flashes { x, y, ox, oy, life }
@@ -424,6 +439,8 @@ export class Familiar {
     this.foxfireWisps = [];           // in-flight wisps { x, y, target, hit[], bounces }
     this.foxfireHits = [];            // brief code-drawn chain-hit flashes { x, y, life }
     this.foxfireBossHitsThisVolley = 0; // per-volley boss-hit counter (reset each launch)
+    this.echoTimer = 0;   // counts down to the next Echo pulse (Bat)
+    this.echoRings = [];  // expanding rings { ox, oy, radius, life, hit[] }
 
     // Collar attack style + skin (set by game.startGame from the equipped collar).
     this.attackStyle = "rune";      // "rune" | "moonbeam" | "alchemist"
@@ -522,6 +539,22 @@ export class Familiar {
       for (const f of this.foxfireHits) f.life -= dt;
       this.foxfireHits = this.foxfireHits.filter((f) => f.life > 0);
     }
+
+    // --- Echo Swarm (Bat): expanding echo rings during Spirit Imbued ---
+    // Rides on top of the collar attack like Astral/Foxfire. While Spirit Imbued, emit a
+    // ring every ECHO_INTERVAL; outside it, hold the timer at 0 so the first pulse lands
+    // promptly next time. Rings are advanced every frame below, so any still expanding when
+    // Spirit Imbued ends finish cleanly.
+    if (frenzyActive && this.frenzyBehavior === "echo") {
+      this.echoTimer -= dt;
+      if (this.echoTimer <= 0) {
+        this.emitEcho();
+        this.echoTimer = ECHO_INTERVAL;
+      }
+    } else {
+      this.echoTimer = 0;
+    }
+    this.updateEchoRings(dt, targets); // no-op when there are no rings
 
     // While idle (not mid-attack), face the way it's drifting.
     if (this.animState === "idle" && (Math.abs(moveX) > 0.1 || Math.abs(moveY) > 0.1)) {
@@ -834,6 +867,33 @@ export class Familiar {
     return best || boss;
   }
 
+  // Echo Swarm (Bat): spawn one expanding ring centered where the Bat is right now. The
+  // center is FIXED at emit time — a sonar ping expands from a point, not from a mover.
+  emitEcho() {
+    this.echoRings.push({ ox: this.x, oy: this.y, radius: ECHO_START_RADIUS, life: ECHO_RING_LIFE, hit: [] });
+  }
+
+  // Grow each ring, damage any enemy the expanding edge has reached (once per ring via the
+  // hit-list), and cull finished rings. Boss hits use a reduced flat value so a lone boss
+  // can't be washed down. Called every frame (even after Spirit Imbued) so rings finish.
+  updateEchoRings(dt, targets) {
+    if (!this.echoRings.length) return;
+    const grow = (ECHO_MAX_RADIUS - ECHO_START_RADIUS) / ECHO_RING_LIFE; // px per second
+    for (const ring of this.echoRings) {
+      ring.life -= dt;
+      ring.radius = Math.min(ECHO_MAX_RADIUS, ring.radius + grow * dt);
+      for (const t of targets) {
+        if (t.dead || t.untargetable || ring.hit.includes(t)) continue;
+        // Once the edge reaches an enemy's center, it takes a single hit from this ring.
+        if (distance(ring.ox, ring.oy, t.x, t.y) <= ring.radius) {
+          t.takeDamage(t.isBoss ? ECHO_BOSS_DAMAGE : ECHO_DAMAGE);
+          ring.hit.push(t);
+        }
+      }
+    }
+    this.echoRings = this.echoRings.filter((r) => r.life > 0);
+  }
+
   // Draw one cat (sprite or fallback) at a position + facing + frame, at a
   // given opacity. Used for BOTH the real cat (alpha 1) and the ghost-trail
   // afterimages (low alpha). Wrapped in save/restore so globalAlpha + shadow
@@ -1019,6 +1079,26 @@ export class Familiar {
       ctx.restore();
     }
 
+    // Echo Swarm (Bat): expanding sonar rings (pale blue outer + faint violet inner),
+    // fading as they grow. Code-drawn, no sprites; the sustained model keeps ~1-2 on
+    // screen at once so a swarm never turns into a wall of circles.
+    for (const ring of this.echoRings) {
+      const t = ring.life / ECHO_RING_LIFE; // 1 -> 0
+      ctx.save();
+      ctx.translate(ring.ox, ring.oy);
+      ctx.shadowColor = "#9fd8ff";
+      ctx.shadowBlur = 10;
+      ctx.globalAlpha = t * 0.7;
+      ctx.strokeStyle = "#bfe0ff";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.arc(0, 0, ring.radius, 0, Math.PI * 2); ctx.stroke();
+      ctx.globalAlpha = t * 0.35; // a fainter inner echo for the sound-wave feel
+      ctx.strokeStyle = "#cdb4ff";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(0, 0, ring.radius * 0.7, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+    }
+
     // The real cat on top, full opacity.
     this.drawCat(ctx, this.x, this.y, this.facing, this.animState, this.animFrame, 1);
   }
@@ -1048,6 +1128,8 @@ export class Familiar {
     this.foxfireWisps = [];
     this.foxfireHits = [];
     this.foxfireBossHitsThisVolley = 0;
+    this.echoTimer = 0;
+    this.echoRings = [];
     this.attackStyle = "rune";      // game.startGame overrides from the equipped collar
     this.spritePrefix = "familiar";
     this.spritePrefixBase = "familiar";

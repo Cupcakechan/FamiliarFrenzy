@@ -256,8 +256,19 @@ const FAMILIARS = {
     passive: "Trickster Luck", passiveDesc: "Rare pickups appear a little more often.",
     frenzyName: "Foxfire Chain", frenzyDesc: "Wisps bounce between enemies.",
   },
+  bat: {
+    name: "Bat Familiar", cost: 6, swatch: "#2e2640", spritePrefix: "familiar_bat",
+    frenzy: "echo", frenzyMoteMult: 1, desc: "Night Sense + Echo Swarm",
+    // Night Sense: a small flat bump to pickup magnet RANGE, added at the attraction
+    // check (applyMagnet) so it stacks with the innate magnet + Magnet Charm and can't
+    // be clobbered. Kept in the table like frenzyMoteMult; absent on others -> 0 at run start.
+    magnetBonus: 10,    // +10px pickup magnet range (tiny vs Magnet Charm's +55/level)
+    blurb: "A sharp-eared spirit that scatters foes with echo magic.",
+    passive: "Night Sense", passiveDesc: "Pickups are drawn in from a little farther.",
+    frenzyName: "Echo Swarm", frenzyDesc: "Echo waves strike nearby enemies.",
+  },
 };
-const FAMILIAR_ORDER = ["default", "owl", "fox"];
+const FAMILIAR_ORDER = ["default", "owl", "fox", "bat"];
 
 // --- Bestiary -------------------------------------------------------------
 // Creature entries for the Bestiary screen. `id` is the seen-tracking key
@@ -441,6 +452,7 @@ export class Game {
     this.familiarMoteMult = 1; // Star-Eyed Focus (Owl): per-mote frenzy bonus, set per run
     this.familiarFlaskLuck = 0;  // Trickster Luck (Fox): flat flask-drop bonus, set per run
     this.familiarMagnetLuck = 0; // Trickster Luck (Fox): flat Spirit Magnet bonus, set per run
+    this.familiarMagnetBonus = 0; // Night Sense (Bat): flat pickup magnet-range bump, set per run
     this.luckLevel = 0;       // Lucky Paws: drop-chance level
 
     // Evolution (one-shot).
@@ -524,6 +536,7 @@ export class Game {
     this.familiarMoteMult = aspect.frenzyMoteMult || 1;
     this.familiarFlaskLuck = aspect.flaskLuck || 0;   // Trickster Luck (Fox); 0 for others
     this.familiarMagnetLuck = aspect.magnetLuck || 0;
+    this.familiarMagnetBonus = aspect.magnetBonus || 0; // Night Sense (Bat); 0 for others
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
@@ -556,6 +569,7 @@ export class Game {
     this.familiarMoteMult = 1;
     this.familiarFlaskLuck = 0;
     this.familiarMagnetLuck = 0;
+    this.familiarMagnetBonus = 0;
     this.luckLevel = 0;
     this.phantomPounceUnlocked = false;
     this.spiritBondUnlocked = false;
@@ -2006,13 +2020,16 @@ export class Game {
     return { x: cx(baseX + (Math.random() - 0.5) * 24), y: cy(baseY + (Math.random() - 0.5) * 24) };
   }
 
-  // Magnet Charm: ease an item toward the witch when within attraction range.
+  // Magnet Charm: ease an item toward the witch when within attraction range. Night
+  // Sense (Bat) adds a small flat bump here — additive on top of the innate magnet +
+  // Magnet Charm, computed at use so it can never be overwritten by the upgrade.
   applyMagnet(item, dt) {
-    if (this.magnetRange <= 0) return;
+    const range = this.magnetRange + this.familiarMagnetBonus;
+    if (range <= 0) return;
     const dx = this.player.x - item.x;
     const dy = this.player.y - item.y;
     const d = Math.hypot(dx, dy);
-    if (d > 0.001 && d < this.magnetRange) {
+    if (d > 0.001 && d < range) {
       item.x += (dx / d) * MAGNET_PULL_SPEED * dt;
       item.y += (dy / d) * MAGNET_PULL_SPEED * dt;
     }
