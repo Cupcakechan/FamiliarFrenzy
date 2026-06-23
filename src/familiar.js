@@ -87,8 +87,9 @@ const ECHO_START_RADIUS = 24;    // px a ring starts at
 const ECHO_MAX_RADIUS = 200;     // px a ring expands to (close-range CC around the Bat)
 const ECHO_RING_LIFE = 0.55;     // seconds to expand + fade (slight overlap reads as sonar)
 const ECHO_DAMAGE = 4;           // per enemy per ring (hits everything in range, so kept modest)
-const ECHO_BOSS_DAMAGE = 2;      // reduced per-hit vs bosses (~12 rings x 2 = ~24 over a 6s
-                                 //   Spirit Imbued, below Owl's ~35 — Bat is the swarm specialist)
+const ECHO_BOSS_DAMAGE = 1;      // reduced per-hit vs bosses (~12 rings x 1 = ~12 over a 6s
+                                 //   Spirit Imbued, well below Owl's ~35 / Fox's ~25 — Bat is
+                                 //   the swarm specialist and the weakest single-target option)
 
 // --- Spirit Volley evolution (spread-shot) -------------------------------
 // Once unlocked (familiar.spreadShot = true), every attack fires a center bolt
