@@ -91,6 +91,17 @@ const ECHO_BOSS_DAMAGE = 1;      // reduced per-hit vs bosses (~12 rings x 1 = ~
                                  //   Spirit Imbued, well below Owl's ~35 / Fox's ~25 — Bat is
                                  //   the swarm specialist and the weakest single-target option)
 
+// --- Grave Tax (Raven familiar's Spirit Imbued behavior) ----------------------
+// On the RISING EDGE of Spirit Imbued + Raven: mark several non-boss enemies (wounded
+// ones first, each ordered by distance to the PLAYER so feathers fall where the player
+// can reach them). A marked enemy KILLED before its mark expires drops a guaranteed
+// healing feather — the drop + heal live in game.js; this file owns placing the marks,
+// ageing them, and drawing the omen. Bosses are never marked. No direct damage: the
+// player still has to kill the marked foes and walk over the feathers to heal.
+const GRAVE_MARK_COUNT = 6;     // non-boss enemies marked per activation (≈ FEATHER_MAX)
+const GRAVE_MARK_DURATION = 6;  // seconds a mark lasts (= the Spirit Imbued window)
+const GRAVE_WOUNDED_FRAC = 0.6; // an enemy under this HP fraction is prioritized as "wounded"
+
 // --- Spirit Volley evolution (spread-shot) -------------------------------
 // Once unlocked (familiar.spreadShot = true), every attack fires a center bolt
 // PLUS two angled side bolts. The center keeps full familiar damage; the side
@@ -173,7 +184,7 @@ for (const prefix of FAMILIAR_SKINS) {
 // collar recolors (`<aspect>_<collarId>`), with the bare aspect prefix used for the
 // Spirit/default collar. List every prefix that has art here. Owl ships with all
 // three; missing files fall back to the base aspect, then the cat (see drawCat).
-const FAMILIAR_ASPECTS = ["familiar_owl", "familiar_owl_moonbeam", "familiar_owl_alchemist", "familiar_fox", "familiar_fox_moonbeam", "familiar_fox_alchemist", "familiar_bat", "familiar_bat_moonbeam", "familiar_bat_alchemist"];
+const FAMILIAR_ASPECTS = ["familiar_owl", "familiar_owl_moonbeam", "familiar_owl_alchemist", "familiar_fox", "familiar_fox_moonbeam", "familiar_fox_alchemist", "familiar_bat", "familiar_bat_moonbeam", "familiar_bat_alchemist", "familiar_raven", "familiar_raven_moonbeam", "familiar_raven_alchemist"];
 for (const prefix of FAMILIAR_ASPECTS) {
   for (const anim of ["idle", "attack"]) {
     for (const d of DIRS) {
@@ -431,7 +442,8 @@ export class Familiar {
 
     // Spirit Imbued behavior, set by game.startGame from the equipped familiar:
     // "default" (Cat: faster firing only) | "astral" (Owl: Astral Judgment strikes) |
-    // "foxfire" (Fox: Foxfire Chain — chaining wisps) | "echo" (Bat: Echo Swarm rings).
+    // "foxfire" (Fox: Foxfire Chain — chaining wisps) | "echo" (Bat: Echo Swarm rings) |
+    // "raven" (Raven: Grave Tax — marks foes; marked kills drop healing feathers).
     this.frenzyBehavior = "default";
     this.astralTimer = 0;     // counts down to the next Astral Judgment strike
     this.astralStrikes = [];  // brief code-drawn star flashes { x, y, ox, oy, life }
@@ -442,6 +454,8 @@ export class Familiar {
     this.foxfireBossHitsThisVolley = 0; // per-volley boss-hit counter (reset each launch)
     this.echoTimer = 0;   // counts down to the next Echo pulse (Bat)
     this.echoRings = [];  // expanding rings { ox, oy, radius, life, hit[] }
+    this.graveMarks = [];   // active Grave Tax marks { enemy, timer } the Raven placed
+    this._wasFrenzy = false; // tracks Spirit Imbued state to detect its rising edge (Raven)
 
     // Collar attack style + skin (set by game.startGame from the equipped collar).
     this.attackStyle = "rune";      // "rune" | "moonbeam" | "alchemist"
@@ -556,6 +570,24 @@ export class Familiar {
       this.echoTimer = 0;
     }
     this.updateEchoRings(dt, targets); // no-op when there are no rings
+
+    // --- Grave Tax (Raven): mark enemies on Spirit Imbued activation ---
+    // Mark ONCE on the rising edge (not every frame). The feather payoff happens in
+    // game.js when a marked enemy dies; here we place the marks, age them, and draw the
+    // omen. Marks can outlast the Spirit Imbued window, so ageing runs every frame.
+    if (frenzyActive && !this._wasFrenzy && this.frenzyBehavior === "raven") {
+      this.markGraveTargets(player, targets);
+    }
+    if (this.graveMarks.length) {
+      for (const m of this.graveMarks) {
+        // Clear the flag only on an ALIVE enemy whose mark expired — never on a dead one,
+        // so game.js can still read graveMarked at the moment of death and pay the feather.
+        m.timer -= dt;
+        if (m.timer <= 0 && !m.enemy.dead) m.enemy.graveMarked = false;
+      }
+      this.graveMarks = this.graveMarks.filter((m) => m.timer > 0 && !m.enemy.dead);
+    }
+    this._wasFrenzy = frenzyActive; // remember for next frame's rising-edge check
 
     // While idle (not mid-attack), face the way it's drifting.
     if (this.animState === "idle" && (Math.abs(moveX) > 0.1 || Math.abs(moveY) > 0.1)) {
@@ -895,6 +927,29 @@ export class Familiar {
     this.echoRings = this.echoRings.filter((r) => r.life > 0);
   }
 
+  // Grave Tax targeting (Option D): mark up to GRAVE_MARK_COUNT non-boss enemies, wounded
+  // ones first, each group ordered by distance to the PLAYER so feathers drop where the
+  // player can reach them. Sets enemy.graveMarked (read by game.js at death) + a timer.
+  markGraveTargets(player, targets) {
+    const alive = targets.filter((t) => !t.dead && !t.untargetable && !t.isBoss);
+    if (!alive.length) return;
+    const px = player.x, py = player.y;
+    const scored = alive.map((t) => ({
+      t,
+      // 0 sorts before 1 — wounded enemies (likelier to die in-window) are marked first.
+      wounded: t.health < t.maxHealth * GRAVE_WOUNDED_FRAC ? 0 : 1,
+      d: distance(px, py, t.x, t.y),
+    }));
+    scored.sort((a, b) => (a.wounded - b.wounded) || (a.d - b.d));
+    const n = Math.min(GRAVE_MARK_COUNT, scored.length);
+    for (let i = 0; i < n; i++) {
+      const e = scored[i].t;
+      if (e.graveMarked) continue; // already marked from an overlapping window — don't double-add
+      e.graveMarked = true;
+      this.graveMarks.push({ enemy: e, timer: GRAVE_MARK_DURATION });
+    }
+  }
+
   // Draw one cat (sprite or fallback) at a position + facing + frame, at a
   // given opacity. Used for BOTH the real cat (alpha 1) and the ghost-trail
   // afterimages (low alpha). Wrapped in save/restore so globalAlpha + shadow
@@ -1100,6 +1155,29 @@ export class Familiar {
       ctx.restore();
     }
 
+    // Grave Tax (Raven): a small dark omen glyph hovering over each marked enemy, so the
+    // player can read which kills will pay out a feather. This whole draw runs after the
+    // enemy pass (game.js), so the marks sit on top of the enemies they tag.
+    for (const m of this.graveMarks) {
+      const e = m.enemy;
+      const t = Math.min(1, m.timer / GRAVE_MARK_DURATION);
+      const my = e.y - (e.radius || 12) - 10;
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.45 * t; // fades slightly as the mark nears expiry
+      ctx.translate(e.x, my);
+      ctx.shadowColor = "#7a5aa8";
+      ctx.shadowBlur = 8;
+      ctx.strokeStyle = "#cdb4ff";       // pale violet downward chevron (an omen)
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(-5, -3); ctx.lineTo(0, 3); ctx.lineTo(5, -3);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = "#3a2f5e";         // a small dark feather-dot above it
+      ctx.beginPath(); ctx.arc(0, -6, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+
     // The real cat on top, full opacity.
     this.drawCat(ctx, this.x, this.y, this.facing, this.animState, this.animFrame, 1);
   }
@@ -1131,6 +1209,8 @@ export class Familiar {
     this.foxfireBossHitsThisVolley = 0;
     this.echoTimer = 0;
     this.echoRings = [];
+    this.graveMarks = [];
+    this._wasFrenzy = false;
     this.attackStyle = "rune";      // game.startGame overrides from the equipped collar
     this.spritePrefix = "familiar";
     this.spritePrefixBase = "familiar";

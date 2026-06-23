@@ -21,7 +21,7 @@ import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
 import { Enemy, WaveManager, HazardZone, HazardPuddle, separateEnemies } from "./enemies.js";
 import { CURSES, CURSE_POOL, rollNextCurse, curseValue } from "./curses.js";
-import { Pickup, HealthFlask, SpiritMagnet } from "./pickups.js";
+import { Pickup, HealthFlask, SpiritMagnet, RavenFeather } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
@@ -153,6 +153,13 @@ const TUTORIAL_HINTS = {
 };
 const FLASK_HEAL = 15;          // HP restored per flask
 
+// Raven familiar — healing feathers (Scavenger's Gift passive + Grave Tax Spirit Imbued).
+// A separate system from flasks, so Withering (which blocks flasks) does NOT block these.
+const FEATHER_HEAL = 3;         // HP per feather (vs a flask's 15 — modest, sustain not burst)
+const FEATHER_MAX = 6;          // hard cap on active feathers (bounds healing + screen clutter)
+const FEATHER_LIFE = 10;        // seconds an uncollected feather lingers before it fades
+const SCAVENGER_CHANCE = 0.05;  // Scavenger's Gift: feather chance on a non-boss kill
+
 // Cursed Ground curse: telegraphed cursed patches keep blooming around the witch.
 const CG_INTERVAL = 2.4;        // seconds between patches while the curse is active
 const CG_RADIUS = 58;           // patch damage radius
@@ -267,8 +274,20 @@ const FAMILIARS = {
     passive: "Night Sense", passiveDesc: "Pickups are drawn in from a little farther.",
     frenzyName: "Echo Swarm", frenzyDesc: "Echo waves strike nearby enemies.",
   },
+  raven: {
+    name: "Raven Familiar", cost: 10, swatch: "#1f1a2e", spritePrefix: "familiar_raven",
+    frenzy: "raven", frenzyMoteMult: 1, desc: "Scavenger's Gift + Grave Tax",
+    // Scavenger's Gift: small chance for a slain non-boss to drop a healing feather.
+    // Read at run start into familiarScavengerChance; 0 for every other familiar. The
+    // feather drop/heal lives in the death loop + collect loop; Grave Tax (the marking)
+    // lives in familiar.js. Premium familiar — the Cursed Mode survival tool, hence cost 10.
+    scavengerChance: SCAVENGER_CHANCE,
+    blurb: "A dark spirit that draws life from the fallen.",
+    passive: "Scavenger's Gift", passiveDesc: "Slain enemies may release a healing feather.",
+    frenzyName: "Grave Tax", frenzyDesc: "Spirit Imbued marks foes; marked kills drop feathers.",
+  },
 };
-const FAMILIAR_ORDER = ["default", "owl", "fox", "bat"];
+const FAMILIAR_ORDER = ["default", "owl", "fox", "bat", "raven"];
 
 // --- Bestiary -------------------------------------------------------------
 // Creature entries for the Bestiary screen. `id` is the seen-tracking key
@@ -430,6 +449,7 @@ export class Game {
     this.waveManager = new WaveManager(MAX_WAVES);
     this.pickups = [];
     this.flasks = [];
+    this.feathers = [];     // Raven healing feathers (Scavenger's Gift + Grave Tax)
     this.magnets = [];      // rare Spirit Magnet pickups
     this.vacuumTimer = 0;   // > 0 while a Spirit Magnet vacuum is active
 
@@ -453,6 +473,7 @@ export class Game {
     this.familiarFlaskLuck = 0;  // Trickster Luck (Fox): flat flask-drop bonus, set per run
     this.familiarMagnetLuck = 0; // Trickster Luck (Fox): flat Spirit Magnet bonus, set per run
     this.familiarMagnetBonus = 0; // Night Sense (Bat): flat pickup magnet-range bump, set per run
+    this.familiarScavengerChance = 0; // Scavenger's Gift (Raven): feather chance on a non-boss kill, set per run
     this.luckLevel = 0;       // Lucky Paws: drop-chance level
 
     // Evolution (one-shot).
@@ -537,6 +558,7 @@ export class Game {
     this.familiarFlaskLuck = aspect.flaskLuck || 0;   // Trickster Luck (Fox); 0 for others
     this.familiarMagnetLuck = aspect.magnetLuck || 0;
     this.familiarMagnetBonus = aspect.magnetBonus || 0; // Night Sense (Bat); 0 for others
+    this.familiarScavengerChance = aspect.scavengerChance || 0; // Scavenger's Gift (Raven); 0 for others
     this.enemies = [];
     this.enemyBolts = [];
     this.hazards = [];
@@ -551,6 +573,7 @@ export class Game {
     this._lastWaveSeen = this.waveManager.wave;
     this.pickups = [];
     this.flasks = [];
+    this.feathers = [];
     this.magnets = [];
     this.vacuumTimer = 0;
 
@@ -570,6 +593,7 @@ export class Game {
     this.familiarFlaskLuck = 0;
     this.familiarMagnetLuck = 0;
     this.familiarMagnetBonus = 0;
+    this.familiarScavengerChance = 0;
     this.luckLevel = 0;
     this.phantomPounceUnlocked = false;
     this.spiritBondUnlocked = false;
@@ -1874,6 +1898,21 @@ export class Game {
             this.magnets.push(new SpiritMagnet(spot.x, spot.y));
           }
         }
+
+        // Raven feathers — Grave Tax (guaranteed on a MARKED kill) takes priority over
+        // the Scavenger's Gift passive roll, so an enemy drops at most one feather. Non-
+        // bosses only, capped at FEATHER_MAX active. Deliberately OUTSIDE the rares block
+        // (not tutorial-suppressed) and separate from the flask roll, so Withering — which
+        // blocks flasks — does NOT block feathers. Crystals/motes/magnets are untouched.
+        if (!enemy.isBoss && this.feathers.length < FEATHER_MAX) {
+          const dropFeather =
+            enemy.graveMarked ||
+            (this.familiarScavengerChance > 0 && Math.random() < this.familiarScavengerChance);
+          if (dropFeather) {
+            const fs = this.findDropSpot(enemy.x, enemy.y, 8);
+            this.feathers.push(new RavenFeather(fs.x, fs.y, FEATHER_HEAL, FEATHER_LIFE));
+          }
+        }
       }
     }
     this.enemies = this.enemies.filter((e) => !e.dead);
@@ -1901,6 +1940,20 @@ export class Game {
       }
     }
     this.flasks = this.flasks.filter((f) => !f.dead);
+
+    // Collect Raven feathers (heal on walk-over). Same magnet/vacuum pull as flasks, but
+    // a smaller heal and no flaskBonus — feathers are their own sustain channel.
+    for (const feather of this.feathers) {
+      feather.update(dt);
+      this.applyMagnet(feather, dt);
+      this.applyVacuum(feather, dt);
+      if (circlesOverlap(feather.x, feather.y, feather.radius + 6, this.player.x, this.player.y, this.player.radius)) {
+        feather.dead = true;
+        this.player.heal(feather.heal);
+        playSfx("heal");
+      }
+    }
+    this.feathers = this.feathers.filter((f) => !f.dead);
 
     // Collect Spirit Magnets — each triggers a short "vacuum all rewards" burst.
     for (const magnet of this.magnets) {
@@ -2360,6 +2413,7 @@ export class Game {
     this.familiar.drawPuddles(ctx); // Alchemist puddles: ground layer, beneath pickups + enemies
     for (const pickup of this.pickups) pickup.draw(ctx);
     for (const flask of this.flasks) flask.draw(ctx);
+    for (const feather of this.feathers) feather.draw(ctx);
     for (const magnet of this.magnets) magnet.draw(ctx);
     for (const enemy of this.enemies) enemy.draw(ctx);
     for (const bolt of this.enemyBolts) bolt.draw(ctx);

@@ -32,6 +32,7 @@ const FLASK_SPAWN_FLASH_TIME = 2.0; // seconds the "look here!" glow pulses + fa
 loadImage("mote_idle", "assets/sprites/pickups/mote_idle.png");
 loadImage("flask_idle", "assets/sprites/pickups/flask_idle.png");
 loadImage("spirit_magnet", "assets/sprites/pickups/spirit_magnet.png");
+loadImage("raven_feather", "assets/sprites/pickups/raven_feather.png");
 
 export class Pickup {
   constructor(x, y) {
@@ -265,6 +266,77 @@ export class SpiritMagnet {
     ctx.arc(this.x, cy, this.radius * 0.35, 0, Math.PI * 2);
     ctx.fill();
 
+    ctx.restore();
+  }
+}
+
+// --- Raven Feather (Raven familiar) ---------------------------------------
+// A small healing pickup dropped by Scavenger's Gift (chance on a non-boss kill)
+// and Grave Tax (guaranteed when a marked enemy dies). Heals a little; uses
+// raven_feather.png (32x32) with a code-drawn dark-feather fallback. UNLIKE the
+// other pickups it has a short TTL and fades out, so the player has to collect it
+// promptly — sustain through active play, not hoarding a pile of heals for later.
+const FEATHER_FADE = 1.5; // seconds of fade-out at the end of its life
+
+export class RavenFeather {
+  constructor(x, y, heal, life) {
+    this.x = x;
+    this.y = y;
+    this.radius = 8;
+    this.heal = heal;       // HP restored on pickup
+    this.dead = false;
+    this.life = life;       // seconds before it fades away uncollected
+    this.maxLife = life;
+    this.bob = randomRange(0, Math.PI * 2);
+    this.spriteScale = 0.5; // visual only; matches the 32x32 art
+  }
+
+  update(dt) {
+    this.bob += dt * 4;
+    this.life -= dt;
+    if (this.life <= 0) this.dead = true;
+  }
+
+  draw(ctx) {
+    const yOff = Math.sin(this.bob) * 2;
+    const cy = this.y + yOff;
+    // Fade over the final FEATHER_FADE seconds so its disappearance reads clearly.
+    const alpha = this.life < FEATHER_FADE ? Math.max(0, this.life / FEATHER_FADE) : 1;
+    const img = getImage("raven_feather");
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    if (img && img.width > 0) {
+      // Soft violet halo so the feather reads as a magical pickup (cheap gradient).
+      const haloR = this.radius * 2.0;
+      const g = ctx.createRadialGradient(this.x, cy, 0, this.x, cy, haloR);
+      g.addColorStop(0, "rgba(170, 140, 220, 0.30)");
+      g.addColorStop(1, "rgba(170, 140, 220, 0)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(this.x, cy, haloR, 0, Math.PI * 2);
+      ctx.fill();
+
+      const dw = img.width * this.spriteScale;
+      const dh = img.height * this.spriteScale;
+      ctx.drawImage(img, this.x - dw / 2, cy - dh / 2, dw, dh);
+    } else {
+      // --- Fallback: a small dark feather (violet vane + pale shaft) ---
+      ctx.translate(this.x, cy);
+      ctx.shadowColor = "#7a5aa8";
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = "#3a2f5e";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, this.radius * 0.55, this.radius, 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "#cdb4ff";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-this.radius * 0.5, this.radius * 0.7);
+      ctx.lineTo(this.radius * 0.5, -this.radius * 0.7);
+      ctx.stroke();
+    }
     ctx.restore();
   }
 }
