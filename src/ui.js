@@ -1857,8 +1857,14 @@ export function drawCloset(ctx, w, h, data) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
   ctx.fillRect(0, 0, w, h);
 
-  text(ctx, "WARDROBE", w / 2, 54, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+  const title = data.pendingRun ? `WARDROBE — ${data.pendingRun === "cursed" ? "Cursed" : "Casual"} Run` : "WARDROBE";
+  text(ctx, title, w / 2, 54, { size: 38, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   crystalLine(ctx, w / 2, 96, `Spirit Crystals: ${data.crystals}`, { size: 17, color: CREAM });
+  // Idea 2: pre-run loadout summary so the full setup reads at a glance before Start.
+  if (data.pendingRun && data.loadout) {
+    text(ctx, `Loadout:  ${data.loadout.outfit}  ·  ${data.loadout.familiar}  ·  ${data.loadout.collar}`,
+      w / 2, 112, { size: 12, color: DIM, weight: "600", maxWidth: w - 80 });
+  }
 
   // Tabs (Outfits | Familiars | Collars); A/D switches (hint in the footer).
   const tabLabels = ["Outfits", "Familiars", "Collars"];
@@ -1940,19 +1946,47 @@ export function drawCloset(ctx, w, h, data) {
     }
   });
 
-  // Back row.
+  // Bottom buttons. Normal shop: a single centered Back (index rowsData.length). Pre-run
+  // loadout: Back (left) + a prominent "Start Run" (right, index rowsData.length + 1).
   const backY = startY + rowsData.length * rowH + 2;
-  const backSel = data.index === rowsData.length;
-  if (backSel) {
-    ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
-    roundRect(ctx, w / 2 - 90, backY - 20, 180, 40, 8); ctx.fill();
-    ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
-    roundRect(ctx, w / 2 - 90, backY - 20, 180, 40, 8); ctx.stroke();
+  const hasStart = !!data.pendingRun;
+  const backIndex = rowsData.length;
+  const startIndex = rowsData.length + 1;
+  const drawBtn = (cx, label, selected, filled) => {
+    const bw = hasStart ? 168 : 180, bh = 40;
+    const x = cx - bw / 2;
+    if (filled) {
+      // Prominent Start — solid-ish gold fill, brighter when selected.
+      ctx.fillStyle = selected ? "rgba(244, 213, 141, 0.32)" : "rgba(244, 213, 141, 0.14)";
+      roundRect(ctx, x, backY - 20, bw, bh, 8); ctx.fill();
+      ctx.strokeStyle = GOLD; ctx.lineWidth = selected ? 2.5 : 1.5;
+      roundRect(ctx, x, backY - 20, bw, bh, 8); ctx.stroke();
+      text(ctx, label, cx, backY, { size: 20, color: GOLD, weight: "700" });
+    } else {
+      if (selected) {
+        ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
+        roundRect(ctx, x, backY - 20, bw, bh, 8); ctx.fill();
+        ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+        roundRect(ctx, x, backY - 20, bw, bh, 8); ctx.stroke();
+      }
+      text(ctx, label, cx, backY, { size: 20, color: selected ? GOLD : DIM, weight: "700" });
+    }
+    return { x, y: backY - 20, w: bw, h: bh };
+  };
+  if (hasStart) {
+    const br = drawBtn(w / 2 - 95, "Back", data.index === backIndex, false);
+    const sr = drawBtn(w / 2 + 95, "Start Run", data.index === startIndex, true);
+    zones.push({ ...br, index: backIndex });
+    zones.push({ ...sr, index: startIndex });
+  } else {
+    const br = drawBtn(w / 2, "Back", data.index === backIndex, false);
+    zones.push({ ...br, index: backIndex });
   }
-  text(ctx, "Back", w / 2, backY, { size: 20, color: backSel ? GOLD : DIM, weight: "700" });
-  zones.push({ x: w / 2 - 90, y: backY - 20, w: 180, h: 40, index: rowsData.length });
 
-  text(ctx, "A/D switch tab • Up/Down move • Enter • Esc back", w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
+  const hint = hasStart
+    ? "A/D switch tab • Up/Down move • Enter select/Start • Esc back"
+    : "A/D switch tab • Up/Down move • Enter • Esc back";
+  text(ctx, hint, w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
 
-  return { zones, tabs }; // game.js hit-tests rows/Back (zones) + the tab toggle (tabs)
+  return { zones, tabs }; // game.js hit-tests rows/Back/Start (zones) + the tab toggle (tabs)
 }

@@ -521,6 +521,7 @@ export class Game {
     this.crystalsThisRun = 0;
     this.closetIndex = 0;
     this.closetTab = 0; // 0 = Outfits, 1 = Familiars, 2 = Collars
+    this.pendingRunMode = null; // null = normal shop Wardrobe; "endless"/"cursed" = pre-run loadout (shows Start)
     // Fractional carries so the Blue/Gold outfit %-buffs stay accurate on small
     // per-pickup amounts (without these, +5% on a value of 10 rounds badly).
     this._scoreCarry = 0;
@@ -529,6 +530,7 @@ export class Game {
 
   startGame(mode = "tutorial") {
     this.gameMode = mode;
+    this.pendingRunMode = null; // any run-start clears the pre-run flag (defensive)
     this.score = 0;
     this.player.reset(WORLD_W / 2, WORLD_H / 2);
     // Equipped outfit drives the witch's sprite skin for this whole run (the
@@ -749,9 +751,9 @@ export class Game {
         this.navMenu(MODE_SELECT_ITEMS.length);
         if (m.clicked >= 0) this.menuIndex = m.clicked;
         if (this.confirmPressed() || m.clicked >= 0) {
-          if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Mode
-          else if (this.menuIndex === 1) this.startGame("endless");    // Casual Mode
-          else if (this.menuIndex === 2) this.startGame("cursed");     // Cursed Mode
+          if (this.menuIndex === 0) this.startGame("tutorial");        // Tutorial Mode — starts directly, no Wardrobe
+          else if (this.menuIndex === 1) this.openCloset("endless");   // Casual Mode — pre-run Wardrobe loadout, then Start
+          else if (this.menuIndex === 2) this.openCloset("cursed");    // Cursed Mode — pre-run Wardrobe loadout, then Start
           else if (this.menuIndex === 3) { this.state = STATE.HOW_TO_PLAY; } // How to Play (returns to Mode Select)
           else if (this.menuIndex === 4) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         } else if (this.backPressed()) {
@@ -2772,7 +2774,8 @@ export class Game {
   }
 
   // --- Closet (Wardrobe screen) --------------------------------------------
-  openCloset() {
+  openCloset(pendingMode = null) {
+    this.pendingRunMode = pendingMode; // null = normal shop; "endless"/"cursed" = pre-run loadout
     this.closetIndex = 0;
     this.closetTab = 0;
     this.state = STATE.CLOSET;
@@ -2788,7 +2791,19 @@ export class Game {
 
   updateCloset() {
     const { order } = this.closetTabRefs();
-    const count = order.length + 1; // rows + Back
+    const hasStart = !!this.pendingRunMode;          // pre-run loadout shows a Start button
+    // Bottom buttons match drawCloset: Back is always index order.length; in pre-run a
+    // prominent Start follows it at order.length + 1.
+    const backIndex = order.length;
+    const startIndex = hasStart ? order.length + 1 : -1;
+    const count = order.length + (hasStart ? 2 : 1); // rows + Back (+ Start)
+    // Act on a row/button like Enter: Start launches the pending run, Back exits (context-
+    // aware), any item runs the buy/equip path.
+    const activate = (idx) => {
+      if (idx === startIndex) { const m = this.pendingRunMode; this.pendingRunMode = null; this.startGame(m); }
+      else if (idx === backIndex) this.exitCloset();
+      else this.closetSelect();
+    };
 
     // --- Mouse (additive; drives the SAME selection + actions as the keys) ---
     const z = this.closetZones;
@@ -2811,15 +2826,9 @@ export class Game {
           if (onTab !== this.closetTab) { this.closetTab = onTab; this.closetIndex = 0; }
           return;
         }
-        // Otherwise a row/Back click: select it, then act exactly like Enter
-        // (Back returns; any item runs the keyboard buy/equip path).
+        // Otherwise a row/button click: select it, then act exactly like Enter.
         const hit = this.zoneAt(z.zones);
-        if (hit >= 0) {
-          this.closetIndex = hit;
-          if (hit === order.length) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
-          else this.closetSelect();
-          return;
-        }
+        if (hit >= 0) { this.closetIndex = hit; activate(hit); return; }
       }
     }
 
@@ -2843,13 +2852,23 @@ export class Game {
       this.closetIndex = (this.closetIndex + 1) % count;
     }
     if (this.confirmPressed()) {
-      if (this.closetIndex === order.length) { // Back row
-        this.state = STATE.MAIN_MENU; this.menuIndex = 0;
-      } else {
-        this.closetSelect();
-      }
+      activate(this.closetIndex);
     } else if (this.backPressed()) {
-      this.state = STATE.MAIN_MENU; this.menuIndex = 0;
+      this.exitCloset(); // Esc/Backspace: pre-run → Mode Select, normal shop → Main Menu
+    }
+  }
+
+  // Leave the Wardrobe. Pre-run loadout returns to Mode Select (cursor on the chosen
+  // mode); the normal shop returns to the Main Menu. Always clears the pending mode so a
+  // stale Start button can never appear the next time the menu Wardrobe is opened.
+  exitCloset() {
+    if (this.pendingRunMode) {
+      this.menuIndex = this.pendingRunMode === "cursed" ? 2 : 1; // Cursed / Casual row
+      this.pendingRunMode = null;
+      this.state = STATE.MODE_SELECT;
+    } else {
+      this.state = STATE.MAIN_MENU;
+      this.menuIndex = 0;
     }
   }
 
@@ -2898,6 +2917,12 @@ export class Game {
       crystals: this.wardrobe.crystals,
       tab: this.closetTab,
       index: this.closetIndex,
+      pendingRun: this.pendingRunMode, // null = shop; "endless"/"cursed" = pre-run (Start button + mode title)
+      loadout: {                       // equipped names for the pre-run loadout summary line
+        outfit: (OUTFITS[this.wardrobe.equipped] || OUTFITS.default).name,
+        familiar: (FAMILIARS[this.wardrobe.familiarEquipped] || FAMILIARS.default).name,
+        collar: (COLLARS[this.wardrobe.collarEquipped] || COLLARS.default).name,
+      },
       outfits: rows(OUTFIT_ORDER, OUTFITS, this.wardrobe.owned, this.wardrobe.equipped),
       familiars: rows(FAMILIAR_ORDER, FAMILIARS, this.wardrobe.familiarsOwned, this.wardrobe.familiarEquipped),
       collars: rows(COLLAR_ORDER, COLLARS, this.wardrobe.collarsOwned, this.wardrobe.collarEquipped, collarSpriteKey),
