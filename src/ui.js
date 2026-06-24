@@ -1948,7 +1948,7 @@ export function drawCloset(ctx, w, h, data) {
 
   // Bottom buttons. Normal shop: a single centered Back (index rowsData.length). Pre-run
   // loadout: Back (left) + a prominent "Start Run" (right, index rowsData.length + 1).
-  const backY = startY + rowsData.length * rowH + 2;
+  const backY = startY + rowsData.length * rowH - 6;
   const hasStart = !!data.pendingRun;
   const backIndex = rowsData.length;
   const startIndex = rowsData.length + 1;
@@ -1986,7 +1986,7 @@ export function drawCloset(ctx, w, h, data) {
   const hint = hasStart
     ? "A/D switch tab • Up/Down move • Enter select/Start • Esc back"
     : "A/D switch tab • Up/Down move • Enter • Esc back";
-  text(ctx, hint, w / 2, h - 24, { size: 14, color: DIM, weight: "500" });
+  text(ctx, hint, w / 2, h - 20, { size: 14, color: DIM, weight: "500" });
 
   return { zones, tabs }; // game.js hit-tests rows/Back/Start (zones) + the tab toggle (tabs)
 }
