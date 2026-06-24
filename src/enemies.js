@@ -1957,6 +1957,24 @@ const CURSED_DAMAGE_MULT = 1.20;   // Cursed enemies HIT HARDER from wave 1 (pre
                                    //   amplifies ALL incoming damage x1.5 later.
 const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 
+// --- Post-opening pacing (1.12.0, NON-Cursed) ----------------------------
+// The base spawn gap (spawnInterval) sits FLAT across the whole opening run
+// (tier 0 = waves 1-10): the per-tier shave above only starts at wave 11. With
+// the wave budget still growing each wave, that left the mid waves (5-9) feeling
+// slack once the player had leveled up and was clearing fast. These add a gentle
+// per-wave tightening AFTER the opening so groups arrive quicker — WITHOUT
+// touching the first 3-4 waves and WITHOUT raising maxAlive, HP, or the budget,
+// so peak on-screen pressure is unchanged. Tutorial + Casual only; Cursed keeps
+// its own tuned cadence (it's under live difficulty testing).
+const POST_OPENING_WAVE = 4;          // waves 1-4 keep the original cozy cadence
+const POST_OPENING_SPAWN_STEP = 0.04; // spawn gap shaved per wave past the opening
+const POST_OPENING_SPAWN_MAX = 0.20;  // ...opening ramp caps here, so it tightens
+                                      //   waves 5-9 without runaway-stacking on the
+                                      //   per-tier shave in long runs (MIN_SPAWN_
+                                      //   INTERVAL still floors the final value).
+const INTERMISSION_SHORT = 2.0;       // between-wave break once past the opening
+                                      //   (breaks entering waves 1-4 stay at 2.5s)
+
 // DEBUG: when true, EVERY wave spawns the boss (handy for testing boss art /
 // behavior without grinding to wave 10). Set to false for normal play and
 // before committing a release build.
@@ -3176,9 +3194,30 @@ export class WaveManager {
     return Math.max(0, Math.floor((this.wave - 1) / (this.bossEvery || 10)));
   }
 
-  // Effective spawn gap, tightened a little each endless tier (with a floor).
+  // Effective spawn gap: tightened a little each endless tier (with a floor),
+  // plus a gentle per-wave shave after the opening (non-Cursed) so the mid waves
+  // don't sag. See POST_OPENING_* for the why.
   spawnGap() {
-    return Math.max(MIN_SPAWN_INTERVAL, this.spawnInterval - this.endlessTier() * SPAWN_DELAY_PER_TIER);
+    let gap = this.spawnInterval - this.endlessTier() * SPAWN_DELAY_PER_TIER;
+    // The opening tier used to spawn at a flat spawnInterval for waves 1-10. Shave
+    // a touch per wave past POST_OPENING_WAVE so groups arrive quicker; the cap
+    // keeps this from endlessly stacking on the per-tier shave in long runs, and
+    // MIN_SPAWN_INTERVAL still floors the result. Cursed is left on its own cadence.
+    if (!this.cursed && this.wave > POST_OPENING_WAVE) {
+      gap -= Math.min(POST_OPENING_SPAWN_MAX, (this.wave - POST_OPENING_WAVE) * POST_OPENING_SPAWN_STEP);
+    }
+    return Math.max(MIN_SPAWN_INTERVAL, gap);
+  }
+
+  // Between-wave break: trimmed once past the opening (non-Cursed) so the mid-run
+  // doesn't sag; the first few breaks keep the relaxed teaching pace. Cursed keeps
+  // its tuned 2.5s break (under live difficulty testing). Note: when this is read
+  // (end of a cleared wave) this.wave is the wave that just finished, so the first
+  // trimmed break is the one entering wave 5.
+  nextIntermission() {
+    return (!this.cursed && this.wave >= POST_OPENING_WAVE)
+      ? INTERMISSION_SHORT
+      : this.intermissionLength;
   }
 
   // The wave number to show on the HUD (the upcoming one during a break).
@@ -3216,7 +3255,7 @@ export class WaveManager {
       if (this.endless && this.boss && this.boss.dead) {
         this.boss = null;
         this.phase = "intermission";
-        this.timer = this.intermissionLength;
+        this.timer = this.nextIntermission();
       }
       return;
     }
@@ -3232,7 +3271,7 @@ export class WaveManager {
     } else if (enemies.length === 0) {
       // Whole wave spawned AND cleared → break before the next wave.
       this.phase = "intermission";
-      this.timer = this.intermissionLength;
+      this.timer = this.nextIntermission();
     }
   }
 
