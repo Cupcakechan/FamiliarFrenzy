@@ -1961,6 +1961,15 @@ const CURSED_DAMAGE_MULT = 1.20;   // Cursed enemies HIT HARDER from wave 1 (pre
                                    //   amplifies ALL incoming damage x1.5 later.
 const MIN_SPAWN_INTERVAL = 0.35;   // ...but never faster than this
 
+// Hard ceiling on a REGULAR enemy's final move speed (px/s), exported because the
+// Quickening live-rescale in game.js must respect it too. The witch's move speed is
+// a fixed 220 with no upgrade path, so without a cap the wave-scaled base x Cursed
+// x Quickening eventually exceeds 220 and kiting becomes impossible (worst with
+// Quickening, ~wave 15+ in Cursed). 205 keeps the witch a ~7% edge — always
+// kiteable, still threatening. Bosses are EXEMPT (separate tuned classes). This only
+// ever binds in deep/Cursed runs; normal Tutorial/Casual speeds never approach it.
+export const MAX_ENEMY_SPEED = 205;
+
 // --- Post-opening pacing (1.12.0, NON-Cursed) ----------------------------
 // The base spawn gap (spawnInterval) sits FLAT across the whole opening run
 // (tier 0 = waves 1-10): the per-tier shave above only starts at wave 11. With
@@ -3392,7 +3401,10 @@ export class WaveManager {
     // stacking curses do the rest).
     const speedMult = this.cursed ? CURSED_SPEED_MULT : 1;
     const hpMult = this.cursed ? CURSED_HP_MULT : 1;
-    e.speed = baseSpeed * speedMult * e.def.speedMult * (this.curseSpeedMult || 1);
+    // Capped so a regular enemy can never fully outrun the fixed-220 witch (see
+    // MAX_ENEMY_SPEED) — without this, deep waves + Cursed + Quickening compound
+    // past 220 and kiting becomes impossible. Bosses set their own speed elsewhere.
+    e.speed = Math.min(MAX_ENEMY_SPEED, baseSpeed * speedMult * e.def.speedMult * (this.curseSpeedMult || 1));
     e.maxHealth = Math.max(1, Math.round(baseHealth * hpMult * e.def.healthMult));
     e.health = e.maxHealth;
     // Offensive pressure: in Cursed, the swarm's CONTACT damage hits harder from the

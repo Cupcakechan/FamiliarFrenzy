@@ -19,7 +19,7 @@
 import { Input } from "./input.js";
 import { Player } from "./player.js";
 import { Familiar } from "./familiar.js";
-import { Enemy, WaveManager, HazardZone, HazardPuddle, separateEnemies } from "./enemies.js";
+import { Enemy, WaveManager, HazardZone, HazardPuddle, separateEnemies, MAX_ENEMY_SPEED } from "./enemies.js";
 import { CURSES, CURSE_POOL, rollNextCurse, curseValue } from "./curses.js";
 import { Pickup, HealthFlask, SpiritMagnet, RavenFeather } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
@@ -676,7 +676,9 @@ export class Game {
     const newMult = curseValue(this.activeCurses, "enemySpeedMult", 1);
     const oldMult = this.waveManager.curseSpeedMult || 1;
     if (newMult !== oldMult) {
-      for (const e of this.enemies) if (!e.isBoss) e.speed *= newMult / oldMult;
+      // Clamp here too: a freshly-quickened LIVE enemy could otherwise jump past
+      // MAX_ENEMY_SPEED. New spawns are already capped in makeEnemy.
+      for (const e of this.enemies) if (!e.isBoss) e.speed = Math.min(MAX_ENEMY_SPEED, e.speed * newMult / oldMult);
       this.waveManager.curseSpeedMult = newMult;
     }
 
