@@ -2123,9 +2123,13 @@ export class Game {
     this.addScore(SCORE_PER_PICKUP); // Gold Robe: +score%
     this.showHint("mote_pickup");
 
-    // Charge the frenzy meter (only while not already frenzied / not full).
+    // Charge the Spirit Imbued meter — now ALSO while one is active (B1): motes
+    // collected mid-Imbued bank toward the next one (still capped at FRENZY_MOTES),
+    // so it reloads while you're powered and you can re-trigger sooner. The
+    // activation gate still blocks re-firing until the current timer ends, and you
+    // can't bank past full, so uptime stays bounded by how many motes you grab.
     // Frenzy Focus raises how much each mote adds (this.frenzyPerMote).
-    if (this.frenzyTimer <= 0 && this.frenzyCharge < FRENZY_MOTES) {
+    if (this.frenzyCharge < FRENZY_MOTES) {
       // Spirit Drought scales each mote's contribution (1 = unaffected); the XP above is untouched.
       // Star-Eyed Focus (Owl) multiplies the per-mote charge too — frenzy meter ONLY
       // (XP/score/crystals are separate lines). Stacks with Spirit Drought's mult, so
