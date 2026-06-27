@@ -1858,6 +1858,16 @@ export class Game {
         // findDropSpot), so a mote + flask from the same enemy don't stack.
         let spot = this.findDropSpot(enemy.x, enemy.y, 7);
         this.pickups.push(new Pickup(spot.x, spot.y));
+        // Stronger enemies pay out more XP packs: ENEMY_TYPES.moteDrop (default 1
+        // for wisps + any unset type; bosses have no .def, so they fall back to 1).
+        // Extra motes reuse findDropSpot — which avoids the ones already placed — so
+        // they fan out around the kill instead of stacking. `spot` is left untouched
+        // (the flask/magnet drops below reassign it).
+        const moteDrop = (enemy.def && enemy.def.moteDrop) || 1;
+        for (let i = 1; i < moteDrop; i++) {
+          const extra = this.findDropSpot(enemy.x, enemy.y, 7);
+          this.pickups.push(new Pickup(extra.x, extra.y));
+        }
         this.showHint("mote_drop");
 
         // Tutorial staging: wave 1 drops motes ONLY (so the mote lesson lands

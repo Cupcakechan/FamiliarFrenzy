@@ -111,6 +111,7 @@ const ENEMY_TYPES = {
     spriteScale: 0.8,   // tune independently once the art is in (visual only)
     speedMult: 0,       // stationary — it relocates by BLINKING, not walking
     healthMult: 1.0,    // a priority target; squishy enough to punish ignoring it
+    moteDrop: 2,        // priority caster — rewards killing it even though its HP ~ a wisp's; default 1
     damage: 8,          // contact damage if you crowd it
     fallbackOuter: "#b48cff", // pale bone-violet
     fallbackInner: "#4a3b6b",
@@ -134,6 +135,7 @@ const ENEMY_TYPES = {
     spriteScale: 0.9,    // tune independently once the art is in (visual only)
     speedMult: 0.6,      // slow bully — slower than a wisp
     healthMult: 3.0,     // the tank: ~3x a wisp's HP
+    moteDrop: 3,         // the toughest regular foe — pays out the most XP packs; default 1
     damage: 8,           // contact damage if you crowd it
     fallbackOuter: "#7bbf5a", // goblin green
     fallbackInner: "#2f5a22",
@@ -164,6 +166,7 @@ const ENEMY_TYPES = {
     spriteScale: 0.8,         // tune independently once the art is in (visual only)
     speedMult: 0.95,          // shuffles at a modest pace — it fights by trapping, not chasing
     healthMult: 2.0,          // tanky enough to land several casts before it falls (still < the Goblin's 3.0)
+    moteDrop: 2,              // tanky elite — extra XP packs for the effort; default 1
     damage: 8,                // contact damage if you crowd it (the spike line is the real threat)
     fallbackOuter: "#f1c359", // fork gold (matches the spikes)
     fallbackInner: "#8a6b1f",
@@ -197,6 +200,7 @@ const ENEMY_TYPES = {
     spriteScale: 0.9,    // tune independently once the art is in (visual only)
     speedMult: 0.55,     // slow, deliberate trudge — slower than a wisp
     healthMult: 2.5,     // tanky controller (between the Pronggeist's 2.0 and the Goblin's 3.0)
+    moteDrop: 3,         // tanky controller — pays out generously to reward bursting it; default 1
     damage: 8,           // standard contact damage if you stand on it (the WALL does none)
     fallbackOuter: "#9fb3c8", // tin/steel blue-grey
     fallbackInner: "#4a5a6b",
