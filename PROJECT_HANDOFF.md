@@ -1,17 +1,26 @@
 # Familiar Frenzy — Project Handoff
 
-Last updated: **2026-06-23** — **1.11.0** (the **Bat** + **Raven** familiars complete
-the five-familiar roster, plus a **pre-run Wardrobe loadout flow**) is SHIPPED/LIVE,
-on top of **1.10.0** (the **Owl** + **Fox** familiars, the new **Familiars** Wardrobe
-category + Familiars archive, a Cursed-Mode rebalance, and the Endless→**Casual**
-display rename).
-Covers all post-launch work through **1.11.0**.
-**1.2.0–1.11.0 are all SHIPPED/LIVE.** The big arc since 1.9.0 is the **alternate
+Last updated: **2026-06-27** — **1.12.0** (a tuning pass: post-opening **wave pacing**,
+**stronger enemies drop more XP packs**, **Spirit Imbued reloads while active**, and a
+**regular-enemy speed cap** that fixes the Quickening curse running away at high waves)
+is SHIPPED/LIVE, on top of **1.11.0** (the **Bat** + **Raven** familiars completing the
+five-familiar roster, plus a **pre-run Wardrobe loadout flow**) and **1.10.0** (the
+**Owl** + **Fox** familiars, the **Familiars** Wardrobe category + archive, a Cursed-Mode
+rebalance, and the Endless→**Casual** display rename).
+Covers all post-launch work through **1.12.0**.
+**1.2.0–1.12.0 are all SHIPPED/LIVE.** The big arc since 1.9.0 is the **alternate
 Familiar system** — five familiars (Cat / Owl / Fox / Bat / Raven), each changing only
 its aspect + a small passive + its Spirit Imbued behavior, all working with every
 collar (see **§3b**) — and a **loadout screen** that opens the Wardrobe before Casual /
 Cursed runs (Tutorial still starts directly; see §9). Raven introduced the one new
-pickup type, the **healing feather** (§3b). No release is mid-flight.
+pickup type, the **healing feather** (§3b). **1.12.0 is a no-new-systems tuning pass
+(§6).** No release is mid-flight.
+
+> ⚠️ **VERSION ASSUMPTION — confirm against the published itch.io release.** This doc
+> treats all four 1.12.0 changes (pacing, mote drops, Spirit Imbued reload, speed cap)
+> as ONE release. If the pacing pass went live as 1.12.0 on its own and the three
+> progression/Cursed changes shipped separately (e.g. as 1.13.0), split the §6 entry to
+> match — the last published itch.io build is the source of truth, not this doc.
 
 > The Hourkeeper boss is in `BOSS_TYPES` (4 bosses: elder_wisp, watching_hand,
 > hive_warden, hourkeeper) and its detailed entry is now filled in (§3 / §5); the
@@ -70,6 +79,15 @@ anything. Update it at the end of any session that completes work.
     1.5); caster tuning to preserve: `damage 8`, `fireRange 460`, `preferredRange 300`,
     `blinkRange 150`, `blinkDist 200`, `blastRadius 70`, `blastDamage 15`,
     `telegraph 1.1`, `castCooldown 3.5`, `speedMult 0`. `MAGE_INTRO_WAVE = 8`.
+    **1.12.0 (tuning):** `MAX_ENEMY_SPEED = 205` (**EXPORTED** — a hard ceiling on a
+    REGULAR enemy's final move speed, clamped in `makeEnemy` AND in game.js's Quickening
+    live-rescale; keeps the fixed-220 witch always able to kite — §3a; band 195–210).
+    Data-driven `moteDrop` on ENEMY_TYPES (Goblin **3**, Tin Bulwark **3**, Pronggeist
+    **2**, Bone Mage **2**; wisp/gecko + any unset type default to **1** via the kill-site
+    `|| 1`). Post-opening pacing constants (NON-Cursed): `POST_OPENING_WAVE 4`,
+    `POST_OPENING_SPAWN_STEP 0.04`, `POST_OPENING_SPAWN_MAX 0.20`, `INTERMISSION_SHORT 2.0`
+    (§6); the WaveManager's `intermissionLength 2.5` / `spawnInterval 0.8` / `maxAlive 12`
+    are UNCHANGED.
   * **Tin Bulwark (1.9.0):** a slow position-control enemy — `spriteScale 0.9`,
     `speedMult 0.55`, `healthMult 2.5`, contact `damage 8` (the WALL itself deals
     NONE). Its `bulwark` def: `castRange 260`, `approachTime 1.0`, `windup 0.9`
@@ -113,6 +131,13 @@ anything. Update it at the end of any session that completes work.
     (fires once per run when HP drops below 25%) → `EMBER_HEAL_TO = 0.50` (heals up to
     50%). `OUTFIT_ORDER = ["default", "blue", "gold", "red"]` (Wardrobe lists outfits
     in price order).
+    **1.12.0 (tuning):** `FRENZY_MOTES = 30` / `FRENZY_DURATION = 6` (the Spirit Imbued
+    meter) — `collectPickup`'s charge guard dropped its `frenzyTimer <= 0` half, so motes
+    now bank toward the next burst WHILE one is active (still capped at FRENZY_MOTES; the
+    activation gate still blocks re-firing mid-burst). The enemy kill-site drops `moteDrop`
+    motes (default 1) via a loop that fans extras out with `findDropSpot` (the first drop +
+    the reused `spot` var are unchanged). Quickening's live-rescale + `makeEnemy` clamp to
+    the imported `MAX_ENEMY_SPEED` (§3a / §2 enemies.js).
   * `settings.js` (NEW, 1.7.0): Display & Accessibility — keys `ff_reducedFlash` +
     `ff_highVisWarnings`; `REDUCED_FLASH_MULT = 0.4` (dampens screen-flash intensity
     when Reduced Flash is on). get/set pairs are imported by `game.js`.
@@ -316,12 +341,15 @@ Implemented and tested:
   optional knockback, i-frame-safe, code-drawn fallback. Damages the **player**.
   Owned by `game.this.hazards`. (The Alchemist `Puddle` is a SEPARATE familiar-owned
   class that damages ENEMIES — it only borrows the circle look; do not merge them.)
-* **Pickups:** EXP motes, health flasks (heal 15, 2s green spawn flash), rare Spirit
-  Magnet (vacuum). Innate 40px magnet.
+* **Pickups:** EXP motes (**stronger enemies drop more — `moteDrop`, 1.12.0 / §6**),
+  health flasks (heal 15, 2s green spawn flash), rare Spirit Magnet (vacuum). Innate
+  40px magnet.
 * **Upgrades (data-driven):** capped pool + 32x32 icons + Grimoire. **Three
   evolutions:** Phantom Pounce, Spirit Bond, Spirit Volley (§7). Pierce + spread
   reinterpret per equipped collar (§7).
-* **Spirit Imbued** mode (internals `frenzy*`) + Spirit Link ribbon; ready cues.
+* **Spirit Imbued** mode (internals `frenzy*`) + Spirit Link ribbon; ready cues. **The
+  meter RELOADS while active (1.12.0): motes banked mid-burst carry toward the next one
+  (capped at FRENZY_MOTES; no mid-burst re-fire) — §6.**
 * **HUD:** XP strip; HP + Spirit bars; Score + Lv; familiar dialogue bar; off-screen
   indicators. Enemy-intro banners fire FIRST-TIME-EVER (`ff_enemyIntros`).
 * **Audio:** dual-deck music (split menu/gameplay pools + boss); data-driven SFX (§8).
@@ -347,7 +375,12 @@ base difficulty bumps on regular enemies, plus **one more random curse per boss 
   * Cursed Ground (`groundHazard: true`) → ambient telegraphed HazardZone patches
     bloom near the witch (game.js, `CG_*`).
   * Quickening (`enemySpeedMult: 1.25`) → regular-enemy speed (game.js sets
-    `waveManager.curseSpeedMult`; bosses keep tuned speeds).
+    `waveManager.curseSpeedMult`; bosses keep tuned speeds). **1.12.0:** the result is now
+    clamped to `MAX_ENEMY_SPEED = 205` (enemies.js, exported) in BOTH `makeEnemy` AND the
+    live-rescale loop — without it, the wave-scaled base × Cursed 1.12 × Quickening 1.25
+    crossed the witch's fixed 220 (~wave 15+ Cursed) and kiting became impossible. The
+    1.25 multiplier itself is UNCHANGED; the cap only bounds the outcome (keeps a ~7%
+    witch edge; band 195–210). Bosses exempt.
   * Vengeful Dead (`deathPuddle: true`) → each slain NON-boss enemy drops a
     `HazardPuddle` where it fell (game.js death block, `VD_PUDDLE_*`).
   * Brittle (`damageMult: 1.5`) → multiplies ALL incoming player damage at the single
@@ -662,6 +695,35 @@ vertical-first names (`ne`, `sw`). Per-type `spriteScale` lives in `ENEMY_TYPES`
 ## 6. Post-Launch Work Log (newest first)
 
 ```txt
+1.12.0 (SHIPPED 2026-06-27) — "pacing + progression tuning + Quickening fix" (a tuning
+  pass; NO new enemies / upgrades / UI / systems):
+  - Post-opening wave PACING (NON-Cursed): the spawn cadence sat FLAT at spawnInterval
+    0.8s for the whole opening tier (waves 1-10) because the per-tier shave only starts at
+    wave 11, so the mid waves (5-9) felt slack once the player had leveled. spawnGap() now
+    shaves POST_OPENING_SPAWN_STEP 0.04 per wave after POST_OPENING_WAVE 4, capped at
+    POST_OPENING_SPAWN_MAX 0.20 (floored by MIN_SPAWN_INTERVAL) — waves 5-9 ramp
+    0.76->0.60s. nextIntermission() trims the between-wave break to INTERMISSION_SHORT 2.0s
+    entering wave 5+ (waves 1-4 keep 2.5s). Gated !cursed; waves 1-4 + the scripted
+    Tutorial opening untouched; maxAlive/HP/budget unchanged. enemies.js only.
+  - Stronger enemies drop more XP PACKS: data-driven moteDrop on ENEMY_TYPES (Goblin 3,
+    Tin Bulwark 3, Pronggeist 2, Bone Mage 2; wisp/gecko + any unset type default to 1 via
+    the kill-site || 1; bosses have no .def so they fall back to 1). The kill-site drops
+    the first mote as before then loops moteDrop-1 extras through findDropSpot so they fan
+    out, not stack. A mote = 1 XP + 1 Spirit-Imbued charge, so this speeds BOTH leveling
+    and Spirit-meter fill. enemies.js + game.js.
+  - Spirit Imbued RELOADS WHILE ACTIVE: collectPickup's charge guard dropped its
+    `frenzyTimer <= 0` half, so motes collected during an active burst bank toward the next
+    one (still capped at FRENZY_MOTES 30). The activation gate is unchanged, so NO mid-burst
+    re-fire; the meter just comes back sooner. Respects Spirit Drought / Star-Eyed Focus /
+    Spirit Focus automatically (their mults are already in the charge line). game.js only.
+  - Quickening SPEED CAP (the curse ran away at high waves): exported MAX_ENEMY_SPEED 205
+    from enemies.js, clamped in makeEnemy AND game.js's Quickening live-rescale. The witch
+    is a fixed 220 with NO move-speed upgrade ("Restless Wisp" is attack cooldown), so the
+    wave-scaled base × Cursed 1.12 × Quickening 1.25 crossed 220 ~wave 15 and kiting broke.
+    The cap restores a ~7% witch edge; Quickening's 1.25 is UNCHANGED; bosses exempt;
+    normal Tutorial/Casual speeds never reach it. enemies.js + game.js. (First deliberate
+    Cursed scaling change since the 1.9.0 live test — made on explicit player feedback.)
+
 1.11.0 (SHIPPED 2026-06-23) — "the roster is complete + loadout screen":
   - Bat familiar (6◆): passive Night Sense (+10px magnet range, additive at applyMagnet);
     Spirit Imbued Echo Swarm — expanding sonar rings, damage-each-once-per-ring, reduced
@@ -1009,15 +1071,19 @@ under a new heading:
 ## 12. Current Backlog / Next Steps
 
 ```txt
-DONE — 1.5.0 through 1.11.0 all SHIPPED/LIVE. The 1.8.0 mouse cycle is complete; the
+DONE — 1.5.0 through 1.12.0 all SHIPPED/LIVE. The 1.8.0 mouse cycle is complete; the
   Hourkeeper (4th boss) went live in 1.8.0; CURSED MODE shipped as 1.9.0 (eight-curse arc
   + separate leaderboard + Curses archive + familiar heralds + unified Arcane-Archive
   pause — §3a) alongside the Tin Bulwark and a fixed normal-mode boss rotation. **1.10.0 +
   1.11.0 built out the whole alternate Familiar system** — five familiars (Cat / Owl / Fox
   / Bat / Raven), the new Familiars Wardrobe tab + archive catalog, the RavenFeather
   healing pickup, a Cursed-Mode rebalance, the Endless→Casual rename, and a pre-run
-  Wardrobe loadout flow (§3b / §9). No release is mid-flight. The five-familiar roster is
-  considered COMPLETE for now — do not add Raven/other familiars without Daniel's say-so.
+  Wardrobe loadout flow (§3b / §9). **1.12.0** then added a no-new-systems tuning pass:
+  post-opening wave pacing, stronger enemies dropping more XP packs, Spirit Imbued
+  reloading while active, and a MAX_ENEMY_SPEED 205 cap fixing the Quickening curse
+  outrunning the fixed-220 witch at high waves (§6 / §3a). No release is mid-flight. The
+  five-familiar roster is considered COMPLETE for now — do not add Raven/other familiars
+  without Daniel's say-so.
 
 OPTIONAL POLISH (1.8.0+, only if Daniel wants):
   - Scrollbar / slider grab-band widths are one-number tunables if anything feels
@@ -1062,7 +1128,19 @@ BALANCE WATCH (only if Daniel reports it):
   - Hourkeeper: HK_GUARD_HAND_HP 0.6 gates the punish-window hand to phases 2-3; raise
     toward 1.0 only if it feels too soft late. HK_HP_MULT 1.0 -> ~0.8 if the fight drags.
   - Cursed Mode is under LIVE player testing for overall difficulty (see §3a) — hold
-    curse / scaling changes until there's feedback.
+    curse / scaling changes until there's feedback. **(1.12.0 DID add the MAX_ENEMY_SPEED
+    cap to Cursed — the first deliberate Cursed scaling change since the test began — on
+    explicit feedback that Quickening was uncounterable at high waves; see §3a / §6.)**
+  - **1.12.0 Spirit Imbued reload: motes now bank toward the next burst WHILE one is
+    active — this is the UPTIME lever and it COMPOUNDS with the new moteDrop (elites feed
+    the meter faster too). If Spirit Imbued ever feels near-permanent, cap the during-active
+    refill below full, e.g. `Math.min(FRENZY_MOTES * 0.8, ...)` only while frenzyTimer > 0.**
+  - **1.12.0 enemy speed cap MAX_ENEMY_SPEED 205: the single dial for Quickening /
+    deep-run kiteability (band 195-210; lower = more kiting room, higher = tenser). It DOES
+    ease deep Cursed survivability broadly (binds ~wave 15+ Cursed, ~wave 30+ Casual) —
+    intended, but factor it into the Cursed difficulty read.**
+  - **1.12.0 moteDrop: if leveling feels too fast on long Casual runs, drop any per-enemy
+    moteDrop by 1 (one-value change); 2/2/2/2 is the conservative fallback.**
   - Familiars (1.10.0–1.11.0): Raven sustain in Cursed/Withering is the newest variable
     (feathers bypass the no-flask rule by design; FEATHER_MAX 6 × 3 HP + 5% passive) —
     levers SCAVENGER_CHANCE / FEATHER_HEAL / FEATHER_MAX / GRAVE_MARK_COUNT. Echo boss
@@ -1078,13 +1156,19 @@ external libraries, or build tooling; data-driven tables over subclasses
 ## 13. First Response Required from Next Claude
 
 1. Confirm this handoff was read.
-2. Briefly summarize current state (**1.2.0–1.11.0 are all SHIPPED/LIVE. The alternate
+2. Briefly summarize current state (**1.2.0–1.12.0 are all SHIPPED/LIVE. 1.12.0 is a
+   no-new-systems tuning pass: post-opening wave pacing, stronger enemies dropping more XP
+   packs, Spirit Imbued reloading while active, and a `MAX_ENEMY_SPEED 205` cap fixing the
+   Quickening curse outrunning the fixed-220 witch at high waves (§6 / §3a). The alternate
    Familiar system is complete — five familiars (Cat / Owl / Fox / Bat / Raven), the
    Familiars Wardrobe tab + archive, the RavenFeather healing pickup, and a pre-run
-   Wardrobe loadout flow; shipped across 1.10.0 + 1.11.0 — see §3b / §9. Cursed Mode
-   shipped as 1.9.0 (§3a). No release is mid-flight.** Open follow-ups: the
-   camera-following larger world + drop-reach clamping is parked (§12); Raven sustain in
-   Cursed/Withering is on balance-watch (§3b / §12)).
+   Wardrobe loadout flow; shipped across 1.10.0 + 1.11.0 — see §3b / §9. Cursed Mode shipped
+   as 1.9.0 (§3a). No release is mid-flight.** Confirm the §6 version assumption (whether
+   1.12.0 bundles all four changes or the three progression/Cursed ones shipped separately).
+   Open follow-ups: the 1.12.0 Spirit-Imbued-reload uptime + moteDrop pace and the
+   MAX_ENEMY_SPEED cap value are the newest balance-watch items (§12); the camera-following
+   larger world + drop-reach clamping is parked (§12); Raven sustain in Cursed/Withering is
+   on balance-watch (§3b / §12)).
 3. Verify `DEBUG_FORCE_BOSS` and `DEBUG_BOSS_TYPE` from `enemies.js` (don't trust
    this doc) and report.
 4. Note any stale-looking handoff items.
