@@ -15,6 +15,7 @@
 import { Game } from "./game.js";
 import { Input } from "./input.js";
 import { initAudio } from "./audio.js";
+import { initKongregate, submitStat } from "./kongregate.js";
 
 const canvas = document.getElementById("game-canvas");
 const ctx = canvas.getContext("2d");
@@ -34,6 +35,14 @@ if (document.fonts && document.fonts.load) {
 // Set up music: load saved volume and arm a one-time "unlock on first user
 // gesture" listener (browsers block audio until the player interacts).
 initAudio();
+
+// Kongregate integration. Detect + initialize the API (a no-op on itch/local,
+// where the API script isn't loaded), then submit the "loaded" stat as early as
+// possible. On Kongregate this is queued until the API finishes loading and
+// then sent; everywhere else it's a harmless logged no-op. Sent every boot —
+// it's a Max=1 stat, so resubmitting is idempotent.
+initKongregate();
+submitStat("Loaded", 1);
 
 // Internal resolution is fixed by the <canvas width/height> attributes.
 const game = new Game(canvas.width, canvas.height);

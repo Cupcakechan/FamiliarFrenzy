@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Familiar Frenzy</title>
+
+  <!-- The display font is self-hosted via @font-face in style.css
+       (assets/fonts/darkrunes-arcanum.ttf). If it fails to load, the game
+       falls back to a generic serif — everything still runs. -->
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- ===================================================================
+       KONGREGATE BUILD ONLY.
+       This single <script> line is the ONLY difference between this file
+       and the itch/local index.html. It loads Kongregate's API, which
+       defines window.kongregateAPI before the deferred game module runs.
+       The shared src/kongregate.js detects that global; without it (itch,
+       local) the integration silently no-ops. Loaded over HTTPS per
+       Kongregate's secure-hosting requirement.
+       =================================================================== -->
+  <script src="https://cdn1.kongregate.com/javascripts/kongregate_api.js"></script>
+</head>
+<body>
+  <!-- The wrapper just centers the canvas on the page. -->
+  <div id="game-wrapper">
+    <!-- The canvas IS the game. Everything is drawn here.
+         Fixed internal resolution = 960x540. CSS may scale how big it LOOKS,
+         but the drawing coordinates always stay 960x540. -->
+    <canvas id="game-canvas" width="960" height="540"></canvas>
+  </div>
+
+  <!--
+    We use ES modules (type="module"). main.js imports every other src file.
+    IMPORTANT: modules only work when the page is SERVED over http://, not when
+    you double-click the file (file://). See README.md for the one-line command
+    to start a local server.
+  -->
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
