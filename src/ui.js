@@ -503,36 +503,38 @@ export function drawHowToPlay(ctx, w, h, backHover = false) {
 }
 
 // --- CREDITS --------------------------------------------------------------
-// Static credits screen reached from the Main Menu. Carries the license-required
-// attributions (ELV Games — music + fonts) plus the studio credit, with the
-// Cocolito Collective logo at the bottom. A single hover-able Back; Esc/Backspace/
-// Enter also leave. `logo` is the studio logo image (or null — see the guard).
+// Static credits screen reached from the Main Menu. Order: title, asset
+// attributions (license-required ELV music + fonts, then the studio's own art &
+// SFX), a closing game-authorship line, and the Cocolito Collective logo. A single
+// hover-able Back; Esc/Backspace/Enter also leave. `logo` is the studio logo image
+// (or null — see the guard).
 export function drawCredits(ctx, w, h, backHover = false, logo = null) {
   ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
   ctx.fillRect(0, 0, w, h);
 
   text(ctx, "CREDITS", w / 2, 88, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
 
-  text(ctx, "Created by Cocolito Collective", w / 2, 144, { size: 17, color: CREAM, weight: "500" });
-
-  // License-required attributions (ELV Games: music + fonts) + studio self-credit.
-  // Both ELV credits use the "ELVGames" spelling (confirmed correct by Daniel).
+  // Asset attributions. The license-required ELV credits (music + fonts) both use
+  // the "ELVGames" spelling (confirmed by Daniel); art & SFX are the studio's own.
   const lines = [
     "Music by pegonthetrack & ELVGames",
     "Fonts by ELVGames",
-    "Art & sound effects by Cocolito Collective",
+    "Art & Sound Effects by Cocolito Collective",
   ];
-  const startY = 182, lineH = 30;
+  const startY = 150, lineH = 30;
   lines.forEach((line, i) => {
     text(ctx, line, w / 2, startY + i * lineH, { size: 17, color: CREAM, weight: "500", maxWidth: w - 120 });
   });
 
-  // Cocolito Collective logo — drawn at native size, centered in the band between
-  // the last credit line and the Back button. Null-guarded: a missing/unloaded
-  // image is simply skipped (graceful fallback — never crashes the screen).
+  // Closing game-authorship line, set slightly apart from the asset credits above.
+  text(ctx, "Familiar Frenzy was created by Cocolito Collective", w / 2, 248, { size: 17, color: CREAM, weight: "500", maxWidth: w - 100 });
+
+  // Cocolito Collective logo — native size, centered in the band between the closing
+  // line and Back. Null-guarded: a missing/unloaded image is simply skipped
+  // (graceful fallback — never crashes the screen).
   if (logo && logo.width) {
     const lw = logo.width, lh = logo.height;
-    const cy = 370; // band center between the credits (~242) and Back (~500)
+    const cy = 374; // band center between the closing line (~248) and Back (~500)
     ctx.drawImage(logo, (w - lw) / 2, cy - lh / 2, lw, lh);
   }
 
