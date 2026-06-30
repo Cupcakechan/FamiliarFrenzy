@@ -23,8 +23,8 @@ REM Always run from the folder this .bat lives in (the project root).
 cd /d "%~dp0"
 
 REM ---- EDIT THIS if your itch project URL slug differs -----------------------
-REM Your project URL is https://mrcanela.itch.io/<slug>  ->  mrcanela/<slug>:html
-set ITCH_TARGET=mrcanela/familiar-frenzy:html
+REM Your project URL is https://cocolitocollective.itch.io/<slug>  ->  cocolitocollective/<slug>:html
+set ITCH_TARGET=cocolitocollective/familiar-frenzy:html
 
 set ZIP=builds\familiar-frenzy-itch.zip
 set STAGE=builds\package

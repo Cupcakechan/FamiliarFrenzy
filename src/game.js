@@ -37,6 +37,9 @@ loadImage("floor_props", "assets/tiles/floor_props.png");
 // (floor_wood.png = 4×4 wall+floor; floor_props_wood.png = 4×8, same band cells).
 loadImage("wood_tiles", "assets/tiles/floor_wood.png");
 loadImage("wood_props", "assets/tiles/floor_props_wood.png");
+// Cocolito Collective studio logo — shown on the Credits screen (drawn null-guarded,
+// so it simply won't appear until the file exists at this exact path).
+loadImage("cocolito_logo", "assets/sprites/ui/cocolito_logo.png");
 
 // Floor decoration — TWO independent seeded bands, each with its own frequency:
 //   • Runes   — subtle glyphs, common (atmospheric floor texture).
@@ -2191,7 +2194,7 @@ export class Game {
       return;
     }
     if (this.state === STATE.CREDITS) {
-      this.menuZones = drawCredits(ctx, this.width, this.height, this.creditsBackHover).zones;
+      this.menuZones = drawCredits(ctx, this.width, this.height, this.creditsBackHover, getImage("cocolito_logo")).zones;
       return;
     }
     if (this.state === STATE.BESTIARY) {
