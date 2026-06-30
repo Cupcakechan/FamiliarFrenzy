@@ -526,15 +526,16 @@ export function drawCredits(ctx, w, h, backHover = false, logo = null) {
     text(ctx, line, w / 2, startY + i * lineH, { size: 17, color: CREAM, weight: "500", maxWidth: w - 120 });
   });
 
-  // Closing game-authorship line, set slightly apart from the asset credits above.
-  text(ctx, "Familiar Frenzy was created by Cocolito Collective", w / 2, 248, { size: 17, color: CREAM, weight: "500", maxWidth: w - 100 });
+  // Closing game-authorship line — pushed down to group with the logo below and
+  // well clear of the asset-credit block above.
+  text(ctx, "Familiar Frenzy was created by Cocolito Collective", w / 2, 288, { size: 17, color: CREAM, weight: "500", maxWidth: w - 100 });
 
   // Cocolito Collective logo — native size, centered in the band between the closing
   // line and Back. Null-guarded: a missing/unloaded image is simply skipped
   // (graceful fallback — never crashes the screen).
   if (logo && logo.width) {
     const lw = logo.width, lh = logo.height;
-    const cy = 374; // band center between the closing line (~248) and Back (~500)
+    const cy = 374; // sits just under the closing line (~288), above Back (~500)
     ctx.drawImage(logo, (w - lw) / 2, cy - lh / 2, lw, lh);
   }
 
