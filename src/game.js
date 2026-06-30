@@ -1912,10 +1912,12 @@ export class Game {
             // Lucky Paws now boosts only the RARE drops (flask + magnet); there is
             // no longer a bonus-mote roll, so it never doubles up XP. Trickster Luck
             // (Fox) adds a small flat bump on top — additive, never compounding.
-            const flaskChance = FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP + this.familiarFlaskLuck;
-            // Withering curse: no flasks fall at all.
-            const noFlasks = curseValue(this.activeCurses, "noFlasks", false);
-            if (!noFlasks && Math.random() < flaskChance) {
+            // Withering curse: flasks still fall but FAR more rarely (flaskChanceMult
+            // < 1) — a steep reduction, not a hard zero, so a flask-reliant run isn't
+            // hard-walled, while a Raven feather build keeps its own intended edge.
+            const flaskMult = curseValue(this.activeCurses, "flaskChanceMult", 1);
+            const flaskChance = (FLASK_DROP_CHANCE + this.luckLevel * LUCK_FLASK_STEP + this.familiarFlaskLuck) * flaskMult;
+            if (Math.random() < flaskChance) {
               spot = this.findDropSpot(enemy.x, enemy.y, 9);
               this.flasks.push(new HealthFlask(spot.x, spot.y, FLASK_HEAL));
               if (this.isOnScreen(spot.x, spot.y)) this.showHint("flask"); // don't announce an offscreen flask

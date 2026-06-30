@@ -17,7 +17,7 @@
 // The registry. `id` is the stable key (and the icon basename). Effect fields are
 // read by whichever system the curse touches:
 //   vision         -> the dark veil's spotlight radius (game.js renderer)
-//   noFlasks       -> the flask-drop roll skips entirely (game.js)
+//   flaskChanceMult-> multiplies the flask-drop chance (game.js); <1 makes flasks rarer
 //   groundHazard   -> the ambient cursed-patch spawner runs (game.js)
 //   enemySpeedMult -> regular enemies' speed multiplier (game.js / WaveManager)
 //   deathPuddle    -> a slain non-boss enemy leaves a HazardPuddle where it fell (game.js)
@@ -36,9 +36,9 @@ export const CURSES = {
   withering: {
     id: "withering",
     name: "Withering",
-    blurb: "Health flasks no longer fall — what you have is all you have.",
-    cry: "No flasks will fall now — make it last.",
-    noFlasks: true, // read by the flask-drop roll (game.js)
+    blurb: "Health flasks rarely fall now — hoard what you find.",
+    cry: "Flasks run dry — make each one count.",
+    flaskChanceMult: 0.3, // multiplies the flask-drop chance (game.js); <1 makes flasks rarer
   },
   cursed_ground: {
     id: "cursed_ground",
