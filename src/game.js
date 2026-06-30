@@ -25,6 +25,7 @@ import { Pickup, HealthFlask, SpiritMagnet, RavenFeather } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
+import { submitStat } from "./kongregate.js";
 import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawCredits, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawFamiliars, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 import { getReducedFlash, setReducedFlash, getHighVisWarnings, setHighVisWarnings } from "./settings.js";
@@ -954,6 +955,9 @@ export class Game {
           // Personal bests are Endless-only; the leaderboard now covers Endless
           // AND Cursed (separate boards via highScoreKey).
           if (this.gameMode === "endless") this.updateEndlessBests();
+          if (this.gameMode === "cursed") this.updateCursedBests();
+          this.recordBestLevel();      // any mode — tutorial deaths count toward HighestWitchLevel
+          this.pushKongregateStats();  // push this run's bests now; no-op off Kongregate
           if (this.gameMode === "endless" || this.gameMode === "cursed") {
             if (this.qualifiesForTop10()) {
               // Made the top 10 → enter initials before the Game Over screen.
@@ -2018,6 +2022,7 @@ export class Game {
     // Victory only in Tutorial: defeating the Wave 10 boss ends the run.
     // In Endless, the WaveManager rolls straight into the next wave instead.
     if (this.gameMode === "tutorial" && boss && boss.dead) {
+      this.markTutorialComplete(); // record completion + push stats (no-op off Kongregate)
       this.menuIndex = 0;
       this.state = STATE.VICTORY;
       return;
@@ -2655,6 +2660,62 @@ export class Game {
       /* localStorage unavailable — skip persistent bests */
       this.beatBestWave = false;
       this.beatBestScore = false;
+    }
+  }
+
+  // Cursed personal bests — mirrors updateEndlessBests for the Cursed board so the
+  // Kongregate BestCursed* stats have an accurate, score-independent source. (The
+  // top-10 list only keeps the best SCORES, which would undercount a high-wave run,
+  // and isn't written until the initials step.) No beat-best celebration flags —
+  // Cursed doesn't display them. Runs on every Cursed death; storage-safe.
+  updateCursedBests() {
+    try {
+      const wave = this.waveManager.wave;
+      const bw = parseInt(localStorage.getItem("ff_bestCursedWave") || "0", 10);
+      const bs = parseInt(localStorage.getItem("ff_bestCursedScore") || "0", 10);
+      if (wave > bw) localStorage.setItem("ff_bestCursedWave", String(wave));
+      if (this.score > bs) localStorage.setItem("ff_bestCursedScore", String(this.score));
+    } catch (e) {
+      /* localStorage unavailable — skip persistent Cursed bests */
+    }
+  }
+
+  // Track the highest witch level ever reached, ANY mode (tutorial included), for the
+  // HighestWitchLevel stat. Called at every run end. Storage-safe.
+  recordBestLevel() {
+    try {
+      const bl = parseInt(localStorage.getItem("ff_bestLevel") || "0", 10);
+      if (this.level > bl) localStorage.setItem("ff_bestLevel", String(this.level));
+    } catch (e) {
+      /* localStorage unavailable — skip */
+    }
+  }
+
+  // Mark the tutorial as completed (TutorialComplete stat = 1) and push the stat set.
+  // Called once, when the Wave 10 tutorial boss dies. Storage-safe.
+  markTutorialComplete() {
+    try { localStorage.setItem("ff_tutorialDone", "1"); } catch (e) { /* storage blocked */ }
+    this.recordBestLevel();
+    this.pushKongregateStats();
+  }
+
+  // Submit the full Kongregate stat set from the persisted bests. Every value is a
+  // Max stat, so re-submitting the current bests is idempotent — exactly what the
+  // "resubmit ALL stats on every load" rule wants. submitStat clamps to a non-negative
+  // integer and no-ops (or queues until the API is ready) off-Kongregate, so this is
+  // safe to call anywhere: at boot (resubmit-on-load) and after every run end.
+  // ("Loaded" is sent once at boot in main.js.)
+  pushKongregateStats() {
+    const n = (k) => parseInt(localStorage.getItem(k) || "0", 10) || 0;
+    try {
+      submitStat("BestCasualScore", n("ff_bestEndlessScore"));
+      submitStat("BestCasualWave", n("ff_bestEndlessWave"));
+      submitStat("BestCursedScore", n("ff_bestCursedScore"));
+      submitStat("BestCursedWave", n("ff_bestCursedWave"));
+      submitStat("TutorialComplete", n("ff_tutorialDone"));
+      submitStat("HighestWitchLevel", n("ff_bestLevel"));
+    } catch (e) {
+      /* localStorage read failed — skip this push (bridge calls are already guarded) */
     }
   }
 

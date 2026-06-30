@@ -47,6 +47,12 @@ submitStat("Loaded", 1);
 // Internal resolution is fixed by the <canvas width/height> attributes.
 const game = new Game(canvas.width, canvas.height);
 
+// Resubmit every persisted stat on load — Kongregate badges require all stats to be
+// re-sent each boot, not only when they change. These queue behind initKongregate()
+// above and flush once the API is ready; a harmless no-op on itch/local. ("Loaded"
+// was already sent above.)
+game.pushKongregateStats();
+
 let lastTime = performance.now();
 
 function loop(now) {
