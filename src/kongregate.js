@@ -23,7 +23,7 @@
 // submits, the queue, and login events are visible in the browser console.
 // FLIP TO false FOR THE PUBLIC LAUNCH BUILD (see the P10 launch checklist) to
 // keep the console quiet for players.
-const KONG_LOG = true;
+const KONG_LOG = false;
 
 // --- Internal state ----------------------------------------------------------
 // `api` is the live Kongregate API object once ready; null until then (and
