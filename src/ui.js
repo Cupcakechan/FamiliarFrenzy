@@ -501,7 +501,6 @@ export function drawHowToPlay(ctx, w, h, backHover = false) {
     ["Confirm", "Enter / Space"],
     ["Spirit Imbued", "Space  (when the meter is full)"],
     ["Back / Pause", "Esc / Backspace"],
-    ["Restart", "R  (after Game Over or Victory)"],
   ];
 
   // Center the CONTROLS block (heading + lines) vertically, nudged slightly
