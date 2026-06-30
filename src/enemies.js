@@ -1977,8 +1977,9 @@ export const MAX_ENEMY_SPEED = 205;
 // slack once the player had leveled up and was clearing fast. These add a gentle
 // per-wave tightening AFTER the opening so groups arrive quicker — WITHOUT
 // touching the first 3-4 waves and WITHOUT raising maxAlive, HP, or the budget,
-// so peak on-screen pressure is unchanged. Tutorial + Casual only; Cursed keeps
-// its own tuned cadence (it's under live difficulty testing).
+// so peak on-screen pressure is unchanged. CASUAL ONLY: Tutorial was eased back to
+// the flat opening cadence (its waves 5-9 were too punishing for new players), and
+// Cursed keeps its own tuned cadence (it's under live difficulty testing).
 const POST_OPENING_WAVE = 4;          // waves 1-4 keep the original cozy cadence
 const POST_OPENING_SPAWN_STEP = 0.04; // spawn gap shaved per wave past the opening
 const POST_OPENING_SPAWN_MAX = 0.20;  // ...opening ramp caps here, so it tightens
@@ -3215,20 +3216,21 @@ export class WaveManager {
     // The opening tier used to spawn at a flat spawnInterval for waves 1-10. Shave
     // a touch per wave past POST_OPENING_WAVE so groups arrive quicker; the cap
     // keeps this from endlessly stacking on the per-tier shave in long runs, and
-    // MIN_SPAWN_INTERVAL still floors the result. Cursed is left on its own cadence.
-    if (!this.cursed && this.wave > POST_OPENING_WAVE) {
+    // MIN_SPAWN_INTERVAL still floors the result. Casual only: Tutorial (!endless)
+    // keeps the flat opening gap the whole way, and Cursed keeps its own cadence.
+    if (this.endless && !this.cursed && this.wave > POST_OPENING_WAVE) {
       gap -= Math.min(POST_OPENING_SPAWN_MAX, (this.wave - POST_OPENING_WAVE) * POST_OPENING_SPAWN_STEP);
     }
     return Math.max(MIN_SPAWN_INTERVAL, gap);
   }
 
-  // Between-wave break: trimmed once past the opening (non-Cursed) so the mid-run
-  // doesn't sag; the first few breaks keep the relaxed teaching pace. Cursed keeps
-  // its tuned 2.5s break (under live difficulty testing). Note: when this is read
-  // (end of a cleared wave) this.wave is the wave that just finished, so the first
-  // trimmed break is the one entering wave 5.
+  // Between-wave break: trimmed once past the opening (Casual only) so the mid-run
+  // doesn't sag. Tutorial (!endless) and Cursed both keep the full 2.5s break — the
+  // tutorial so new players get the relaxed teaching pace the whole way through.
+  // Note: when this is read (end of a cleared wave) this.wave is the wave that just
+  // finished, so the first trimmed break is the one entering wave 5.
   nextIntermission() {
-    return (!this.cursed && this.wave >= POST_OPENING_WAVE)
+    return (this.endless && !this.cursed && this.wave >= POST_OPENING_WAVE)
       ? INTERMISSION_SHORT
       : this.intermissionLength;
   }
