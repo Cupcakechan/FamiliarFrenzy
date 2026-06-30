@@ -524,6 +524,7 @@ export class Game {
     // Loaded once at boot; survives runs. `crystalsThisRun` is the per-run
     // tally shown on the Game Over / Victory summary (reset each run).
     this.wardrobe = this.loadWardrobe();
+    this.activeOutfit = this.wardrobe.equipped; // outfit key the RUN uses; startGame forces "default" for tutorial. equippedBuff() reads this live.
     this.crystalsThisRun = 0;
     this.closetIndex = 0;
     this.closetTab = 0; // 0 = Outfits, 1 = Familiars, 2 = Collars
@@ -539,14 +540,24 @@ export class Game {
     this.pendingRunMode = null; // any run-start clears the pre-run flag (defensive)
     this.score = 0;
     this.player.reset(WORLD_W / 2, WORLD_H / 2);
+    // The TUTORIAL always runs on the default loadout (Apprentice Robe + Spirit
+    // Collar + Cat) no matter what's equipped, so it stays a fair baseline a
+    // kitted-out player can't trivialize. Casual/Cursed honor the saved wardrobe;
+    // the wardrobe itself is never modified — this only picks which keys the run
+    // reads. activeOutfit persists because equippedBuff() reads it live mid-run.
+    const tut = this.gameMode === "tutorial";
+    const outfitKey = tut ? "default" : this.wardrobe.equipped;
+    const collarKey = tut ? "default" : this.wardrobe.collarEquipped;
+    const familiarKey = tut ? "default" : this.wardrobe.familiarEquipped;
+    this.activeOutfit = outfitKey;
     // Equipped outfit drives the witch's sprite skin for this whole run (the
     // Closet is between-runs, so it's fixed once we start). Recolors fall back
     // to the purple set per-frame in player.draw if a file is missing.
-    this.player.spritePrefix = (OUTFITS[this.wardrobe.equipped] || OUTFITS.default).spritePrefix;
+    this.player.spritePrefix = (OUTFITS[outfitKey] || OUTFITS.default).spritePrefix;
     this.familiar.reset(WORLD_W / 2 - 40, WORLD_H / 2 - 40);
     // Equipped collar drives the familiar's attack style, skin, and base fire
     // rate for the run (set after reset, which defaults them to the rune).
-    const collar = COLLARS[this.wardrobe.collarEquipped] || COLLARS.default;
+    const collar = COLLARS[collarKey] || COLLARS.default;
     this.familiar.attackStyle = collar.attackStyle;
     this.familiar.spritePrefix = collar.spritePrefix;
     this.familiar.attackCooldown = collar.cooldown;
@@ -555,10 +566,10 @@ export class Game {
     // recolor per collar exactly like the cat — the bare aspect prefix is the Spirit/
     // default look, `<aspect>_<collarId>` is the recolor for the other collars.
     // spritePrefixBase lets a missing recolor frame fall back to the base aspect.
-    const aspect = FAMILIARS[this.wardrobe.familiarEquipped] || FAMILIARS.default;
+    const aspect = FAMILIARS[familiarKey] || FAMILIARS.default;
     this.familiar.spritePrefixBase = aspect.spritePrefix;
-    if (this.wardrobe.familiarEquipped !== "default") {
-      const collarId = this.wardrobe.collarEquipped;
+    if (familiarKey !== "default") {
+      const collarId = collarKey;
       this.familiar.spritePrefix = aspect.spritePrefix + (collarId && collarId !== "default" ? "_" + collarId : "");
     }
     this.familiar.frenzyBehavior = aspect.frenzy || "default";
@@ -2852,7 +2863,7 @@ export class Game {
 
   // --- Outfit buffs (equipped outfit only; never stack) --------------------
   equippedBuff() {
-    const o = OUTFITS[this.wardrobe.equipped] || OUTFITS.default;
+    const o = OUTFITS[this.activeOutfit] || OUTFITS.default;
     return o.buff || {};
   }
 
