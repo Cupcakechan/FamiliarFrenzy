@@ -25,8 +25,8 @@ import { Pickup, HealthFlask, SpiritMagnet, RavenFeather } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { submitStat } from "./kongregate.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawCredits, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawFamiliars, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
+import { submitStat, isAvailable, isGuest, onLogin, showRegister } from "./kongregate.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawCredits, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawFamiliars, drawOffscreenIndicators, drawCloset, drawCrystalTotal, drawSignInPill } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 import { getReducedFlash, setReducedFlash, getHighVisWarnings, setHighVisWarnings } from "./settings.js";
 
@@ -94,6 +94,11 @@ const STATE = {
   GAME_OVER: "gameOver",
   VICTORY: "victory",
 };
+
+// DEBUG: force-show the guest sign-in pills locally for layout/preview. Off
+// Kongregate isAvailable()/isGuest() are both false, so the pills never render —
+// flip this true to see them while developing. SHIP AS false.
+const DEBUG_FORCE_GUEST_PROMPT = false;
 
 const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings", "Credits"];
 const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Curses", "Familiars", "Back"]; // Arcane Archive hub
@@ -525,6 +530,13 @@ export class Game {
     // tally shown on the Game Over / Victory summary (reset each run).
     this.wardrobe = this.loadWardrobe();
     this.activeOutfit = this.wardrobe.equipped; // outfit key the RUN uses; startGame forces "default" for tutorial. equippedBuff() reads this live.
+    // When a Kongregate guest signs in mid-session, re-push every stat so their
+    // accumulated bests post under the new account. No-op off-Kongregate.
+    onLogin(() => this.pushKongregateStats());
+    this.signInHover = false;          // main-menu sign-in pill hovered (mouse)
+    this.gameOverSignInHover = false;  // Game Over sign-in pill hovered (mouse)
+    this.signInZone = null;            // current frame's pill rects (set in render)
+    this.gameOverSignInZone = null;
     this.crystalsThisRun = 0;
     this.closetIndex = 0;
     this.closetTab = 0; // 0 = Outfits, 1 = Familiars, 2 = Collars
@@ -713,6 +725,12 @@ export class Game {
   update(dt) {
     switch (this.state) {
       case STATE.MAIN_MENU: {
+        // Guest sign-in pill (separate from the menu items): a click opens
+        // Kongregate's register box and does NOT fall through to a menu item.
+        if (this.signInZone) {
+          if (Input.mouseMoved()) this.signInHover = this.overZone(this.signInZone);
+          if (this.overZone(this.signInZone) && Input.mouseClicked()) { showRegister(); break; }
+        }
         const hov = this.zoneAt(this.menuZones);
         // Hover moves the highlight to the cursor, but only when the mouse
         // actually moves — otherwise a resting pointer would fight the keyboard.
@@ -1028,6 +1046,12 @@ export class Game {
       }
 
       case STATE.GAME_OVER: {
+        // Guest sign-in pill: a click opens the register box and consumes the click
+        // (so it doesn't also land on a retry/menu prompt).
+        if (this.gameOverSignInZone) {
+          if (Input.mouseMoved()) this.gameOverSignInHover = this.overZone(this.gameOverSignInZone);
+          if (this.overZone(this.gameOverSignInZone) && Input.mouseClicked()) { showRegister(); break; }
+        }
         // drawGameOver reports two prompt rects: 0 = retry/new run, 1 = main menu.
         // No hover-highlight here (the prompts just pulse), so a click only acts
         // when it lands on a prompt — stray clicks do nothing.
@@ -1085,6 +1109,21 @@ export class Game {
       if (mx >= z.x && mx <= z.x + z.w && my >= z.y && my <= z.y + z.h) return z.index;
     }
     return -1;
+  }
+
+  // Show the guest sign-in affordance only to a Kongregate guest (or when forced for
+  // local preview). isAvailable()/isGuest() are both false off-Kongregate, so this is
+  // false on itch/local unless DEBUG_FORCE_GUEST_PROMPT is on.
+  showGuestPrompt() {
+    return DEBUG_FORCE_GUEST_PROMPT || (isAvailable() && isGuest());
+  }
+
+  // Point-in-rect test for a single clickable zone {x,y,w,h}. The sign-in pills are
+  // hit-tested directly (not through the menu-index zoneAt) since they aren't items.
+  overZone(z) {
+    if (!z) return false;
+    const mx = Input.mouseX(), my = Input.mouseY();
+    return mx >= z.x && mx <= z.x + z.w && my >= z.y && my <= z.y + z.h;
   }
 
   // Mouse interaction for a list menu, given its reported zones. Returns the
@@ -2195,6 +2234,11 @@ export class Game {
       this.menuZones = drawMenu(ctx, this.width, this.height, "FAMILIAR FRENZY", MAIN_MENU_ITEMS, this.menuIndex,
         ["Enter: select"], { bg: true, title: true });
       drawCrystalTotal(ctx, this.width, this.height, this.wardrobe.crystals);
+      // Guest sign-in call-to-action (Kongregate guests only), in the free strip
+      // below the menu. Its own clickable zone, point-tested in the MAIN_MENU update.
+      this.signInZone = this.showGuestPrompt()
+        ? drawSignInPill(ctx, this.width / 2, 505, "Sign in to save your scores", this.signInHover)
+        : null;
       return;
     }
     if (this.state === STATE.ARCHIVE) {
@@ -2377,6 +2421,11 @@ export class Game {
 
       case STATE.GAME_OVER:
         this.menuZones = drawGameOver(ctx, this.width, this.height, this.gameOverSummary());
+        // Guest sign-in nudge after a scoring run (Casual/Cursed only — tutorial
+        // doesn't post a competitive score). Its own zone, handled in the update.
+        this.gameOverSignInZone = (this.showGuestPrompt() && this.gameMode !== "tutorial")
+          ? drawSignInPill(ctx, this.width / 2, 458, "Sign in to post this score", this.gameOverSignInHover)
+          : null;
         break;
     }
   }

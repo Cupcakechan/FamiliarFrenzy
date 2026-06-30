@@ -299,6 +299,29 @@ function drawCenteredBack(ctx, w, cy, active) {
   return { x: w / 2 - 90, y: cy - 20, w: 180, h: 40, index: 0 };
 }
 
+// Guest sign-in call-to-action pill (shown only to Kongregate guests — the CALLER
+// gates visibility). Unlike the subtle Back button this is ALWAYS outlined so it
+// reads as an action; hover brightens the fill. Width auto-fits the label using the
+// same font metrics as text(). Returns its clickable rect — the caller point-tests
+// it directly (via overZone), so no `index` is needed.
+export function drawSignInPill(ctx, cx, cy, label, hover = false) {
+  const SIZE = 16;
+  ctx.save();
+  ctx.font = `700 ${SIZE}px ${BODY_FONT}`; // match text()'s metrics so the pill fits
+  const tw = ctx.measureText(label).width;
+  const w = Math.ceil(tw + 36); // 18px padding each side
+  const h = 34;
+  const x = Math.round(cx - w / 2);
+  const y = Math.round(cy - h / 2);
+  ctx.fillStyle = hover ? "rgba(249, 191, 59, 0.22)" : "rgba(249, 191, 59, 0.10)";
+  roundRect(ctx, x, y, w, h, 8); ctx.fill();
+  ctx.strokeStyle = GOLD; ctx.lineWidth = 1.5;
+  roundRect(ctx, x, y, w, h, 8); ctx.stroke();
+  ctx.restore();
+  text(ctx, label, cx, cy, { size: SIZE, color: GOLD, weight: "700" });
+  return { x, y, w, h };
+}
+
 // --- HIGH SCORES (Casual + Cursed tabs) ---------------------------------
 // boards = { endless: [...], cursed: [...] }, each an array of { name, score, wave,
 // date } already sorted best-first. activeTab = "endless" | "cursed". tabHover = the
