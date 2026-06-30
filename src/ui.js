@@ -502,6 +502,35 @@ export function drawHowToPlay(ctx, w, h, backHover = false) {
   return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
 }
 
+// --- CREDITS --------------------------------------------------------------
+// Static credits screen reached from the Main Menu. Carries the license-required
+// attributions (ELV Games — music + fonts) plus the studio credit. A single
+// hover-able Back; Esc/Backspace/Enter also leave. Lines stay short so nothing
+// overflows the canvas.
+export function drawCredits(ctx, w, h, backHover = false) {
+  ctx.fillStyle = "rgba(8, 7, 18, 0.92)";
+  ctx.fillRect(0, 0, w, h);
+
+  text(ctx, "CREDITS", w / 2, 88, { size: 44, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
+
+  text(ctx, "Familiar Frenzy", w / 2, 150, { size: 22, color: GOLD, weight: "700" });
+  text(ctx, "Created by Cocolito Collective", w / 2, 182, { size: 17, color: CREAM, weight: "500" });
+
+  // License-required attributions (ELV Games: music + fonts) + studio self-credit.
+  // The music wording is the exact string ELV's license requires.
+  const lines = [
+    "Music by pegonthetrack & ELVGames",
+    "Fonts by ElvGames",
+    "Art & sound effects by Cocolito Collective",
+  ];
+  const startY = 252, lineH = 34;
+  lines.forEach((line, i) => {
+    text(ctx, line, w / 2, startY + i * lineH, { size: 17, color: CREAM, weight: "500", maxWidth: w - 120 });
+  });
+
+  return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
+}
+
 // --- UPGRADE GRIMOIRE -----------------------------------------------------
 // Read-only glossary that now mirrors the Bestiary: a flat, SCROLLABLE list
 // where the SELECTED entry auto-expands its detail inline (no extra keypress).

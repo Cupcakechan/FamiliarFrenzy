@@ -25,7 +25,7 @@ import { Pickup, HealthFlask, SpiritMagnet, RavenFeather } from "./pickups.js";
 import { getOffers, UPGRADES, getGrimoireEntries } from "./upgrades.js";
 import { circlesOverlap, clamp, randomRange, pointSegmentDistance } from "./utils.js";
 import { loadImage, getImage } from "./assets.js";
-import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawFamiliars, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
+import { drawMenu, drawPlaceholder, drawHighScores, drawHowToPlay, drawCredits, drawHUD, drawUpgradeScreen, drawWaveBanner, drawBossBar, drawEvolutionBanner, drawPauseMenu, drawConfirmQuit, drawVictory, drawGameOver, drawNameEntry, drawFamiliarHint, drawSettings, drawGrimoire, drawBestiary, drawCurses, drawFamiliars, drawOffscreenIndicators, drawCloset, drawCrystalTotal } from "./ui.js";
 import { setMusicContext, setMusicVolume, getMusicVolume, playSfx, setSfxVolume, getSfxVolume } from "./audio.js";
 import { getReducedFlash, setReducedFlash, getHighVisWarnings, setHighVisWarnings } from "./settings.js";
 
@@ -80,6 +80,7 @@ const STATE = {
   ENDLESS_PLACEHOLDER: "endlessPlaceholder",
   HIGHSCORES_PLACEHOLDER: "highScoresPlaceholder",
   SETTINGS_PLACEHOLDER: "settingsPlaceholder",
+  CREDITS: "credits", // static credits screen (license attributions), reached from the Main Menu
   PLAYING: "playing",
   PAUSED: "paused",
   CONFIRM_QUIT: "confirmQuit", // confirm Main Menu from the Pause menu
@@ -90,7 +91,7 @@ const STATE = {
   VICTORY: "victory",
 };
 
-const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings"];
+const MAIN_MENU_ITEMS = ["Play", "Wardrobe", "Arcane Archive", "High Scores", "Settings", "Credits"];
 const ARCHIVE_ITEMS = ["Grimoire", "Bestiary", "Curses", "Familiars", "Back"]; // Arcane Archive hub
 const MODE_SELECT_ITEMS = ["Tutorial Mode", "Casual Mode", "Cursed Mode", "How to Play", "Back"];
 const VICTORY_ITEMS = ["Continue to Casual Frenzy", "Replay Tutorial", "Main Menu"];
@@ -415,6 +416,7 @@ export class Game {
     this.highscoresTab = "endless";        // active High Scores board: "endless" | "cursed"
     this.highscoresTabHover = null;         // tab under the cursor: "endless" | "cursed" | null
     this.howToPlayBackHover = false;       // How to Play Back button hovered (mouse)
+    this.creditsBackHover = false;         // Credits Back button hovered (mouse)
 
     // Upgrade Grimoire (read-only glossary) screen state.
     this.grimoireReturn = STATE.MAIN_MENU; // where Back returns to
@@ -709,6 +711,7 @@ export class Game {
           else if (this.menuIndex === 2) this.openArchive(STATE.MAIN_MENU);  // Arcane Archive
           else if (this.menuIndex === 3) { this.highscoresTab = "endless"; this.highscoresTabHover = null; this.state = STATE.HIGHSCORES_PLACEHOLDER; }
           else if (this.menuIndex === 4) { this.settingsReturn = STATE.MAIN_MENU; this.settingsIndex = 0; this.state = STATE.SETTINGS_PLACEHOLDER; }
+          else if (this.menuIndex === 5) { this.creditsBackHover = false; this.state = STATE.CREDITS; }
         }
         break;
       }
@@ -721,6 +724,15 @@ export class Game {
         if (Input.mouseMoved()) this.howToPlayBackHover = hov === 0;
         const clickedBack = hov === 0 && Input.mouseClicked();
         if (this.backPressed() || this.confirmPressed() || clickedBack) { this.state = STATE.MODE_SELECT; this.menuIndex = 3; }
+        break;
+      }
+
+      case STATE.CREDITS: {
+        // Static screen with a single hover-able Back (Esc/Backspace/Enter also leave).
+        const hov = this.zoneAt(this.menuZones);
+        if (Input.mouseMoved()) this.creditsBackHover = hov === 0;
+        const clickedBack = hov === 0 && Input.mouseClicked();
+        if (this.backPressed() || this.confirmPressed() || clickedBack) { this.state = STATE.MAIN_MENU; this.menuIndex = 0; }
         break;
       }
 
@@ -2176,6 +2188,10 @@ export class Game {
     }
     if (this.state === STATE.HOW_TO_PLAY) {
       this.menuZones = drawHowToPlay(ctx, this.width, this.height, this.howToPlayBackHover).zones;
+      return;
+    }
+    if (this.state === STATE.CREDITS) {
+      this.menuZones = drawCredits(ctx, this.width, this.height, this.creditsBackHover).zones;
       return;
     }
     if (this.state === STATE.BESTIARY) {
