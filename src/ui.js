@@ -131,8 +131,39 @@ function crystalLine(ctx, cx, y, str, { size = 16, color = GOLD } = {}) {
   text(ctx, str, left + r * 2 + gap, y, { size, color, align: "left", weight: "700" });
 }
 
+// Option-2 label-only menu item (P2): a bare label, no plate box. Selected =
+// gold + bold + a soft gold glow, with a ">" caret to its left drawn relative
+// to the label so the centered label never jitters as the selection moves;
+// unselected = cream, lighter. The dark stroke is kept so labels stay legible
+// over the starfield menu background.
+function drawMenuLabel(ctx, label, cx, y, selected, maxWidth) {
+  const size = 26;
+  if (!selected) {
+    text(ctx, label, cx, y, {
+      size, color: CREAM, weight: "500",
+      stroke: "#0d0b1c", strokeWidth: 3, maxWidth,
+    });
+    return;
+  }
+  ctx.save();
+  ctx.shadowColor = GOLD;
+  ctx.shadowBlur = 12;
+  text(ctx, label, cx, y, {
+    size, color: GOLD, weight: "700",
+    stroke: "#0d0b1c", strokeWidth: 3, maxWidth,
+  });
+  ctx.restore();
+  // Caret a fixed 16px left of the label's left edge. Measure at the label font;
+  // clamp to maxWidth in case the label was auto-shrunk to fit.
+  ctx.font = `700 ${size}px ${BODY_FONT}`;
+  const lw = Math.min(ctx.measureText(label).width, maxWidth);
+  text(ctx, ">", cx - lw / 2 - 16, y, {
+    size, color: GOLD, weight: "700", stroke: "#0d0b1c", strokeWidth: 3,
+  });
+}
+
 // --- MENUS ----------------------------------------------------------------
-// Generic vertical menu: title + highlighted option list + footer hints.
+// Generic vertical menu: title + label list (bare labels since P2) + footer.
 export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [], art = {}) {
   // art = { bg: bool, title: bool } — which menu-art pieces to use. The main
   // menu uses both; Mode Select uses only the background (keeps its text
@@ -178,59 +209,68 @@ export function drawMenu(ctx, w, h, title, items, selectedIndex, footerLines = [
   const startY = h * 0.58 - ((items.length - 1) * lineH) / 2;
   const labelDY = 2; // caps with "middle" baseline read slightly high; nudge down
 
-  // Button container sprite, drawn 1:1 for crisp pixels. Falls back to the
-  // original code-drawn highlight box if the sprite isn't present.
+  // P2: menus render as bare labels (the marquee look) — no button-plate box.
+  // Flip MENU_BUTTON_PLATES back to true to restore the original plate style;
+  // the plate art (menu_button.png) and its draw code below are kept intact as
+  // the fallback, so reverting is a one-line change.
+  const MENU_BUTTON_PLATES = false;
+
+  // Plate art (used only by the plate path below) + a generous label width so
+  // bare labels can breathe instead of being squeezed to the old plate width.
   const btn = getImage("menu_button");
   const hasBtn = btn && btn.width > 0;
   const bw = hasBtn ? btn.width : 380;
   const bh = hasBtn ? btn.height : 42;
+  const labelMaxW = w - 120;  // bare-label shrink bound (never clips the canvas)
+  const clickBandW = 360;     // mouse hit band, independent of label width
+  const clickBandH = 40;
 
   const zones = []; // clickable rect per item (mouse hit-testing in game.js)
   items.forEach((item, i) => {
     const y = startY + i * lineH;
     const selected = i === selectedIndex;
-    const bx = Math.round(w / 2 - bw / 2);
-    const by = Math.round(y - bh / 2);
-    zones.push({ x: bx, y: by, w: bw, h: bh, index: i });
 
-    if (hasBtn) {
-      // Same container for every item; the selected one gets a gold glow halo.
-      ctx.save();
-      if (selected) {
-        ctx.shadowColor = GOLD;
-        ctx.shadowBlur = 14;
+    if (MENU_BUTTON_PLATES) {
+      // -------- Original button-plate style (kept as a fallback) --------
+      const bx = Math.round(w / 2 - bw / 2);
+      const by = Math.round(y - bh / 2);
+      zones.push({ x: bx, y: by, w: bw, h: bh, index: i });
+      if (hasBtn) {
+        // Same container for every item; selected gets a gold glow halo.
+        ctx.save();
+        if (selected) {
+          ctx.shadowColor = GOLD;
+          ctx.shadowBlur = 14;
+        }
+        ctx.drawImage(btn, bx, by, bw, bh);
+        ctx.restore();
+      } else if (selected) {
+        // Fallback: the original highlight box on the selected item.
+        ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
+        roundRect(ctx, bx, by, bw, bh, 8);
+        ctx.fill();
+        ctx.strokeStyle = GOLD;
+        ctx.lineWidth = 1.5;
+        roundRect(ctx, bx, by, bw, bh, 8);
+        ctx.stroke();
       }
-      ctx.drawImage(btn, bx, by, bw, bh);
-      ctx.restore();
-    } else if (selected) {
-      // Fallback: the original highlight box on the selected item.
-      ctx.fillStyle = "rgba(244, 213, 141, 0.14)";
-      roundRect(ctx, bx, by, bw, bh, 8);
-      ctx.fill();
-      ctx.strokeStyle = GOLD;
-      ctx.lineWidth = 1.5;
-      roundRect(ctx, bx, by, bw, bh, 8);
-      ctx.stroke();
+      text(ctx, item, w / 2, y + labelDY, {
+        size: 20, color: selected ? GOLD : CREAM, weight: "700",
+        stroke: "#0d0b1c", strokeWidth: 3, maxWidth: bw - 30,
+      });
+    } else {
+      // -------- P2 label-only (Option 2): caret + soft glow, no plate --------
+      zones.push({
+        x: Math.round(w / 2 - clickBandW / 2), y: Math.round(y - clickBandH / 2),
+        w: clickBandW, h: clickBandH, index: i,
+      });
+      drawMenuLabel(ctx, item, w / 2, y + labelDY, selected, labelMaxW);
     }
-
-    // Smaller label, high-contrast over the purple fill (cream/gold + a dark
-    // outline), auto-shrunk so it always stays inside the button frame.
-    text(ctx, item, w / 2, y + labelDY, {
-      size: 20,
-      color: selected ? GOLD : CREAM,
-      weight: "700",
-      stroke: "#0d0b1c",
-      strokeWidth: 3,
-      maxWidth: bw - 30,
-    });
   });
 
-  // Footer hints pinned near the bottom center (last line ~h-40, earlier lines
-  // stacked above) so they don't crowd the buttons.
-  footerLines.forEach((line, i) => {
-    const fy = h - 40 - (footerLines.length - 1 - i) * 22;
-    text(ctx, line, w / 2, fy, { size: 15, color: DIM, weight: "500" });
-  });
+  // Footer key-hints removed in P2 (mouse + intuitive nav cover menu
+  // navigation). The footerLines param is kept so callers don't change; it is
+  // intentionally no longer rendered. To restore hints, draw footerLines here.
 
   return zones; // game.js hit-tests these for menu clicks/hover
 }
@@ -242,11 +282,6 @@ export function drawPlaceholder(ctx, w, h, title) {
 
   text(ctx, title, w / 2, h / 2 - 30, { size: 48, color: GOLD, font: TITLE_FONT, maxWidth: w - 100 });
   text(ctx, "Coming Soon", w / 2, h / 2 + 20, { size: 24, color: CREAM, weight: "500" });
-
-  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
-  ctx.globalAlpha = pulse;
-  text(ctx, "Press Esc or Backspace to return", w / 2, h - 60, { size: 16, color: PURPLE, weight: "500" });
-  ctx.globalAlpha = 1;
 }
 
 // Shared centred "Back" button for the High Scores + Settings screens. Mirrors
@@ -463,11 +498,6 @@ export function drawHowToPlay(ctx, w, h, backHover = false) {
     text(ctx, binding, valueLeft, y, { size: 18, color: CREAM, align: "left", weight: "500" });
     y += lineH;
   });
-
-  const pulse = 0.6 + 0.4 * Math.sin(performance.now() / 350);
-  ctx.globalAlpha = pulse;
-  text(ctx, "Esc / Backspace / click Back to return", w / 2, h - 76, { size: 14, color: PURPLE, weight: "500" });
-  ctx.globalAlpha = 1;
 
   return { zones: [drawCenteredBack(ctx, w, h - 40, backHover)] };
 }
@@ -1569,7 +1599,6 @@ export function drawPauseMenu(ctx, w, h, info, items, selectedIndex) {
     });
   });
 
-  text(ctx, "Esc / P: Resume      Enter: select", w / 2, h - 28, { size: 15, color: DIM, weight: "500" });
   return zones; // game.js hit-tests these for pause-menu clicks/hover
 }
 
@@ -1594,7 +1623,6 @@ export function drawConfirmQuit(ctx, w, h, items, selectedIndex) {
     });
   });
 
-  text(ctx, "Esc / Backspace: cancel", w / 2, h - 28, { size: 15, color: DIM, weight: "500" });
   return zones; // game.js hit-tests these for confirm-quit clicks/hover
 }
 
@@ -1654,7 +1682,6 @@ export function drawVictory(ctx, w, h, summary, items, selectedIndex) {
     });
   });
 
-  text(ctx, "Enter / Space: select", w / 2, h - 34, { size: 15, color: DIM, weight: "500" });
   return zones; // game.js hit-tests these for victory-menu clicks/hover
 }
 
@@ -1982,11 +2009,6 @@ export function drawCloset(ctx, w, h, data) {
     const br = drawBtn(w / 2, "Back", data.index === backIndex, false);
     zones.push({ ...br, index: backIndex });
   }
-
-  const hint = hasStart
-    ? "A/D switch tab • Up/Down move • Enter select/Start • Esc back"
-    : "A/D switch tab • Up/Down move • Enter • Esc back";
-  text(ctx, hint, w / 2, h - 20, { size: 14, color: DIM, weight: "500" });
 
   return { zones, tabs }; // game.js hit-tests rows/Back/Start (zones) + the tab toggle (tabs)
 }
