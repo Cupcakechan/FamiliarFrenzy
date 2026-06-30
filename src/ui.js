@@ -8,10 +8,10 @@
 
 import { loadImage, getImage } from "./assets.js";
 
-const GOLD = "#f4d58d";
+const GOLD = "#f9bf3b";
 const PURPLE = "#9b6cff";
 const RED = "#e2536b";
-const DIM = "rgba(244, 213, 141, 0.65)";
+const DIM = "rgba(249, 191, 59, 0.65)";
 const CREAM = "#f3e7c6";
 const MENU_BG = "#140d24"; // dark purple
 
@@ -147,7 +147,7 @@ function drawMenuLabel(ctx, label, cx, y, selected, maxWidth) {
   }
   ctx.save();
   ctx.shadowColor = GOLD;
-  ctx.shadowBlur = 12;
+  ctx.shadowBlur = 6;
   text(ctx, label, cx, y, {
     size, color: GOLD, weight: "700",
     stroke: "#0d0b1c", strokeWidth: 3, maxWidth,
@@ -1911,15 +1911,28 @@ export function drawCloset(ctx, w, h, data) {
   });
 
   const rowsData = data.tab === 0 ? data.outfits : data.tab === 1 ? data.familiars : data.collars;
-  const startY = 190;
-  const rowH = 60;
-  const boxW = 560, boxH = 52;
+  const boxW = 560, boxH = 48;
   const xL = w / 2 - boxW / 2;
   const xR = w / 2 + boxW / 2;
 
+  // Adaptive row layout: the Back/Start buttons anchor a fixed bottom row, and
+  // the option rows are distributed evenly in the band above. The per-row slot
+  // is capped (SLOT_MAX) so the lighter tabs (3 collars / 4 outfits) breathe
+  // with generous gaps instead of clustering, while the densest tab (5
+  // familiars) still fits; the block is vertically centered in the band when it
+  // doesn't fill it. Tune SLOT_MAX for more/less air on the lighter tabs.
+  const backY = 502;                       // fixed button row (box 482-522, 18px bottom margin)
+  const bandTop = 162, bandBottom = 468;   // rows sit just below the tabs, just above the buttons
+  const bandH = bandBottom - bandTop;      // 306
+  const rowCount = rowsData.length;
+  const SLOT_MAX = 76;
+  const rowSlot = Math.min(bandH / rowCount, SLOT_MAX);
+  const blockH = rowCount * rowSlot;
+  const firstCy = bandTop + (bandH - blockH) / 2 + rowSlot / 2;
+
   const zones = []; // clickable row rects + Back (mouse hit-testing in game.js)
   rowsData.forEach((o, i) => {
-    const cy = startY + i * rowH;
+    const cy = firstCy + i * rowSlot;
     const selected = i === data.index;
     zones.push({ x: xL, y: cy - boxH / 2, w: boxW, h: boxH, index: i });
 
@@ -1975,7 +1988,7 @@ export function drawCloset(ctx, w, h, data) {
 
   // Bottom buttons. Normal shop: a single centered Back (index rowsData.length). Pre-run
   // loadout: Back (left) + a prominent "Start Run" (right, index rowsData.length + 1).
-  const backY = startY + rowsData.length * rowH - 6;
+  // backY is the fixed bottom anchor defined with the adaptive row layout above.
   const hasStart = !!data.pendingRun;
   const backIndex = rowsData.length;
   const startIndex = rowsData.length + 1;
