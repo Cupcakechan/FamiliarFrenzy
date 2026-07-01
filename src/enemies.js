@@ -1989,6 +1989,31 @@ const POST_OPENING_SPAWN_MAX = 0.20;  // ...opening ramp caps here, so it tighte
 const INTERMISSION_SHORT = 2.0;       // between-wave break once past the opening
                                       //   (breaks entering waves 1-4 stay at 2.5s)
 
+// --- Casual late-game ramp (CASUAL ONLY, tunable) --------------------------
+// Kongregate feedback: Casual plateaued — by wave ~25 the player's power curve
+// crossed the enemies' CAPPED threat (12 alive forever, flat contact damage,
+// slow linear HP) and every later wave was the same solved fight, only LONGER
+// (the wave budget kept growing). This block turns the plateau into a ramp:
+// past RAMP_START_TIER the screen gets DENSER (maxAlive grows), hits start to
+// MATTER again (contact damage finally scales), wisps get a bit more HP, the
+// special-enemy mix thickens, and the wave budget CAPS so waves stay dense
+// rather than long. Runs now end because pressure eventually overwhelms —
+// reaching wave 50 becomes a leaderboard brag, not a boredom test.
+// Gated on (endless && !cursed) via rampTiers(): Tutorial (tier 0) and waves
+// 1-20 are byte-identical to before, and Cursed keeps its own tuned escalation
+// (2x tier cadence + stacking curses) — these constants never touch it.
+const RAMP_START_TIER = 2;            // ramp begins at tier 2 = wave 21
+const RAMP_MAX_ALIVE_PER_TIER = 3;    // +on-screen cap per ramp tier: 12 -> 15 (w21) -> 18 -> 21 -> ...
+const RAMP_MAX_ALIVE_CAP = 24;       // ...capped at double the base density (w51+)
+const RAMP_DAMAGE_PER_TIER = 2;       // +contact damage per ramp tier (wisp 8 -> 10 at w21, 14 at w41)
+const RAMP_DAMAGE_MAX = 12;           // ...capped: wisp tops out at 20 (w71+)
+const RAMP_HP_PER_TIER = 2;           // +wisp-baseline HP per ramp tier (specials scale via healthMult)
+const WAVE_BUDGET_CAP = 90;           // toSpawn ceiling — waves stop getting LONGER (~w38+), only denser
+const RAMP_MIX_CHANCE_PER_TIER = 0.03; // +spawn chance per ramp tier for every special type...
+const RAMP_MIX_CHANCE_MAX = 0.12;     // ...capped (gecko 0.25 -> 0.37 deep)
+const RAMP_MIX_CAP_STEP_TIERS = 2;    // special MAX_ALIVE +1 per this many ramp tiers...
+const RAMP_MIX_CAP_MAX = 2;           // ...capped (Bone Mage 2 -> 3 at w31, -> 4 at w51)
+
 // DEBUG: when true, EVERY wave spawns the boss (handy for testing boss art /
 // behavior without grinding to wave 10). Set to false for normal play and
 // before committing a release build.
@@ -3208,6 +3233,39 @@ export class WaveManager {
     return Math.max(0, Math.floor((this.wave - 1) / (this.bossEvery || 10)));
   }
 
+  // --- Casual late-game ramp helpers (see RAMP_* constants for the why) ------
+  // How many tiers INTO the ramp we are. 0 everywhere the ramp doesn't apply:
+  // Tutorial (!endless), Cursed (its own escalation), and Casual waves 1-20.
+  // Tier 2 (wave 21) is the first ramp tier -> returns 1; tier 3 -> 2; ...
+  rampTiers() {
+    if (!this.endless || this.cursed) return 0;
+    return Math.max(0, this.endlessTier() - RAMP_START_TIER + 1);
+  }
+
+  // On-screen enemy cap with the ramp applied: 12 for everyone until wave 21,
+  // then +3 per ramp tier, ceiling 24. The Teeming curse's bonus stacks on top
+  // at the call site (unchanged), though in practice curses never coexist with
+  // the ramp (Cursed returns 0 ramp tiers).
+  effectiveMaxAlive() {
+    return Math.min(RAMP_MAX_ALIVE_CAP,
+                    this.maxAlive + this.rampTiers() * RAMP_MAX_ALIVE_PER_TIER);
+  }
+
+  // Special-enemy mix under the ramp: alive-caps creep up (+1 per
+  // RAMP_MIX_CAP_STEP_TIERS ramp tiers, capped) and spawn chances thicken, so
+  // deep waves escalate through COMPOSITION (zoning + displacement + lines at
+  // density), not just more wisps. Both return the base unchanged when
+  // rampTiers() is 0, so waves 1-20 / Tutorial / Cursed roll exactly as before.
+  rampCap(base) {
+    return base + Math.min(RAMP_MIX_CAP_MAX,
+                           Math.floor(this.rampTiers() / RAMP_MIX_CAP_STEP_TIERS));
+  }
+
+  rampChance(base) {
+    return base + Math.min(RAMP_MIX_CHANCE_MAX,
+                           this.rampTiers() * RAMP_MIX_CHANCE_PER_TIER);
+  }
+
   // Effective spawn gap: tightened a little each endless tier (with a floor),
   // plus a gentle per-wave shave after the opening (non-Cursed) so the mid waves
   // don't sag. See POST_OPENING_* for the why.
@@ -3278,7 +3336,7 @@ export class WaveManager {
     // phase === "spawning"
     if (this.toSpawn > 0) {
       this.spawnTimer -= dt;
-      if (this.spawnTimer <= 0 && enemies.length < this.maxAlive + this.curseMaxAliveBonus) {
+      if (this.spawnTimer <= 0 && enemies.length < this.effectiveMaxAlive() + this.curseMaxAliveBonus) {
         enemies.push(this.makeEnemy(view, this.rollEnemyType(enemies)));
         this.toSpawn -= 1;
         this.spawnTimer = this.spawnGap();
@@ -3304,6 +3362,10 @@ export class WaveManager {
       this.phase = "spawning";
       // Teeming curse scales the whole wave budget (1 = unaffected).
       this.toSpawn = Math.round((5 + this.wave * 2 + this.endlessTier() * COUNT_PER_TIER) * this.curseSpawnMult);
+      // Casual ramp: the budget CAPS (~wave 38+) so deep waves stop getting
+      // LONGER — the ramp makes them denser instead (see WAVE_BUDGET_CAP).
+      // Cursed/Tutorial budgets are untouched (rampTiers() is 0 there).
+      if (this.rampTiers() > 0) this.toSpawn = Math.min(this.toSpawn, WAVE_BUDGET_CAP);
       this.spawnTimer = 0; // first enemy comes right away
     }
   }
@@ -3366,25 +3428,28 @@ export class WaveManager {
       else if (e.type === "tin_bulwark") tinAlive += 1;
     }
     // Bone Mage rolls first (rarer + capped) so its zoning pressure isn't
-    // crowded out by the more common gecko roll.
-    if (this.wave >= MAGE_INTRO_WAVE && magesAlive < MAGE_MAX_ALIVE &&
-        Math.random() < MAGE_SPAWN_CHANCE) {
+    // crowded out by the more common gecko roll. Under the Casual ramp (w21+)
+    // every cap/chance passes through rampCap()/rampChance(); both are
+    // identity functions at 0 ramp tiers, so Tutorial/Cursed/early Casual
+    // roll exactly as before.
+    if (this.wave >= MAGE_INTRO_WAVE && magesAlive < this.rampCap(MAGE_MAX_ALIVE) &&
+        Math.random() < this.rampChance(MAGE_SPAWN_CHANCE)) {
       return "bone_mage";
     }
-    if (this.wave >= PRONG_INTRO_WAVE && prongAlive < PRONG_MAX_ALIVE &&
-        Math.random() < PRONG_SPAWN_CHANCE) {
+    if (this.wave >= PRONG_INTRO_WAVE && prongAlive < this.rampCap(PRONG_MAX_ALIVE) &&
+        Math.random() < this.rampChance(PRONG_SPAWN_CHANCE)) {
       return "pronggeist";
     }
-    if (this.wave >= TIN_INTRO_WAVE && tinAlive < TIN_MAX_ALIVE &&
-        Math.random() < TIN_SPAWN_CHANCE) {
+    if (this.wave >= TIN_INTRO_WAVE && tinAlive < this.rampCap(TIN_MAX_ALIVE) &&
+        Math.random() < this.rampChance(TIN_SPAWN_CHANCE)) {
       return "tin_bulwark";
     }
-    if (this.wave >= GOBLIN_INTRO_WAVE && goblinsAlive < GOBLIN_MAX_ALIVE &&
-        Math.random() < GOBLIN_SPAWN_CHANCE) {
+    if (this.wave >= GOBLIN_INTRO_WAVE && goblinsAlive < this.rampCap(GOBLIN_MAX_ALIVE) &&
+        Math.random() < this.rampChance(GOBLIN_SPAWN_CHANCE)) {
       return "goblin_bonker";
     }
-    if (this.wave >= GECKO_INTRO_WAVE && geckosAlive < GECKO_MAX_ALIVE &&
-        Math.random() < GECKO_SPAWN_CHANCE) {
+    if (this.wave >= GECKO_INTRO_WAVE && geckosAlive < this.rampCap(GECKO_MAX_ALIVE) &&
+        Math.random() < this.rampChance(GECKO_SPAWN_CHANCE)) {
       return "gutter_gecko";
     }
     return "wisp";
@@ -3398,7 +3463,11 @@ export class WaveManager {
     // type's multipliers on top — so a gecko is always relative to the wisps
     // it spawns beside.
     const baseSpeed = 75 + this.wave * 4 + tier * ENEMY_SPEED_PER_TIER;
-    const baseHealth = 2 + Math.floor(this.wave / 3) + tier * ENEMY_HP_PER_TIER;
+    // Casual ramp adds to the wisp BASELINE, so specials inherit it through
+    // their healthMult exactly like the normal per-wave/per-tier scaling
+    // (rampTiers() is 0 outside deep Casual, leaving this term inert).
+    const baseHealth = 2 + Math.floor(this.wave / 3) + tier * ENEMY_HP_PER_TIER
+                     + this.rampTiers() * RAMP_HP_PER_TIER;
     // Cursed Mode is harder from the very first wave (the faster escalation + the
     // stacking curses do the rest).
     const speedMult = this.cursed ? CURSED_SPEED_MULT : 1;
@@ -3410,9 +3479,18 @@ export class WaveManager {
     e.maxHealth = Math.max(1, Math.round(baseHealth * hpMult * e.def.healthMult));
     e.health = e.maxHealth;
     // Offensive pressure: in Cursed, the swarm's CONTACT damage hits harder from the
-    // start. Scales each type by its OWN base (a Goblin still dwarfs a wisp), and is
-    // the only damage scaling in the game — normal mode keeps flat def damage.
+    // start. Scales each type by its OWN base (a Goblin still dwarfs a wisp), and was
+    // the only damage scaling in the game — normal mode kept flat def damage, which
+    // is a big part of why deep Casual plateaued (hits stopped mattering). The
+    // Casual ramp adds a capped FLAT bump instead of a multiplier: it makes wisp
+    // chip damage meaningful again without spiking the specials' already-heavy
+    // hits (their special-attack damages stay in their own tuned fields, exactly
+    // as they do under Cursed). Mutually exclusive by construction: rampTiers()
+    // is 0 in Cursed.
     if (this.cursed) e.damage = Math.max(1, Math.round(e.def.damage * CURSED_DAMAGE_MULT));
+    else if (this.rampTiers() > 0) {
+      e.damage = e.def.damage + Math.min(RAMP_DAMAGE_MAX, this.rampTiers() * RAMP_DAMAGE_PER_TIER);
+    }
     return e;
   }
 }
